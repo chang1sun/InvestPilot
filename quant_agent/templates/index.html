@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Quant Agent - 智能量化分析</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        [v-cloak] { display: none; }
+        .chart-container { height: 600px; width: 100%; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" v-cloak class="container mx-auto px-4 py-8">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">AI Quant Agent</h1>
+            <p class="text-gray-600">基于 Gemini 3 Pro 的智能 K 线量化分析系统</p>
+        </header>
+
+        <!-- Search Section -->
+        <div class="max-w-xl mx-auto mb-8 relative">
+            <div class="flex gap-2">
+                <div class="relative flex-1">
+                    <input 
+                        type="text" 
+                        v-model="query" 
+                        @input="handleSearch"
+                        @keyup.enter="analyzeStock(query)"
+                        placeholder="输入股票代码 (例如: AAPL, 0700.HK)" 
+                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                    >
+                    <!-- Search Suggestions -->
+                    <div v-if="suggestions.length > 0" class="absolute z-10 w-full bg-white mt-1 rounded-md shadow-lg border border-gray-200 max-h-60 overflow-auto">
+                        <div 
+                            v-for="item in suggestions" 
+                            @click="selectStock(item.symbol)"
+                            class="px-4 py-2 hover:bg-gray-100 cursor-pointer flex justify-between"
+                        >
+                            <span class="font-medium">{{ item.symbol }}</span>
+                            <span class="text-gray-500 text-sm">{{ item.name }}</span>
+                        </div>
+                    </div>
+                </div>
+                <button 
+                    @click="analyzeStock(query)" 
+                    :disabled="loading || !query"
+                    class="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                    {{ loading ? '分析中...' : '开始分析' }}
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div v-if="loading" class="text-center py-12">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p class="text-gray-600">AI 正在读取数据并进行量化分析...</p>
+        </div>
+
+        <!-- Results Section -->
+        <div v-if="analysisResult" class="space-y-6 animate-fade-in">
+            
+            <!-- Summary Card -->
+            <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+                <h3 class="text-xl font-bold text-gray-800 mb-2">AI 分析摘要</h3>
+                <p class="text-gray-700 leading-relaxed">{{ analysisResult.analysis.analysis_summary }}</p>
+            </div>
+
+            <!-- Chart -->
+            <div class="bg-white rounded-xl shadow-md p-4">
+                <div ref="chartRef" class="chart-container"></div>
+            </div>
+
+            <!-- Signals Table -->
+            <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                    <h3 class="text-lg font-semibold text-gray-800">交易信号详情</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-600 text-sm uppercase">
+                                <th class="px-6 py-3">类型</th>
+                                <th class="px-6 py-3">日期</th>
+                                <th class="px-6 py-3">建议价格</th>
+                                <th class="px-6 py-3">分析理由</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr v-for="(signal, index) in analysisResult.analysis.signals" :key="index" class="hover:bg-gray-50">
+                                <td class="px-6 py-4">
+                                    <span :class="signal.type === 'BUY' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" class="px-3 py-1 rounded-full text-xs font-bold">
+                                        {{ signal.type === 'BUY' ? '买入' : '卖出' }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-gray-700">{{ signal.date }}</td>
+                                <td class="px-6 py-4 font-mono font-medium">{{ signal.price }}</td>
+                                <td class="px-6 py-4 text-gray-600 text-sm">{{ signal.reason }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                const query = ref('');
+                const suggestions = ref([]);
+                const loading = ref(false);
+                const analysisResult = ref(null);
+                const chartRef = ref(null);
+                let chartInstance = null;
+
+                // Debounce helper
+                const debounce = (fn, delay) => {
+                    let timeout;
+                    return (...args) => {
+                        clearTimeout(timeout);
+                        timeout = setTimeout(() => fn(...args), delay);
+                    };
+                };
+
+                const handleSearch = debounce(async (e) => {
+                    const val = e.target.value;
+                    if (val.length < 1) {
+                        suggestions.value = [];
+                        return;
+                    }
+                    try {
+                        const res = await fetch(`/api/search?q=${val}`);
+                        suggestions.value = await res.json();
+                    } catch (err) {
+                        console.error(err);
+                    }
+                }, 300);
+
+                const selectStock = (symbol) => {
+                    query.value = symbol;
+                    suggestions.value = [];
+                };
+
+                const analyzeStock = async (symbol) => {
+                    if (!symbol) return;
+                    suggestions.value = []; // Clear suggestions
+                    loading.value = true;
+                    analysisResult.value = null;
+                    
+                    try {
+                        const res = await fetch('/api/analyze', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ symbol })
+                        });
+                        
+                        if (!res.ok) throw new Error('Analysis failed');
+                        
+                        const data = await res.json();
+                        analysisResult.value = data;
+                        
+                        nextTick(() => {
+                            initChart(data);
+                        });
+                    } catch (err) {
+                        alert('分析失败，请检查股票代码或稍后重试。');
+                        console.error(err);
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const initChart = (data) => {
+                    if (chartInstance) {
+                        chartInstance.dispose();
+                    }
+                    chartInstance = echarts.init(chartRef.value);
+
+                    const klineData = data.kline_data.map(item => [
+                        item.open, item.close, item.low, item.high
+                    ]);
+                    const dates = data.kline_data.map(item => item.date);
+                    const volumes = data.kline_data.map((item, index) => [index, item.volume, item.open > item.close ? 1 : -1]);
+
+                    // Parse signals for MarkPoints
+                    const markPoints = data.analysis.signals.map(sig => {
+                        return {
+                            name: sig.type,
+                            coord: [sig.date, sig.price],
+                            value: sig.type === 'BUY' ? '买' : '卖',
+                            itemStyle: {
+                                color: sig.type === 'BUY' ? '#10B981' : '#EF4444'
+                            }
+                        };
+                    });
+
+                    const option = {
+                        title: { text: `${data.symbol} K线趋势分析` },
+                        tooltip: {
+                            trigger: 'axis',
+                            axisPointer: { type: 'cross' }
+                        },
+                        grid: [
+                            { left: '10%', right: '8%', height: '50%' },
+                            { left: '10%', right: '8%', top: '63%', height: '16%' }
+                        ],
+                        xAxis: [
+                            { type: 'category', data: dates, scale: true, boundaryGap: false, axisLine: { onZero: false }, splitLine: { show: false }, splitNumber: 20, min: 'dataMin', max: 'dataMax' },
+                            { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } }
+                        ],
+                        yAxis: [
+                            { scale: true, splitArea: { show: true } },
+                            { scale: true, gridIndex: 1, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } }
+                        ],
+                        dataZoom: [
+                            { type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100 },
+                            { show: true, xAxisIndex: [0, 1], type: 'slider', top: '85%', start: 50, end: 100 }
+                        ],
+                        series: [
+                            {
+                                name: 'K线',
+                                type: 'candlestick',
+                                data: klineData,
+                                itemStyle: {
+                                    color: '#EF4444', // Red for up (Chinese style)
+                                    color0: '#10B981', // Green for down
+                                    borderColor: '#EF4444',
+                                    borderColor0: '#10B981'
+                                },
+                                markPoint: {
+                                    data: markPoints
+                                }
+                            },
+                            {
+                                name: 'Volume',
+                                type: 'bar',
+                                xAxisIndex: 1,
+                                yAxisIndex: 1,
+                                data: volumes.map(item => item[1]),
+                                itemStyle: {
+                                    color: (params) => {
+                                        return klineData[params.dataIndex][0] < klineData[params.dataIndex][1] ? '#EF4444' : '#10B981';
+                                    }
+                                }
+                            }
+                        ]
+                    };
+
+                    chartInstance.setOption(option);
+                    window.addEventListener('resize', () => chartInstance.resize());
+                };
+
+                return {
+                    query,
+                    suggestions,
+                    loading,
+                    analysisResult,
+                    chartRef,
+                    handleSearch,
+                    selectStock,
+                    analyzeStock
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
+

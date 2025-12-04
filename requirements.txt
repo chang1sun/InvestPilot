@@ -1,0 +1,12 @@
+flask
+flask-sqlalchemy
+flask-cors
+pymysql
+redis
+yfinance
+pandas
+numpy
+google-genai
+python-dotenv
+gunicorn
+requests
