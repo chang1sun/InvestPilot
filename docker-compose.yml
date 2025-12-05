@@ -6,7 +6,7 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=mysql+pymysql://user:password@db/quant_agent_db
+      - DATABASE_URL=mysql+pymysql://user:password@db/investpilot_db
       - REDIS_URL=redis://redis:6379/0
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
@@ -17,7 +17,7 @@ services:
     image: mysql:5.7
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: quant_agent_db
+      MYSQL_DATABASE: investpilot_db
       MYSQL_USER: user
       MYSQL_PASSWORD: password
     volumes:

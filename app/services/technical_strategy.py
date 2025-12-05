@@ -3,7 +3,7 @@ from datetime import datetime
 
 class TechnicalStrategy:
     @staticmethod
-    def analyze(kline_data, error_msg="API Unavailable"):
+    def analyze(kline_data, error_msg="API Unavailable", language="zh"):
         """
         A robust technical analysis strategy (Local Algorithm).
         Implements:
@@ -12,11 +12,14 @@ class TechnicalStrategy:
         3. Volatility Breakout (Bollinger Bands Logic)
         """
         if not kline_data or len(kline_data) < 30:
+            summary_text = "数据不足，无法进行量化分析。" if language == 'zh' else "Insufficient data for quantitative analysis."
             return {
-                "analysis_summary": f"⚠️ 本地策略分析 (错误: {error_msg}) - 数据不足",
+                "analysis_summary": summary_text,
                 "trades": [],
                 "signals": [],
-                "source": "local_strategy"
+                "source": "local_strategy",
+                "is_fallback": True,
+                "fallback_reason": error_msg
             }
 
         df = pd.DataFrame(kline_data)
@@ -118,12 +121,18 @@ class TechnicalStrategy:
         # Sort trades descending
         trades.sort(key=lambda x: x['buy_date'], reverse=True)
         
-        summary = f"⚠️ 本地策略分析 (错误: {error_msg})。基于 MA 均线系统与 RSI 指标的量化回测结果。"
+        # Language-aware summary
+        if language == 'zh':
+            summary = "基于 MA 均线系统（5/20/60）与 RSI 动量指标的经典量化策略回测结果。策略逻辑：金叉做多、死叉做空、RSI 超买超卖辅助、5% 止损保护。"
+        else:
+            summary = "Backtest results based on classic MA crossover (5/20/60) and RSI momentum strategy. Logic: Golden Cross for Long, Death Cross for Short, RSI overbought/oversold assist, 5% stop-loss protection."
         
         return {
             "analysis_summary": summary,
             "trades": trades,
             "signals": signals,
-            "source": "local_strategy"
+            "source": "local_strategy",
+            "is_fallback": True,
+            "fallback_reason": error_msg
         }
 
