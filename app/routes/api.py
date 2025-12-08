@@ -656,7 +656,7 @@ def get_market_news():
     except:
         pass
     
-    news_items = yf.Ticker.get_news(count=10, tab='news')
+    news_items = []
     
     for symbol in news_symbols:
         try:
