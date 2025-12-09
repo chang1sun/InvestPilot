@@ -118,22 +118,18 @@ class OpenAIAdapter(BaseModelAdapter):
     def is_available(self):
         return self.client is not None
     
-    def generate(self, prompt, **kwargs):
+    def generate(self, prompt, use_search=False, **kwargs):
         """Generate using OpenAI API"""
         if not self.client:
             raise Exception("OpenAI client not initialized")
         
-        # O1 models use different parameter names
-        is_o1 = 'o1' in self.model_id
-        
         params = {
             "model": self.model_id,
-            "messages": [{"role": "user", "content": prompt}]
+            "messages": [{"role": "user", "content": prompt}],
         }
-        
-        if not is_o1:
-            params["temperature"] = 0.7
-            params["max_tokens"] = kwargs.get('max_tokens', 4096)
+
+        if use_search:
+            params["tools"] = [ { "type": "web_search" } ]
         
         response = self.client.chat.completions.create(**params)
         
@@ -168,7 +164,7 @@ class AnthropicAdapter(BaseModelAdapter):
         
         response = self.client.messages.create(
             model=self.model_id,
-            max_tokens=kwargs.get('max_tokens', 4096),
+            max_tokens=kwargs.get('max_tokens', 8192),
             messages=[{"role": "user", "content": prompt}]
         )
         
@@ -208,19 +204,18 @@ class QwenAdapter(BaseModelAdapter):
         params = {
             "model": self.model_id,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-            "max_tokens": kwargs.get('max_tokens', 4096)
         }
         
-        # Qwen supports web search via tools
+        # 通过 extra_body 兼容OpenAI API
         if use_search:
-            params["tools"] = [{
-                "type": "function",
-                "function": {
-                    "name": "web_search",
-                    "description": "Search the web for real-time information"
+            params["extra_body"] = {
+                "enable_thinking": True,
+                "enable_search": True,
+                "search_options": {
+                    "forced_search": True,
+                    "search_strategy": "max"
                 }
-            }]
+            }
         
         response = self.client.chat.completions.create(**params)
         

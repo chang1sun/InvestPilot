@@ -266,21 +266,12 @@ Data:
             return {"error": "API Key Unavailable", "recommendations": []}
         
         config = get_model_config(model_name)
-        supports_search = config.get('supports_search', False)
         
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
         
-        # Adjust prompt based on search capability
-        search_instruction = ""
-        if supports_search:
-            search_instruction = """
-        1. **MANDATORY: Use Google Search or Web Search** to find real-time market trends, sector rotation (US, HK, or A-shares), and breaking news affecting stock prices TODAY.
+        search_instruction = """
+        1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation (US, HK, or A-shares), and breaking news affecting stock prices TODAY.
         2. **CRITICAL**: For every recommended stock, you MUST use Search to find its **current real-time price** (or latest close). Do NOT guess prices."""
-        else:
-            search_instruction = """
-        1. Based on your training data and market knowledge, identify promising stocks with strong technical or fundamental catalysts.
-        2. Provide approximate current prices based on your latest knowledge."""
-
         prompt = f"""
         You are a professional financial advisor and quantitative analyst.
         Task: Recommend 10 promising stocks for purchase in the near future (next 1-4 weeks).
@@ -320,11 +311,11 @@ Data:
             print(f"  Model: {model_name}")
             print(f"  Provider: {config.get('provider', 'unknown')}")
             print(f"  Language: {language}")
-            print(f"  Supports search: {supports_search}")
+            print(f"  Supports search: {True}")
             print(f"  Criteria: capital={criteria.get('capital')}, risk={criteria.get('risk')}, frequency={criteria.get('frequency')}")
             
             # Use unified adapter interface
-            text, usage = adapter.generate(prompt, use_search=supports_search)
+            text, usage = adapter.generate(prompt, use_search=True)
             
             # End timing
             elapsed_time = time.time() - start_time

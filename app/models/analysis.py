@@ -5,12 +5,16 @@ class RecommendationCache(db.Model):
     __tablename__ = 'recommendation_cache'
     
     id = db.Column(db.Integer, primary_key=True)
-    cache_date = db.Column(db.Date, nullable=False, index=True, unique=True)  # 缓存日期（每天一个缓存）
+    cache_date = db.Column(db.Date, nullable=False, index=True)  # 缓存日期
     model_name = db.Column(db.String(50), nullable=False)
     language = db.Column(db.String(10), nullable=False)
     criteria_hash = db.Column(db.String(64), nullable=False)  # 筛选条件的哈希值
     recommendation_result = db.Column(db.Text, nullable=True)  # JSON string
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        db.UniqueConstraint('cache_date', 'model_name', 'language', 'criteria_hash', name='unique_recommendation_cache'),
+    )
     
     def to_dict(self):
         return {

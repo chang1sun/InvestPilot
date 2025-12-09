@@ -88,18 +88,33 @@ def recommend():
     print(f"[Recommend] No cache found, calling AI for {today}")
     result = ai_analyzer.recommend_stocks(criteria, model_name=model_name, language=language)
     
-    # 保存到缓存
+    # 保存到缓存（使用 upsert 模式：如果已存在则更新，否则插入）
     try:
-        new_cache = RecommendationCache(
+        existing_cache = RecommendationCache.query.filter_by(
             cache_date=today,
             model_name=model_name,
             language=language,
-            criteria_hash=criteria_hash,
-            recommendation_result=json.dumps(result)
-        )
-        db.session.add(new_cache)
-        db.session.commit()
-        print(f"[Recommend] Result cached for {today}")
+            criteria_hash=criteria_hash
+        ).first()
+        
+        if existing_cache:
+            # 更新现有缓存
+            existing_cache.recommendation_result = json.dumps(result)
+            existing_cache.created_at = datetime.utcnow()
+            db.session.commit()
+            print(f"[Recommend] Result updated in cache for {today}")
+        else:
+            # 创建新缓存
+            new_cache = RecommendationCache(
+                cache_date=today,
+                model_name=model_name,
+                language=language,
+                criteria_hash=criteria_hash,
+                recommendation_result=json.dumps(result)
+            )
+            db.session.add(new_cache)
+            db.session.commit()
+            print(f"[Recommend] Result cached for {today}")
     except Exception as e:
         db.session.rollback()
         print(f"Cache save error: {e}")

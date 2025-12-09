@@ -35,7 +35,7 @@ MODEL_REGISTRY = {
         "provider": "openai",
         "display_name": "GPT-5.1",
         "api_key_env": "OPENAI_API_KEY",
-        "supports_search": False,
+        "supports_search": True,
         "max_tokens": 32768,
         "cost_tier": "premium"
     },
@@ -43,7 +43,7 @@ MODEL_REGISTRY = {
         "provider": "openai",
         "display_name": "GPT-5 Mini",
         "api_key_env": "OPENAI_API_KEY",
-        "supports_search": False,
+        "supports_search": True,
         "max_tokens": 16384,
         "cost_tier": "medium"
     },
@@ -51,7 +51,7 @@ MODEL_REGISTRY = {
         "provider": "openai",
         "display_name": "GPT-5 Nano",
         "api_key_env": "OPENAI_API_KEY",
-        "supports_search": False,
+        "supports_search": True,
         "max_tokens": 8192,
         "cost_tier": "low"
     },
@@ -61,7 +61,7 @@ MODEL_REGISTRY = {
         "provider": "anthropic",
         "display_name": "Claude Sonnet 4.5",
         "api_key_env": "ANTHROPIC_API_KEY",
-        "supports_search": False,
+        "supports_search": True,
         "max_tokens": 200000,  # 200K上下文
         "cost_tier": "high"
     },
@@ -69,7 +69,7 @@ MODEL_REGISTRY = {
         "provider": "anthropic",
         "display_name": "Claude Haiku 4.5",
         "api_key_env": "ANTHROPIC_API_KEY",
-        "supports_search": False,
+        "supports_search": True,
         "max_tokens": 200000,  # 200K上下文
         "cost_tier": "low"
     },
@@ -77,7 +77,7 @@ MODEL_REGISTRY = {
         "provider": "anthropic",
         "display_name": "Claude Opus 4.5",
         "api_key_env": "ANTHROPIC_API_KEY",
-        "supports_search": False,
+        "supports_search": True,
         "max_tokens": 200000,  # 200K上下文
         "cost_tier": "premium"
     },
@@ -103,7 +103,7 @@ MODEL_REGISTRY = {
         "provider": "qwen",
         "display_name": "Qwen Flash",
         "api_key_env": "QWEN_API_KEY",
-        "supports_search": False,
+        "supports_search": True,
         "max_tokens": 32768,
         "cost_tier": "low"
     },
