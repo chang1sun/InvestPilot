@@ -17,17 +17,23 @@ def get_models():
     models = get_models_for_frontend()
     return jsonify(models)
 
-def get_analysis_status(symbol):
-    """Helper to get the latest analyzed date for a symbol"""
-    latest_signal = StockTradeSignal.query.filter_by(symbol=symbol).order_by(StockTradeSignal.date.desc()).first()
+def get_analysis_status(symbol, model_name):
+    """Helper to get the latest analyzed date for a symbol and model"""
+    latest_signal = StockTradeSignal.query.filter_by(
+        symbol=symbol,
+        model_name=model_name
+    ).order_by(StockTradeSignal.date.desc()).first()
     return latest_signal.date if latest_signal else None
 
-def get_current_position(symbol):
+def get_current_position(symbol, model_name):
     """
-    Replay history to find if we are currently holding a position.
+    Replay history to find if we are currently holding a position for a specific model.
     Returns dict {date, price, reason} or None.
     """
-    signals = StockTradeSignal.query.filter_by(symbol=symbol).order_by(StockTradeSignal.date.asc()).all()
+    signals = StockTradeSignal.query.filter_by(
+        symbol=symbol,
+        model_name=model_name
+    ).order_by(StockTradeSignal.date.asc()).all()
     position = None
     for s in signals:
         if s.signal_type == 'BUY':
@@ -53,6 +59,7 @@ def recommend():
     language = data.get('language', 'zh')
     
     criteria = {
+        'market': data.get('market', 'Any'),
         'capital': data.get('capital', 'Any'),
         'risk': data.get('risk', 'Any'),
         'frequency': data.get('frequency', 'Any')
@@ -196,10 +203,11 @@ def analyze():
             db.session.commit()
 
     # 2. Check DB for existing signals
-    # We want to ensure "Global History" consistency.
+    # We want to ensure "Model-specific History" consistency.
+    # Each model maintains its own separate trading history.
     
-    latest_analyzed_date = get_analysis_status(symbol)
-    current_position_state = get_current_position(symbol)
+    latest_analyzed_date = get_analysis_status(symbol, model_name)
+    current_position_state = get_current_position(symbol, model_name)
     
     analysis_result = {
         "analysis_summary": "AI Analysis based on historical data.",
@@ -245,12 +253,16 @@ def analyze():
         )
         
         if full_analysis.get('source') == 'ai_model':
-            # AI 分析成功，保存信号到 DB
+            # AI 分析成功，保存信号到 DB（按模型分开存储）
             for sig in full_analysis.get('signals', []):
                 try:
                     # Check if signal already exists (shouldn't for new init, but safe check)
                     sig_date = datetime.strptime(sig['date'], '%Y-%m-%d').date()
-                    exists = StockTradeSignal.query.filter_by(symbol=symbol, date=sig_date).first()
+                    exists = StockTradeSignal.query.filter_by(
+                        symbol=symbol,
+                        date=sig_date,
+                        model_name=model_name
+                    ).first()
                     if not exists:
                         new_signal = StockTradeSignal(
                             symbol=symbol,
@@ -258,7 +270,8 @@ def analyze():
                             price=sig['price'],
                             signal_type=sig['type'], # BUY/SELL
                             reason=sig.get('reason', ''),
-                            source='ai'
+                            source='ai',
+                            model_name=model_name
                         )
                         db.session.add(new_signal)
                 except Exception as e:
@@ -305,7 +318,7 @@ def analyze():
             )
             
             if fresh_analysis.get('source') == 'ai_model':
-                # AI 分析成功，保存新信号到 DB
+                # AI 分析成功，保存新信号到 DB（按模型分开存储）
                 for sig in fresh_analysis.get('signals', []):
                     sig_date = datetime.strptime(sig['date'], '%Y-%m-%d').date()
                     if sig_date > latest_analyzed_date:
@@ -317,10 +330,11 @@ def analyze():
                                 price=sig['price'],
                                 signal_type=sig['type'],
                                 reason=sig.get('reason', ''),
-                                source='ai'
+                                source='ai',
+                                model_name=model_name
                             )
                             db.session.add(new_signal)
-                            print(f"[{symbol}] New signal added: {sig_date} {sig['type']}")
+                            print(f"[{symbol}] New signal added for {model_name}: {sig_date} {sig['type']}")
                         except Exception as e:
                             print(f"Error adding signal: {e}")
                 try:
@@ -333,9 +347,12 @@ def analyze():
                 print(f"[{symbol}] AI analysis failed during incremental update, local strategy used. Will not cache.")
 
     # 3. Construct Final Response from DB
-    # Now we read the "Global Truth" from DB to ensure consistency for everyone
+    # Now we read the "Model-specific History" from DB to ensure consistency for each model
     
-    db_signals = StockTradeSignal.query.filter_by(symbol=symbol).order_by(StockTradeSignal.date.asc()).all()
+    db_signals = StockTradeSignal.query.filter_by(
+        symbol=symbol,
+        model_name=model_name
+    ).order_by(StockTradeSignal.date.asc()).all()
     
     # Reconstruct 'trades' (pair of Buy/Sell) from signals for the UI
     reconstructed_trades = []
@@ -418,14 +435,17 @@ def analyze():
     # Or we can generate a quick summary if needed. 
     # For now, reusing the summary from the fresh analysis (if we ran it) or a placeholder.
     
-    summary_text = "Global History Loaded. "
+    summary_text = f"Model-specific History Loaded ({model_name}). "
     if 'fresh_analysis' in locals():
         summary_text = fresh_analysis.get('analysis_summary', summary_text)
     elif 'full_analysis' in locals():
         summary_text = full_analysis.get('analysis_summary', summary_text)
     else:
-        # Try to get from latest AnalysisLog as fallback for summary text
-        last_log = AnalysisLog.query.filter_by(symbol=symbol).order_by(AnalysisLog.created_at.desc()).first()
+        # Try to get from latest AnalysisLog as fallback for summary text (filter by model)
+        last_log = AnalysisLog.query.filter_by(
+            symbol=symbol,
+            model_name=model_name
+        ).order_by(AnalysisLog.created_at.desc()).first()
         if last_log and last_log.analysis_result:
             try:
                 summary_text = json.loads(last_log.analysis_result).get('analysis_summary', summary_text)

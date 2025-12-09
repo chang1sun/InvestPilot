@@ -269,14 +269,52 @@ Data:
         
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
         
+        # 处理市场选择
+        market = criteria.get('market', 'Any')
+        market_instruction = ""
+        if market == 'US':
+            market_instruction = """
+        **MARKET FOCUS: US STOCKS ONLY**
+        - Focus exclusively on US stock market (NYSE, NASDAQ)
+        - Use US stock ticker format (e.g., NVDA, AAPL, TSLA)
+        - Consider US market hours, economic indicators, and Fed policy
+        """
+        elif market == 'HK':
+            market_instruction = """
+        **MARKET FOCUS: HONG KONG STOCKS ONLY**
+        - Focus exclusively on Hong Kong stock market (HKEX)
+        - Use HK stock ticker format (e.g., 0700.HK, 9988.HK, 3690.HK)
+        - Consider HK market hours, HKD exchange rate, and mainland China policies
+        """
+        elif market == 'A':
+            market_instruction = """
+        **MARKET FOCUS: A-SHARES (MAINLAND CHINA) ONLY**
+        - Focus exclusively on A-shares market (Shanghai SSE, Shenzhen SZSE)
+        - Use A-share ticker format (e.g., 000001.SZ, 600000.SH, 300750.SZ)
+        - Consider A-share market hours, CNY exchange rate, and Chinese regulatory policies
+        """
+        else:
+            market_instruction = """
+        **MARKET FOCUS: ALL MARKETS**
+        - You can recommend stocks from US, Hong Kong, or A-shares markets
+        - Use appropriate ticker format for each market:
+          * US: NVDA, AAPL (no suffix)
+          * HK: 0700.HK, 9988.HK
+          * A-shares: 000001.SZ, 600000.SH
+        - Ensure diversity across markets if beneficial
+        """
+        
         search_instruction = """
-        1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation (US, HK, or A-shares), and breaking news affecting stock prices TODAY.
+        1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation, and breaking news affecting stock prices TODAY.
         2. **CRITICAL**: For every recommended stock, you MUST use Search to find its **current real-time price** (or latest close). Do NOT guess prices."""
         prompt = f"""
         You are a professional financial advisor and quantitative analyst.
         Task: Recommend 10 promising stocks for purchase in the near future (next 1-4 weeks).
         
+        {market_instruction}
+        
         User Criteria:
+        - Market: {criteria.get('market', 'Any (All markets)')}
         - Capital Size: {criteria.get('capital', 'Not specified')}
         - Risk Tolerance: {criteria.get('risk', 'Not specified')}
         - Trading Frequency: {criteria.get('frequency', 'Not specified')}
@@ -284,7 +322,7 @@ Data:
         Instructions:
         {search_instruction}
         3. Select 10 stocks that currently show strong technical setups or fundamental catalysts.
-        4. Ensure the recommendations are diverse if no specific market is implied, or focus on the most actionable ones.
+        4. **STRICTLY FOLLOW** the market focus specified above. If a specific market is selected, ONLY recommend stocks from that market.
         5. Assign a recommendation strength: "High Confidence" (⭐⭐⭐), "Medium" (⭐⭐), or "Speculative" (⭐).
         6. **LANGUAGE**: {lang_instruction}
         
@@ -312,7 +350,7 @@ Data:
             print(f"  Provider: {config.get('provider', 'unknown')}")
             print(f"  Language: {language}")
             print(f"  Supports search: {True}")
-            print(f"  Criteria: capital={criteria.get('capital')}, risk={criteria.get('risk')}, frequency={criteria.get('frequency')}")
+            print(f"  Criteria: market={criteria.get('market')}, capital={criteria.get('capital')}, risk={criteria.get('risk')}, frequency={criteria.get('frequency')}")
             
             # Use unified adapter interface
             text, usage = adapter.generate(prompt, use_search=True)

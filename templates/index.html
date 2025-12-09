@@ -67,7 +67,33 @@
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col font-sans">
-    <div id="app" v-cloak class="container mx-auto px-4 py-4 flex-1 flex flex-col">
+    <div id="app" v-cloak class="flex flex-col min-h-screen">
+        <!-- Disclaimer Banner (Always Visible at Top) -->
+        <div class="bg-gradient-to-r from-red-50 via-orange-50 to-yellow-50 border-b-2 border-red-400 shadow-md sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+                <div class="flex items-start gap-3">
+                    <div class="flex-shrink-0 mt-0.5">
+                        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <div class="text-base font-bold text-red-900 mb-1 flex items-center gap-2">
+                            <span>⚠️</span>
+                            <span>[[ currentLanguage === 'zh' ? '免责声明' : 'Disclaimer' ]]</span>
+                        </div>
+                        <div class="text-sm text-red-800 leading-relaxed">
+                            [[ currentLanguage === 'zh' ? 
+                                '本项目仅供学习和研究使用，不构成任何投资建议。股市有风险，投资需谨慎。使用本系统进行投资决策的一切后果由用户自行承担。' : 
+                                'This project is for learning and research purposes only and does not constitute any investment advice. The stock market involves risks, and investment requires caution. Users are solely responsible for all consequences of using this system for investment decisions.' 
+                            ]]
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mx-auto px-4 py-4 flex-1 flex flex-col">
         <!-- Header & Search Row -->
         <div class="flex items-center justify-between mb-6 bg-white p-4 rounded-xl shadow-sm">
             <div class="flex items-center gap-4">
@@ -183,6 +209,36 @@
         <template v-if="currentTab === 'analysis'">
             <!-- Result View -->
             <div v-if="!loadingAnalysis && analysisResult" class="flex-1 flex flex-col gap-6 animate-fade-in">
+                
+                <!-- Model Info Banner -->
+                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-xl p-4 shadow-sm">
+                    <div class="flex items-start gap-3">
+                        <div class="flex-shrink-0 mt-0.5">
+                            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1">
+                            <div class="text-sm font-semibold text-blue-900 mb-1">
+                                [[ currentLanguage === 'zh' ? '💡 重要提示' : '💡 Important Notice' ]]
+                            </div>
+                            <div class="text-xs text-blue-800 leading-relaxed">
+                                <p class="mb-1">
+                                    [[ currentLanguage === 'zh' ? 
+                                        '• 不同 AI 模型的分析结果可能不同，每个模型都有独立的交易历史记录' : 
+                                        '• Different AI models may produce different analysis results. Each model maintains its own separate trading history' 
+                                    ]]
+                                </p>
+                                <p>
+                                    [[ currentLanguage === 'zh' ? 
+                                        '• 相同模型对同一股票的分析结果会被缓存，当天重复分析将直接返回缓存结果' : 
+                                        '• Analysis results from the same model are cached. Repeated analysis on the same day will return cached results' 
+                                    ]]
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Fallback Warning Banner -->
                 <div v-if="analysisResult.analysis.is_fallback" class="bg-gradient-to-r from-orange-50 to-amber-50 border-l-4 border-orange-500 rounded-xl p-5 shadow-sm animate-pulse">
@@ -461,7 +517,16 @@
                         </button>
                     </div>
                     
-                    <div class="grid grid-cols-3 gap-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '市场选择' : 'Market' ]]</label>
+                            <select v-model="recCriteria.market" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium">
+                                <option value="Any">[[ currentLanguage === 'zh' ? '不限' : 'Any' ]]</option>
+                                <option value="US">[[ currentLanguage === 'zh' ? '美股 (US)' : 'US Stocks' ]]</option>
+                                <option value="HK">[[ currentLanguage === 'zh' ? '港股 (HK)' : 'HK Stocks' ]]</option>
+                                <option value="A">[[ currentLanguage === 'zh' ? 'A股 (A)' : 'A-Shares' ]]</option>
+                            </select>
+                        </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '资金规模' : 'Capital' ]]</label>
                             <select v-model="recCriteria.capital" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium">
@@ -748,7 +813,7 @@
                 const loadingPortfolio = ref(false);
                 
                 // 从 sessionStorage 恢复会话数据（刷新页面时保留）
-                const recCriteria = ref(sessionData.recCriteria || { capital: 'Any', risk: 'Any', frequency: 'Any' });
+                const recCriteria = ref(sessionData.recCriteria || { market: 'Any', capital: 'Any', risk: 'Any', frequency: 'Any' });
                 const recommendationResult = ref(sessionData.recommendationResult || null);
                 const portfolio = ref(sessionData.portfolio || { symbol: '', avg_price: '', percentage: '' });
                 const portfolioResult = ref(sessionData.portfolioResult || null);

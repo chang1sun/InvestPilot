@@ -61,10 +61,11 @@ class StockTradeSignal(db.Model):
     signal_type = db.Column(db.String(10), nullable=False) # 'BUY', 'SELL', 'HOLD'
     reason = db.Column(db.Text, nullable=True)
     source = db.Column(db.String(20), default='ai') # 'ai', 'local'
+    model_name = db.Column(db.String(50), nullable=False, index=True)  # 模型名称，用于区分不同模型的结果
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
+    
     __table_args__ = (
-        db.UniqueConstraint('symbol', 'date', name='unique_symbol_date'),
+        db.UniqueConstraint('symbol', 'date', 'model_name', name='unique_symbol_date_model'),
     )
 
     def to_dict(self):
