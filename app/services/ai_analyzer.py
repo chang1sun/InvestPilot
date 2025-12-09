@@ -330,7 +330,7 @@ Data:
             elapsed_time = time.time() - start_time
             
             if not text:
-                raise ValueError("Empty response from Gemini (likely blocked or search-only output)")
+                raise ValueError(f"Empty response from {model_name} (likely blocked or search-only output)")
 
             # Robust JSON extraction using regex
             json_match = re.search(r'\{.*\}', text, re.DOTALL)
@@ -432,7 +432,7 @@ Data:
             elapsed_time = time.time() - start_time
             
             if not text:
-                raise ValueError("Empty response from Gemini")
+                raise ValueError(f"Empty response from {model_name}")
 
             # Robust JSON extraction
             json_match = re.search(r'\{.*\}', text, re.DOTALL)

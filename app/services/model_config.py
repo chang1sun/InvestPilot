@@ -13,6 +13,14 @@ MODEL_REGISTRY = {
         "max_tokens": 2097152,  # 2M上下文
         "cost_tier": "high"
     },
+    "gemini-2.5-pro": {
+        "provider": "gemini",
+        "display_name": "Gemini 2.5 Pro",
+        "api_key_env": "GEMINI_API_KEY",
+        "supports_search": True,
+        "max_tokens": 2097152,  # 2M上下文
+        "cost_tier": "medium"
+    },
     "gemini-2.5-flash": {
         "provider": "gemini",
         "display_name": "Gemini 2.5 Flash",
@@ -83,9 +91,9 @@ MODEL_REGISTRY = {
         "max_tokens": 262144,  # 256K上下文
         "cost_tier": "high"
     },
-    "qwen-plus": {
+    "qwen-plus-2025-12-01": {
         "provider": "qwen",
-        "display_name": "Qwen Plus",
+        "display_name": "Qwen Plus (2025-12-01)",
         "api_key_env": "QWEN_API_KEY",
         "supports_search": True,
         "max_tokens": 131072,  # 128K上下文

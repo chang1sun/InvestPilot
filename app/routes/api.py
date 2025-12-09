@@ -657,6 +657,7 @@ def get_market_news():
         pass
     
     news_items = []
+    news_symbols = []
     
     for symbol in news_symbols:
         try:
