@@ -84,7 +84,7 @@
                         </div>
                         <div class="text-sm text-red-800 leading-relaxed">
                             [[ currentLanguage === 'zh' ? 
-                                '本项目仅供学习和研究使用，不构成任何投资建议。股市有风险，投资需谨慎。使用本系统进行投资决策的一切后果由用户自行承担。' : 
+                                '本项目仅供学习和研究使用，不构成任何投资建议。股市有风险，投资需谨慎。' : 
                                 'This project is for learning and research purposes only and does not constitute any investment advice. The stock market involves risks, and investment requires caution. Users are solely responsible for all consequences of using this system for investment decisions.' 
                             ]]
                         </div>
@@ -176,7 +176,7 @@
                 :class="currentTab === 'analysis' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'"
             >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
-                [[ currentLanguage === 'zh' ? 'K线趋势分析' : 'Trend Analysis' ]]
+                [[ currentLanguage === 'zh' ? '个股分析' : 'Trend Analysis' ]]
             </button>
             <button 
                 @click="currentTab = 'recommend'"
@@ -184,7 +184,7 @@
                 :class="currentTab === 'recommend' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'"
             >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
-                [[ currentLanguage === 'zh' ? '智能选股推荐' : 'Smart Picks' ]]
+                [[ currentLanguage === 'zh' ? '市场风向' : 'Smart Picks' ]]
             </button>
             <button 
                 @click="currentTab = 'portfolio'"
