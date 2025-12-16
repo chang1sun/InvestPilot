@@ -45,5 +45,53 @@ def create_app(config_class=Config):
     
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(main_bp)
+    
+    # Import models to ensure they are registered
+    from app.models.analysis import User, Task
+    
+    # Register error handlers for API routes to return JSON
+    @app.errorhandler(500)
+    @app.errorhandler(404)
+    @app.errorhandler(403)
+    @app.errorhandler(401)
+    def handle_error(e):
+        """Ensure API errors return JSON instead of HTML"""
+        from flask import request, jsonify
+        # Only return JSON for API routes
+        if request.path.startswith('/api/'):
+            code = getattr(e, 'code', 500)
+            message = getattr(e, 'description', str(e))
+            return jsonify({
+                'error': message,
+                'code': code
+            }), code
+        # For non-API routes, use default Flask error handling
+        return e
+    
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """Handle all unhandled exceptions for API routes"""
+        from flask import request, jsonify
+        import traceback
+        
+        # Only return JSON for API routes
+        if request.path.startswith('/api/'):
+            # Log the full traceback for debugging
+            app.logger.error(f"Unhandled exception: {str(e)}\n{traceback.format_exc()}")
+            
+            # Return user-friendly error message
+            error_msg = str(e)
+            if 'cryptography' in error_msg.lower():
+                error_msg = '数据库连接失败：缺少必要的加密库。请确保已安装 cryptography 包。'
+            elif 'connection' in error_msg.lower() or 'database' in error_msg.lower():
+                error_msg = '数据库连接失败，请检查数据库配置。'
+            
+            return jsonify({
+                'error': error_msg,
+                'code': 500
+            }), 500
+        
+        # For non-API routes, re-raise the exception
+        raise e
 
     return app

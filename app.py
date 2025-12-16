@@ -1,3 +1,8 @@
+"""
+Local development entry point
+Use this file for local development: python app.py
+For production/Docker, use wsgi.py instead
+"""
 from app import create_app, db
 
 app = create_app()

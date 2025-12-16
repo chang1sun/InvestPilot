@@ -64,12 +64,194 @@
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
+        
+        /* Task List Animation */
+        @keyframes slide-in-right {
+            from {
+                transform: translateX(100%);
+            }
+            to {
+                transform: translateX(0);
+            }
+        }
+        
+        @keyframes fade-in {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+        
+        .animate-fade-in {
+            animation: fade-in 0.3s ease-out;
+        }
+        
+        /* Task Item Animation */
+        @keyframes task-add {
+            0% {
+                opacity: 0;
+                transform: translateX(20px) scale(0.95);
+            }
+            100% {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+        
+        .task-item {
+            animation: task-add 0.3s ease-out;
+        }
+        
+        /* Toast Notification */
+        @keyframes toast-slide-in {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes toast-slide-out {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+        
+        .toast-enter {
+            animation: toast-slide-in 0.3s ease-out;
+        }
+        
+        .toast-exit {
+            animation: toast-slide-out 0.3s ease-out;
+        }
+        
+        /* Button Click Animation */
+        @keyframes button-click {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(0.95);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+        
+        .btn-click-animation {
+            animation: button-click 0.3s ease-out;
+        }
+        
+        /* Loading Spinner */
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+        
+        /* Task List Slide Animation */
+        .task-list-slide {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* Pulse Animation for New Task */
+        @keyframes pulse-glow {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
+            }
+        }
+        
+        .task-new {
+            animation: pulse-glow 1.5s ease-out, task-add 0.3s ease-out;
+        }
+        
+        /* Draggable Button Styles */
+        .dragging {
+            cursor: grabbing !important;
+            opacity: 0.8;
+            transform: scale(1.1);
+        }
+        
+        /* Recommendation Card Enhancements */
+        .recommendation-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .recommendation-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            border-color: #3b82f6;
+        }
+        
+        /* Portfolio Diagnosis Enhancements */
+        .portfolio-input-group {
+            position: relative;
+        }
+        
+        .portfolio-input-group::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: linear-gradient(to bottom, #9333ea, #ec4899);
+            border-radius: 3px 0 0 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .portfolio-input-group:focus-within::before {
+            opacity: 1;
+        }
+        
+        .portfolio-result-card {
+            background: linear-gradient(135deg, #ffffff 0%, #faf5ff 100%);
+            border: 2px solid #e9d5ff;
+            box-shadow: 0 10px 15px -3px rgba(139, 92, 246, 0.1), 0 4px 6px -2px rgba(139, 92, 246, 0.05);
+        }
+        
+        /* Shimmer animation for buttons */
+        @keyframes shimmer {
+            0% {
+                transform: translateX(-100%);
+            }
+            100% {
+                transform: translateX(100%);
+            }
+        }
+        
+        .animate-shimmer {
+            animation: shimmer 2s infinite;
+        }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col font-sans">
     <div id="app" v-cloak class="flex flex-col min-h-screen">
         <!-- Disclaimer Banner (Always Visible at Top) -->
-        <div class="bg-gradient-to-r from-red-50 via-orange-50 to-yellow-50 border-b-2 border-red-400 shadow-md sticky top-0 z-50">
+        <div v-if="showDisclaimer" class="bg-gradient-to-r from-red-50 via-orange-50 to-yellow-50 border-b-2 border-red-400 shadow-md sticky top-0 z-50">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
                 <div class="flex items-start gap-3">
                     <div class="flex-shrink-0 mt-0.5">
@@ -79,7 +261,6 @@
                     </div>
                     <div class="flex-1">
                         <div class="text-base font-bold text-red-900 mb-1 flex items-center gap-2">
-                            <span>⚠️</span>
                             <span>[[ currentLanguage === 'zh' ? '免责声明' : 'Disclaimer' ]]</span>
                         </div>
                         <div class="text-sm text-red-800 leading-relaxed">
@@ -89,8 +270,294 @@
                             ]]
                         </div>
                     </div>
+                    <button 
+                        @click="closeDisclaimer"
+                        class="flex-shrink-0 text-red-600 hover:text-red-800 hover:bg-red-100 rounded-full p-1 transition-colors"
+                        :title="currentLanguage === 'zh' ? '关闭' : 'Close'"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
                 </div>
             </div>
+        </div>
+
+        <!-- User Login Modal -->
+        <div v-if="showLoginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showLoginModal = false">
+            <div class="bg-white rounded-xl shadow-xl p-8 max-w-md w-full mx-4 animate-fade-in">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">
+                    [[ currentLanguage === 'zh' ? '欢迎使用 Invest Pilot' : 'Welcome to Invest Pilot' ]]
+                </h2>
+                <form @submit.prevent="handleLogin">
+                    <div class="mb-4">
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '昵称' : 'Nickname' ]]
+                        </label>
+                        <input 
+                            v-model="loginForm.nickname"
+                            type="text"
+                            required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            :placeholder="currentLanguage === 'zh' ? '请输入您的昵称' : 'Enter your nickname'"
+                        >
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '邮箱' : 'Email' ]]
+                        </label>
+                        <input 
+                            v-model="loginForm.email"
+                            type="email"
+                            required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            :placeholder="currentLanguage === 'zh' ? '请输入您的邮箱' : 'Enter your email'"
+                        >
+                    </div>
+                    <button 
+                        type="submit"
+                        class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors"
+                    >
+                        [[ currentLanguage === 'zh' ? '开始使用' : 'Get Started' ]]
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div 
+            v-if="toastMessage"
+            class="fixed top-20 right-4 z-50 toast-enter"
+            :class="toastType === 'success' ? 'bg-green-500' : toastType === 'error' ? 'bg-red-500' : 'bg-blue-500'"
+        >
+            <div class="flex items-center gap-3 px-6 py-4 rounded-lg shadow-xl text-white min-w-[300px]">
+                <svg v-if="toastType === 'success'" class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <svg v-else-if="toastType === 'error'" class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+                <svg v-else class="w-6 h-6 flex-shrink-0 spinner" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                <div class="flex-1">
+                    <p class="font-semibold text-sm">[[ toastMessage ]]</p>
+                </div>
+                <button @click="toastMessage = ''" class="text-white hover:text-gray-200">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Duplicate Task Dialog -->
+        <div 
+            v-if="showDuplicateTaskDialog"
+            class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in"
+            @click.self="showDuplicateTaskDialog = false"
+        >
+            <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 transform transition-all animate-fade-in">
+                <div class="p-6">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
+                            <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-lg font-bold text-gray-800">
+                                [[ currentLanguage === 'zh' ? '任务已存在' : 'Task Already Running' ]]
+                            </h3>
+                            <p class="text-sm text-gray-500 mt-1">
+                                [[ currentLanguage === 'zh' ? '检测到正在运行的任务' : 'A running task detected' ]]
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                        <div class="flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <div class="flex-1">
+                                <p class="text-sm text-gray-700 font-medium mb-1">
+                                    [[ currentLanguage === 'zh' ? '已有正在运行的任务：' : 'Running task: ' ]]
+                                    <span class="font-bold text-blue-700">[[ duplicateTaskInfo.symbol ]]</span>
+                                </p>
+                                <p class="text-xs text-gray-500">
+                                    [[ currentLanguage === 'zh' ? '创建时间：' : 'Created: ' ]]
+                                    [[ formatTime(duplicateTaskInfo.created_at) ]]
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <button 
+                            @click="handleDuplicateTaskChoice('wait')"
+                            class="w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            [[ currentLanguage === 'zh' ? '等待现有任务完成' : 'Wait for Existing Task' ]]
+                        </button>
+                        <button 
+                            @click="handleDuplicateTaskChoice('cancel')"
+                            class="w-full px-4 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            [[ currentLanguage === 'zh' ? '取消现有任务并创建新任务' : 'Cancel Existing & Create New' ]]
+                        </button>
+                        <button 
+                            @click="showDuplicateTaskDialog = false"
+                            class="w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
+                        >
+                            [[ currentLanguage === 'zh' ? '取消' : 'Cancel' ]]
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Task List Sidebar (Always Visible) -->
+        <div class="fixed right-0 top-0 h-full w-80 bg-white shadow-2xl z-40 task-list-slide" :class="taskListVisible ? 'translate-x-0' : 'translate-x-full'">
+            <div class="h-full flex flex-col">
+                <!-- Task List Header -->
+                <div class="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                            </svg>
+                            [[ currentLanguage === 'zh' ? '任务列表' : 'Task List' ]]
+                        </h3>
+                        <button @click="taskListVisible = false" class="text-gray-500 hover:text-gray-700">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <!-- Status Filter -->
+                    <div class="flex gap-2 flex-wrap">
+                        <button 
+                            v-for="status in taskStatusFilters" 
+                            :key="status.value"
+                            @click="taskFilterStatus = status.value"
+                            class="px-3 py-1 text-xs rounded-full font-medium transition-colors"
+                            :class="taskFilterStatus === status.value ? 
+                                'bg-blue-600 text-white' : 
+                                'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                        >
+                            [[ status.label ]]
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Task List Content -->
+                <div class="flex-1 overflow-y-auto p-4">
+                    <div v-if="filteredTasks.length === 0" class="text-center py-12 text-gray-400">
+                        <svg class="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                        </svg>
+                        <p>[[ currentLanguage === 'zh' ? '暂无任务' : 'No tasks' ]]</p>
+                    </div>
+                    <div v-else class="space-y-3">
+                        <div 
+                            v-for="task in filteredTasks" 
+                            :key="task.task_id"
+                            class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                            :class="{
+                                'task-new': task._isNew,
+                                'task-item': !task._isNew,
+                                'border-blue-300 bg-blue-50': task.status === 'running',
+                                'border-green-300 bg-green-50': task.status === 'completed',
+                                'border-red-300 bg-red-50': task.status === 'failed',
+                                'border-gray-300 bg-gray-50': task.status === 'terminated'
+                            }"
+                        >
+                            <!-- Task Header -->
+                            <div class="flex items-start justify-between mb-2">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="px-2 py-1 text-xs rounded font-bold" :class="{
+                                            'bg-blue-100 text-blue-700': task.status === 'running',
+                                            'bg-green-100 text-green-700': task.status === 'completed',
+                                            'bg-red-100 text-red-700': task.status === 'failed',
+                                            'bg-gray-100 text-gray-700': task.status === 'terminated'
+                                        }">
+                                            [[ getTaskStatusLabel(task.status) ]]
+                                        </span>
+                                        <span class="text-xs text-gray-500">[[ getTaskTypeLabel(task.task_type) ]]</span>
+                                    </div>
+                                    <div class="text-sm font-medium text-gray-800" v-if="task.task_params">
+                                        [[ getTaskTitle(task) ]]
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Task Time -->
+                            <div class="text-xs text-gray-500 mb-3">
+                                [[ formatTime(task.created_at) ]]
+                            </div>
+                            
+                            <!-- Task Actions -->
+                            <div class="flex gap-2">
+                                <button 
+                                    v-if="task.status === 'running'"
+                                    @click="terminateTask(task.task_id)"
+                                    class="flex-1 px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 font-medium transition-colors"
+                                >
+                                    [[ currentLanguage === 'zh' ? '终止' : 'Terminate' ]]
+                                </button>
+                                <button 
+                                    v-if="task.status === 'completed'"
+                                    @click="showTaskResult(task)"
+                                    class="flex-1 px-3 py-1.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-medium transition-colors"
+                                >
+                                    [[ currentLanguage === 'zh' ? '显示结果' : 'Show Result' ]]
+                                </button>
+                                <button 
+                                    v-if="task.status === 'failed'"
+                                    class="flex-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded cursor-not-allowed"
+                                    :title="task.error_message"
+                                >
+                                    [[ currentLanguage === 'zh' ? '失败' : 'Failed' ]]
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Task List Toggle Button (Draggable) -->
+        <div 
+            ref="taskButtonRef"
+            class="fixed bg-blue-600 text-white p-4 rounded-full shadow-xl hover:bg-blue-700 transition-colors z-30 flex items-center gap-2 cursor-move select-none"
+            :class="{'bg-red-600 hover:bg-red-700': taskListVisible}"
+            :style="{ left: taskButtonPosition.x + 'px', top: taskButtonPosition.y + 'px' }"
+            @mousedown="startDrag"
+        >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+            </svg>
+            <span class="font-bold" v-if="runningTasksCount > 0">[[ runningTasksCount ]]</span>
+            <button 
+                @click.stop="taskListVisible = !taskListVisible"
+                class="ml-1 text-white hover:text-gray-200"
+                :title="currentLanguage === 'zh' ? '点击切换任务列表' : 'Click to toggle task list'"
+            >
+                <svg v-if="taskListVisible" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
         </div>
 
         <div class="container mx-auto px-4 py-4 flex-1 flex flex-col">
@@ -131,39 +598,6 @@
                 <div class="flex bg-gray-100 rounded-lg p-1">
                     <button @click="currentLanguage = 'zh'" class="px-3 py-1 text-xs font-bold rounded-md transition-colors" :class="currentLanguage === 'zh' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">中文</button>
                     <button @click="currentLanguage = 'en'" class="px-3 py-1 text-xs font-bold rounded-md transition-colors" :class="currentLanguage === 'en' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">EN</button>
-                </div>
-
-                <!-- Search Box (Only visible in analysis tab) -->
-                <div v-if="currentTab === 'analysis'" class="relative w-80">
-                    <div class="flex gap-2">
-                        <div class="relative flex-1">
-                            <input 
-                                type="text" 
-                                v-model="query" 
-                                @input="handleSearch"
-                                @keyup.enter="analyzeStock(query)"
-                                :placeholder="currentLanguage === 'zh' ? '输入股票代码 (如 AAPL, 0700.HK)' : 'Enter Symbol (e.g., AAPL)'"
-                                class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            >
-                            <div v-if="suggestions.length > 0" class="absolute z-50 w-full bg-white mt-1 rounded-md shadow-lg border border-gray-200 max-h-60 overflow-auto">
-                                <div 
-                                    v-for="item in suggestions" 
-                                    @click="selectStock(item.symbol)"
-                                    class="px-4 py-2 hover:bg-gray-100 cursor-pointer flex justify-between text-sm"
-                                >
-                                    <span class="font-medium">[[ item.symbol ]]</span>
-                                    <span class="text-gray-500">[[ item.name ]]</span>
-                                </div>
-                            </div>
-                        </div>
-                        <button 
-                            @click="analyzeStock(query)" 
-                            :disabled="loadingAnalysis || !query"
-                            class="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap shadow-md transition-all active:scale-95"
-                        >
-                            [[ loadingAnalysis ? (currentLanguage === 'zh' ? '分析中...' : 'Analyzing...') : (currentLanguage === 'zh' ? '开始' : 'Start') ]]
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -207,6 +641,64 @@
 
         <!-- Analysis Tab Content -->
         <template v-if="currentTab === 'analysis'">
+            <!-- Compact Search Section -->
+            <div class="mb-6">
+                <div class="max-w-3xl mx-auto">
+                    <div class="bg-white rounded-xl shadow-md border border-gray-200 p-4 flex items-center gap-3">
+                        <div class="flex-shrink-0">
+                            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="flex-1 relative">
+                            <input 
+                                type="text" 
+                                v-model="query" 
+                                @input="handleSearch"
+                                @keyup.enter="analyzeStock(query)"
+                                :placeholder="currentLanguage === 'zh' ? '输入股票代码 (如 AAPL, 0700.HK)' : 'Enter Symbol (e.g., AAPL)'"
+                                class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none text-sm font-medium transition-all"
+                            >
+                            <div v-if="suggestions.length > 0" class="absolute z-50 w-full bg-white mt-1 rounded-lg shadow-xl border border-gray-200 max-h-60 overflow-auto">
+                                <div 
+                                    v-for="item in suggestions" 
+                                    @click="selectStock(item.symbol)"
+                                    class="px-4 py-2.5 hover:bg-blue-50 cursor-pointer flex justify-between items-center text-sm border-b border-gray-100 last:border-0 transition-colors"
+                                >
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-900">[[ item.symbol ]]</span>
+                                        <span class="text-gray-500 text-xs">[[ item.name ]]</span>
+                                    </div>
+                                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        <button 
+                            @click="analyzeStock(query)" 
+                            :disabled="creatingTask || !query"
+                            :class="[
+                                'px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm whitespace-nowrap flex items-center gap-2 relative overflow-hidden',
+                                creatingTask ? 'btn-click-animation' : ''
+                            ]"
+                        >
+                            <svg v-if="!creatingTask" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            <svg v-else class="w-4 h-4 spinner" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            <span>
+                                [[ creatingTask ? (currentLanguage === 'zh' ? '创建中...' : 'Creating...') : (currentLanguage === 'zh' ? '分析' : 'Analyze') ]]
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Result View -->
             <div v-if="!loadingAnalysis && analysisResult" class="flex-1 flex flex-col gap-6 animate-fade-in">
                 
@@ -501,53 +993,93 @@
             <div class="space-y-6">
                 
                 <!-- Filters & Generate Button -->
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-                            <span class="text-blue-500 text-xl">★</span> [[ currentLanguage === 'zh' ? '市场机会挖掘' : 'Market Scanner' ]]
-                        </h3>
+                <div class="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/30 p-8 rounded-2xl shadow-lg border-2 border-blue-100/50 backdrop-blur-sm">
+                    <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
+                                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                    [[ currentLanguage === 'zh' ? '市场机会挖掘' : 'Market Scanner' ]]
+                                </h3>
+                                <p class="text-xs text-gray-500 mt-1">[[ currentLanguage === 'zh' ? 'AI 驱动的智能选股推荐' : 'AI-Powered Stock Recommendations' ]]</p>
+                            </div>
+                        </div>
                         <button 
                             @click="getRecommendations" 
-                            :disabled="loadingRecommend"
-                            class="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full hover:shadow-lg transition-all font-bold text-sm btn-pulse flex items-center gap-2 disabled:opacity-70 disabled:cursor-wait"
+                            :disabled="creatingTask || loadingRecommend"
+                            :class="[
+                                'px-8 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white rounded-full hover:shadow-xl transition-all font-bold text-sm flex items-center gap-2 disabled:opacity-70 disabled:cursor-wait relative overflow-hidden',
+                                creatingTask ? 'btn-click-animation' : 'btn-pulse'
+                            ]"
                         >
-                            <svg v-if="!loadingRecommend" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                            <svg v-else class="animate-spin w-4 h-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                            [[ loadingRecommend ? (currentLanguage === 'zh' ? '扫描中...' : 'Scanning...') : (currentLanguage === 'zh' ? 'AI 智能扫描' : 'AI Smart Scan') ]]
+                            <span class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></span>
+                            <svg v-if="!creatingTask && !loadingRecommend" class="w-5 h-5 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            <svg v-else class="w-5 h-5 spinner relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            <span class="relative z-10">
+                                [[ creatingTask ? (currentLanguage === 'zh' ? '创建任务中...' : 'Creating task...') : (loadingRecommend ? (currentLanguage === 'zh' ? '扫描中...' : 'Scanning...') : (currentLanguage === 'zh' ? 'AI 智能扫描' : 'AI Smart Scan')) ]]
+                            </span>
                         </button>
                     </div>
                     
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '市场选择' : 'Market' ]]</label>
-                            <select v-model="recCriteria.market" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium">
+                        <div class="portfolio-input-group">
+                            <label class="block text-xs font-bold text-gray-600 uppercase mb-2 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '市场选择' : 'Market' ]]
+                            </label>
+                            <select v-model="recCriteria.market" class="w-full bg-white border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-medium transition-all shadow-sm hover:shadow-md">
                                 <option value="Any">[[ currentLanguage === 'zh' ? '不限' : 'Any' ]]</option>
                                 <option value="US">[[ currentLanguage === 'zh' ? '美股 (US)' : 'US Stocks' ]]</option>
                                 <option value="HK">[[ currentLanguage === 'zh' ? '港股 (HK)' : 'HK Stocks' ]]</option>
                                 <option value="A">[[ currentLanguage === 'zh' ? 'A股 (A)' : 'A-Shares' ]]</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '资金规模' : 'Capital' ]]</label>
-                            <select v-model="recCriteria.capital" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium">
+                        <div class="portfolio-input-group">
+                            <label class="block text-xs font-bold text-gray-600 uppercase mb-2 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '资金规模' : 'Capital' ]]
+                            </label>
+                            <select v-model="recCriteria.capital" class="w-full bg-white border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-medium transition-all shadow-sm hover:shadow-md">
                                 <option value="Any">[[ currentLanguage === 'zh' ? '不限' : 'Any' ]]</option>
                                 <option value="Small (<10w)">[[ currentLanguage === 'zh' ? '小资金 (<10w)' : 'Small (<10k)' ]]</option>
                                 <option value="Medium (10w-50w)">[[ currentLanguage === 'zh' ? '中等资金 (10w-50w)' : 'Medium (10k-50k)' ]]</option>
                                 <option value="Large (>50w)">[[ currentLanguage === 'zh' ? '大资金 (>50w)' : 'Large (>50k)' ]]</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '风险偏好' : 'Risk' ]]</label>
-                            <select v-model="recCriteria.risk" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium">
+                        <div class="portfolio-input-group">
+                            <label class="block text-xs font-bold text-gray-600 uppercase mb-2 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '风险偏好' : 'Risk' ]]
+                            </label>
+                            <select v-model="recCriteria.risk" class="w-full bg-white border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-medium transition-all shadow-sm hover:shadow-md">
                                 <option value="Any">[[ currentLanguage === 'zh' ? '不限' : 'Any' ]]</option>
                                 <option value="Conservative">[[ currentLanguage === 'zh' ? '稳健型 (低风险)' : 'Conservative' ]]</option>
                                 <option value="Balanced">[[ currentLanguage === 'zh' ? '平衡型 (中风险)' : 'Balanced' ]]</option>
                                 <option value="Aggressive">[[ currentLanguage === 'zh' ? '进取型 (高风险)' : 'Aggressive' ]]</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '交易频率' : 'Frequency' ]]</label>
-                            <select v-model="recCriteria.frequency" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium">
+                        <div class="portfolio-input-group">
+                            <label class="block text-xs font-bold text-gray-600 uppercase mb-2 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '交易频率' : 'Frequency' ]]
+                            </label>
+                            <select v-model="recCriteria.frequency" class="w-full bg-white border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-medium transition-all shadow-sm hover:shadow-md">
                                 <option value="Any">[[ currentLanguage === 'zh' ? '不限' : 'Any' ]]</option>
                                 <option value="Short-term">[[ currentLanguage === 'zh' ? '短线 (日内/周)' : 'Short-term' ]]</option>
                                 <option value="Swing">[[ currentLanguage === 'zh' ? '波段 (周/月)' : 'Swing' ]]</option>
@@ -558,34 +1090,57 @@
                 </div>
 
                 <!-- Market Overview -->
-                <div v-if="recommendationResult && recommendationResult.market_overview" class="bg-blue-50 border border-blue-100 p-5 rounded-xl text-gray-800 text-sm leading-relaxed shadow-sm relative">
-                     <div class="mb-2">
-                        <div class="font-bold text-blue-600 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            [[ currentLanguage === 'zh' ? '市场风向' : 'Market Overview' ]]
+                <div v-if="recommendationResult && recommendationResult.market_overview" class="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200/50 p-6 rounded-2xl text-gray-800 leading-relaxed shadow-lg relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full -mr-16 -mt-16"></div>
+                    <div class="absolute bottom-0 left-0 w-24 h-24 bg-indigo-200/20 rounded-full -ml-12 -mb-12"></div>
+                    <div class="relative z-10">
+                        <div class="mb-3 flex items-center gap-2">
+                            <div class="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-md">
+                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                            </div>
+                            <div class="font-bold text-blue-700 text-lg flex items-center gap-2">
+                                [[ currentLanguage === 'zh' ? '市场风向' : 'Market Overview' ]]
+                            </div>
                         </div>
+                        <p class="font-serif text-gray-700 leading-relaxed text-base">[[ recommendationResult.market_overview ]]</p>
                     </div>
-                    <p class="font-serif text-gray-700 leading-relaxed">[[ recommendationResult.market_overview ]]</p>
                 </div>
 
                 <!-- Recommendations List -->
-                <div v-if="recommendationResult && recommendationResult.recommendations" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div v-for="(rec, idx) in recommendationResult.recommendations" :key="idx" class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow group">
-                        <div class="flex justify-between items-start mb-3">
-                            <div>
-                                <div class="flex items-center gap-3">
-                                    <h4 class="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">[[ rec.symbol ]]</h4>
-                                    <span class="text-sm text-gray-500">[[ rec.name ]]</span>
-                                    <span class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-md font-bold">[[ rec.level ]]</span>
+                <div v-if="recommendationResult && recommendationResult.recommendations" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div v-for="(rec, idx) in recommendationResult.recommendations" :key="idx" class="recommendation-card p-6 rounded-2xl group relative overflow-hidden">
+                        <!-- Decorative gradient overlay -->
+                        <div class="absolute inset-0 bg-gradient-to-br from-blue-50/0 via-indigo-50/0 to-purple-50/0 group-hover:from-blue-50/50 group-hover:via-indigo-50/30 group-hover:to-purple-50/20 transition-all duration-300"></div>
+                        
+                        <div class="relative z-10">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-3 mb-2 flex-wrap">
+                                        <h4 class="text-xl font-extrabold text-gray-900 group-hover:text-blue-600 transition-colors">[[ rec.symbol ]]</h4>
+                                        <span class="text-sm text-gray-500 font-medium">[[ rec.name ]]</span>
+                                        <span class="px-3 py-1 bg-gradient-to-r from-yellow-400 to-orange-400 text-white text-xs rounded-full font-bold shadow-sm">
+                                            [[ rec.level ]]
+                                        </span>
+                                    </div>
+                                    <div class="text-3xl font-extrabold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent mt-2">
+                                        [[ rec.price ]]
+                                    </div>
                                 </div>
-                                <div class="text-2xl font-bold text-gray-800 mt-1">[[ rec.price ]]</div>
+                                <button 
+                                    @click="selectStock(rec.symbol); currentTab='analysis'; analyzeStock(rec.symbol)" 
+                                    class="ml-4 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg opacity-0 group-hover:opacity-100 transition-all transform hover:scale-105 flex items-center gap-2"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                    </svg>
+                                    [[ currentLanguage === 'zh' ? '分析' : 'Analyze' ]]
+                                </button>
                             </div>
-                            <button @click="selectStock(rec.symbol); currentTab='analysis'; analyzeStock(rec.symbol)" class="text-blue-600 hover:text-blue-800 text-sm font-medium underline opacity-0 group-hover:opacity-100 transition-opacity">
-                                [[ currentLanguage === 'zh' ? '查看K线分析' : 'Analyze' ]] →
-                            </button>
-                        </div>
-                        <div class="text-gray-600 text-sm leading-relaxed bg-gray-50 p-3 rounded-lg">
-                            [[ rec.reason ]]
+                            <div class="text-gray-700 text-sm leading-relaxed bg-gradient-to-br from-gray-50 to-blue-50/30 p-4 rounded-xl border border-gray-100">
+                                <p class="font-medium">[[ rec.reason ]]</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -692,70 +1247,146 @@
 
         <!-- Portfolio Diagnosis Tab Content -->
         <div v-if="currentTab === 'portfolio' && !loadingPortfolio" class="flex-1 flex flex-col items-center animate-fade-in">
-             <div class="max-w-2xl w-full space-y-6">
-                <div class="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
-                    <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3 justify-center">
-                        <span class="text-purple-500 text-3xl">💊</span> [[ currentLanguage === 'zh' ? '持仓诊断专家' : 'Portfolio Doctor' ]]
-                    </h3>
+             <div class="max-w-3xl w-full space-y-8">
+                <!-- Input Form Card -->
+                <div class="bg-gradient-to-br from-white via-purple-50/30 to-pink-50/30 p-8 rounded-2xl shadow-xl border-2 border-purple-100/50 backdrop-blur-sm relative overflow-hidden">
+                    <!-- Decorative elements -->
+                    <div class="absolute top-0 right-0 w-40 h-40 bg-purple-200/20 rounded-full -mr-20 -mt-20"></div>
+                    <div class="absolute bottom-0 left-0 w-32 h-32 bg-pink-200/20 rounded-full -ml-16 -mb-16"></div>
                     
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                        <div>
-                            <label class="block text-sm font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '持有代码' : 'Symbol' ]]</label>
-                            <input v-model="portfolio.symbol" type="text" placeholder="例如 AAPL" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-base uppercase focus:ring-2 focus:ring-purple-500 outline-none font-bold text-center">
+                    <div class="relative z-10">
+                        <div class="flex items-center justify-center gap-4 mb-8">
+                            <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl flex items-center justify-center shadow-lg">
+                                <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <div class="text-center">
+                                <h3 class="text-3xl font-extrabold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                                    [[ currentLanguage === 'zh' ? '持仓诊断专家' : 'Portfolio Doctor' ]]
+                                </h3>
+                                <p class="text-sm text-gray-500 mt-1">[[ currentLanguage === 'zh' ? 'AI 驱动的专业持仓分析' : 'AI-Powered Portfolio Analysis' ]]</p>
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '买入均价' : 'Avg Price' ]]</label>
-                            <input v-model="portfolio.avg_price" type="text" placeholder="0.00" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-base focus:ring-2 focus:ring-purple-500 outline-none text-center">
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <div class="portfolio-input-group">
+                                <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                                    </svg>
+                                    [[ currentLanguage === 'zh' ? '持有代码' : 'Symbol' ]]
+                                </label>
+                                <input 
+                                    v-model="portfolio.symbol" 
+                                    type="text" 
+                                    placeholder="例如 AAPL" 
+                                    class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base uppercase focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none font-bold text-center transition-all shadow-sm hover:shadow-md"
+                                >
+                            </div>
+                            <div class="portfolio-input-group">
+                                <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    [[ currentLanguage === 'zh' ? '买入均价' : 'Avg Price' ]]
+                                </label>
+                                <input 
+                                    v-model="portfolio.avg_price" 
+                                    type="text" 
+                                    placeholder="0.00" 
+                                    class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-center transition-all shadow-sm hover:shadow-md"
+                                >
+                            </div>
+                            <div class="portfolio-input-group">
+                                <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                    </svg>
+                                    [[ currentLanguage === 'zh' ? '仓位占比 (%)' : 'Weight (%)' ]]
+                                </label>
+                                <input 
+                                    v-model="portfolio.percentage" 
+                                    type="number" 
+                                    placeholder="20" 
+                                    class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-center transition-all shadow-sm hover:shadow-md"
+                                >
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-bold text-gray-500 uppercase mb-2">[[ currentLanguage === 'zh' ? '仓位占比 (%)' : 'Weight (%)' ]]</label>
-                            <input v-model="portfolio.percentage" type="number" placeholder="20" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-base focus:ring-2 focus:ring-purple-500 outline-none text-center">
-                        </div>
-                    </div>
 
-                    <button @click="diagnosePortfolio" :disabled="!portfolio.symbol" class="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all disabled:opacity-50 font-bold text-lg shadow-md flex justify-center items-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        [[ currentLanguage === 'zh' ? '开始诊断' : 'Start Diagnosis' ]]
-                    </button>
+                        <button 
+                            @click="diagnosePortfolio" 
+                            :disabled="!portfolio.symbol || creatingTask"
+                            :class="[
+                                'w-full py-5 bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white rounded-2xl hover:shadow-2xl transition-all disabled:opacity-50 font-bold text-lg shadow-xl flex justify-center items-center gap-3 relative overflow-hidden',
+                                creatingTask ? 'btn-click-animation' : ''
+                            ]"
+                        >
+                            <span class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></span>
+                            <svg v-if="!creatingTask" class="w-6 h-6 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <svg v-else class="w-6 h-6 spinner relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            <span class="relative z-10">
+                                [[ creatingTask ? (currentLanguage === 'zh' ? '创建任务中...' : 'Creating task...') : (currentLanguage === 'zh' ? '开始诊断' : 'Start Diagnosis') ]]
+                            </span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Diagnosis Result -->
-                <div v-if="portfolioResult" class="bg-white rounded-xl p-8 shadow-lg border border-purple-100 animate-fade-in relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-purple-500 to-pink-500"></div>
+                <div v-if="portfolioResult" class="portfolio-result-card rounded-2xl p-8 animate-fade-in relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500"></div>
                     
-                    <div class="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b-2 border-purple-100 pb-6 gap-4">
                         <div>
-                            <div class="text-sm text-gray-400 uppercase font-bold mb-1">[[ currentLanguage === 'zh' ? '诊断对象' : 'Target' ]]</div>
-                            <div class="text-3xl font-extrabold text-gray-800">[[ portfolioResult.symbol ]]</div>
+                            <div class="text-xs text-gray-400 uppercase font-bold mb-2 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '诊断对象' : 'Target' ]]
+                            </div>
+                            <div class="text-4xl font-extrabold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                                [[ portfolioResult.symbol ]]
+                            </div>
                         </div>
-                        <div class="text-right">
-                            <div class="text-sm text-gray-400 uppercase font-bold mb-1">[[ currentLanguage === 'zh' ? '评级' : 'Rating' ]]</div>
-                            <span class="px-4 py-2 rounded-lg text-xl font-bold shadow-sm inline-block"
+                        <div class="text-center md:text-right">
+                            <div class="text-xs text-gray-400 uppercase font-bold mb-2">[[ currentLanguage === 'zh' ? '评级' : 'Rating' ]]</div>
+                            <span class="px-6 py-3 rounded-xl text-xl font-bold shadow-lg inline-block transform hover:scale-105 transition-transform"
                                 :class="{
-                                    'bg-green-100 text-green-700': portfolioResult.rating && portfolioResult.rating.includes('Buy'),
-                                    'bg-red-100 text-red-700': portfolioResult.rating && portfolioResult.rating.includes('Sell'),
-                                    'bg-gray-100 text-gray-700': portfolioResult.rating && portfolioResult.rating.includes('Hold')
+                                    'bg-gradient-to-r from-green-400 to-emerald-500 text-white': portfolioResult.rating && portfolioResult.rating.includes('Buy'),
+                                    'bg-gradient-to-r from-red-400 to-rose-500 text-white': portfolioResult.rating && portfolioResult.rating.includes('Sell'),
+                                    'bg-gradient-to-r from-gray-400 to-slate-500 text-white': portfolioResult.rating && portfolioResult.rating.includes('Hold')
                                 }">
                                 [[ portfolioResult.rating ]]
                             </span>
                         </div>
                     </div>
                     
-                    <div class="mb-6 bg-purple-50 p-4 rounded-lg border border-purple-100">
-                        <div class="text-sm text-purple-800 font-bold mb-1 flex items-center gap-2">
-                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <div class="mb-8 bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 p-6 rounded-2xl border-2 border-purple-200/50 shadow-md">
+                        <div class="text-sm text-purple-700 font-bold mb-3 flex items-center gap-2">
+                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                             </svg>
                              [[ currentLanguage === 'zh' ? '建议操作' : 'Action' ]]
                         </div>
-                        <div class="font-bold text-gray-900 text-lg">[[ portfolioResult.action ]]</div>
+                        <div class="font-bold text-gray-900 text-xl leading-relaxed">[[ portfolioResult.action ]]</div>
                     </div>
                     
                     <div>
-                        <div class="mb-2">
-                            <span class="text-sm text-gray-500 font-bold uppercase">[[ currentLanguage === 'zh' ? '深度分析' : 'Analysis' ]]</span>
+                        <div class="mb-4 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <span class="text-sm text-gray-600 font-bold uppercase">[[ currentLanguage === 'zh' ? '深度分析' : 'Analysis' ]]</span>
                         </div>
-                        <p class="text-gray-700 leading-relaxed font-serif text-justify">
-                            [[ portfolioResult.analysis ]]
-                        </p>
+                        <div class="bg-gradient-to-br from-gray-50 to-purple-50/30 p-6 rounded-xl border border-gray-200">
+                            <p class="text-gray-700 leading-relaxed font-serif text-justify text-base">
+                                [[ portfolioResult.analysis ]]
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -807,10 +1438,23 @@
                 const currentTab = ref(savedPreferences.currentTab || 'analysis');
                 const currentLanguage = ref(savedPreferences.currentLanguage || 'en');
                 
+                // Disclaimer Banner State
+                const showDisclaimer = ref(!localStorage.getItem('disclaimerDismissed'));
+                
+                // Toast Notification
+                const toastMessage = ref('');
+                const toastType = ref('info'); // 'success', 'error', 'info'
+                
+                // Duplicate Task Dialog
+                const showDuplicateTaskDialog = ref(false);
+                const duplicateTaskInfo = ref({ symbol: '', task_id: '', created_at: '' });
+                const pendingAnalysisSymbol = ref(null);
+                
                 // Loading States (Independent)
                 const loadingAnalysis = ref(false);
                 const loadingRecommend = ref(false);
                 const loadingPortfolio = ref(false);
+                const creatingTask = ref(false);
                 
                 // 从 sessionStorage 恢复会话数据（刷新页面时保留）
                 const recCriteria = ref(sessionData.recCriteria || { market: 'Any', capital: 'Any', risk: 'Any', frequency: 'Any' });
@@ -835,6 +1479,45 @@
                 // Market News Management
                 const marketNews = ref([]);
                 const loadingMarketNews = ref(false);
+                
+                // User Authentication
+                const currentUser = ref(null);
+                const showLoginModal = ref(false);
+                const loginForm = ref({ nickname: '', email: '' });
+                const sessionId = ref(localStorage.getItem('investPilotSessionId') || null);
+                
+                // Task Management
+                const tasks = ref([]);
+                const taskListVisible = ref(false);
+                const taskFilterStatus = ref(null); // null = all, 'running', 'completed', 'terminated', 'failed'
+                const taskButtonRef = ref(null);
+                const taskButtonPosition = ref({ x: 0, y: 0 });
+                const isDragging = ref(false);
+                const dragStartPos = ref({ x: 0, y: 0 });
+                const taskStatusFilters = computed(() => {
+                    const isZh = currentLanguage.value === 'zh';
+                    return [
+                        { value: null, label: isZh ? '全部' : 'All' },
+                        { value: 'running', label: isZh ? '运行中' : 'Running' },
+                        { value: 'completed', label: isZh ? '已完成' : 'Completed' },
+                        { value: 'terminated', label: isZh ? '已终止' : 'Terminated' },
+                        { value: 'failed', label: isZh ? '失败' : 'Failed' }
+                    ];
+                });
+                let taskPollInterval = null;
+                
+                // Computed: Filtered tasks
+                const filteredTasks = computed(() => {
+                    if (!taskFilterStatus.value) {
+                        return tasks.value;
+                    }
+                    return tasks.value.filter(t => t.status === taskFilterStatus.value);
+                });
+                
+                // Computed: Running tasks count
+                const runningTasksCount = computed(() => {
+                    return tasks.value.filter(t => t.status === 'running').length;
+                });
                 
                 // Load models from API
                 const loadModels = async () => {
@@ -1064,8 +1747,91 @@
                     }
                 });
 
+                // Draggable Task Button Functions
+                const startDrag = (e) => {
+                    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                        return; // Don't drag if clicking the toggle button
+                    }
+                    isDragging.value = true;
+                    dragStartPos.value = {
+                        x: e.clientX - taskButtonPosition.value.x,
+                        y: e.clientY - taskButtonPosition.value.y
+                    };
+                    document.addEventListener('mousemove', onDrag);
+                    document.addEventListener('mouseup', stopDrag);
+                    e.preventDefault();
+                };
+                
+                const onDrag = (e) => {
+                    if (!isDragging.value) return;
+                    const newX = e.clientX - dragStartPos.value.x;
+                    const newY = e.clientY - dragStartPos.value.y;
+                    
+                    // Constrain to viewport
+                    const maxX = window.innerWidth - (taskButtonRef.value?.offsetWidth || 80);
+                    const maxY = window.innerHeight - (taskButtonRef.value?.offsetHeight || 80);
+                    
+                    taskButtonPosition.value = {
+                        x: Math.max(0, Math.min(newX, maxX)),
+                        y: Math.max(0, Math.min(newY, maxY))
+                    };
+                    
+                    // Save position to localStorage
+                    localStorage.setItem('taskButtonPosition', JSON.stringify(taskButtonPosition.value));
+                };
+                
+                const stopDrag = () => {
+                    isDragging.value = false;
+                    document.removeEventListener('mousemove', onDrag);
+                    document.removeEventListener('mouseup', stopDrag);
+                };
+                
+                // Load saved button position
+                const loadButtonPosition = () => {
+                    try {
+                        const saved = localStorage.getItem('taskButtonPosition');
+                        if (saved) {
+                            const pos = JSON.parse(saved);
+                            // Validate position is still within viewport
+                            const maxX = window.innerWidth - 80;
+                            const maxY = window.innerHeight - 80;
+                            taskButtonPosition.value = {
+                                x: Math.max(0, Math.min(pos.x, maxX)),
+                                y: Math.max(0, Math.min(pos.y, maxY))
+                            };
+                        } else {
+                            // Default position: bottom right
+                            taskButtonPosition.value = {
+                                x: window.innerWidth - 80,
+                                y: window.innerHeight - 80
+                            };
+                        }
+                    } catch {
+                        taskButtonPosition.value = {
+                            x: window.innerWidth - 80,
+                            y: window.innerHeight - 80
+                        };
+                    }
+                };
+                
                 // 刷新页面后恢复图表（如果有 analysisResult）
-                onMounted(() => {
+                onMounted(async () => {
+                    // Load button position
+                    loadButtonPosition();
+                    
+                    // Update position on window resize
+                    window.addEventListener('resize', () => {
+                        const maxX = window.innerWidth - 80;
+                        const maxY = window.innerHeight - 80;
+                        taskButtonPosition.value = {
+                            x: Math.min(taskButtonPosition.value.x, maxX),
+                            y: Math.min(taskButtonPosition.value.y, maxY)
+                        };
+                    });
+                    
+                    // Check authentication first
+                    await checkAuth();
+                    
                     // Load available models, trending stocks, and market news
                     loadModels();
                     loadTrendingStocks();
@@ -1075,6 +1841,12 @@
                         nextTick(() => {
                             initChart(analysisResult.value);
                         });
+                    }
+                    
+                    // Start task polling if authenticated
+                    if (currentUser.value) {
+                        loadTasks();
+                        startTaskPolling();
                     }
                 });
 
@@ -1111,20 +1883,41 @@
                     expandedTrades.value[index] = !expandedTrades.value[index];
                 };
 
+                const showToast = (message, type = 'info', duration = 3000) => {
+                    toastMessage.value = message;
+                    toastType.value = type;
+                    setTimeout(() => {
+                        toastMessage.value = '';
+                    }, duration);
+                };
+
                 const analyzeStock = async (symbol) => {
                     if (!symbol) return;
+                    
+                    // Check authentication
+                    if (!currentUser.value) {
+                        showLoginModal.value = true;
+                        return;
+                    }
+                    
                     suggestions.value = []; // Clear suggestions
-                    loadingAnalysis.value = true;
-                    // Note: We DON'T clear analysisResult immediately to prevent flicker if just refreshing logic, 
-                    // but usually we want to show new loading state.
-                    // For better UX, we can clear it or keep it stale. Let's clear for clarity of new request.
-                    analysisResult.value = null; 
-                    expandedTrades.value = {}; // Reset expansion state
+                    creatingTask.value = true;
+                    
+                    // Show initial toast
+                    showToast(
+                        currentLanguage.value === 'zh' ? '正在创建分析任务...' : 'Creating analysis task...',
+                        'info',
+                        2000
+                    );
                     
                     try {
-                        const res = await fetch('/api/analyze', {
+                        // Create async task
+                        const res = await fetch('/api/analyze_async', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'X-Session-ID': sessionId.value
+                            },
                             body: JSON.stringify({ 
                                 symbol,
                                 model: selectedModel.value,
@@ -1132,26 +1925,74 @@
                             })
                         });
                         
-                        if (!res.ok) throw new Error('Analysis failed');
-                        
                         const data = await res.json();
-                        analysisResult.value = data;
-                        
-                        if (data.analysis.analysis_summary && data.analysis.analysis_summary.includes('Quota Exceeded')) {
+                        if (data.success) {
+                            // Show success toast
+                            showToast(
+                                currentLanguage.value === 'zh' ? `任务已创建：${symbol}` : `Task created: ${symbol}`,
+                                'success',
+                                3000
+                            );
+                            
+                            // Show task list with animation
+                            taskListVisible.value = true;
+                            
+                            // Small delay to ensure task is saved to DB
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            await loadTasks();
+                            
+                            // Highlight the new task
+                            const newTask = tasks.value.find(t => t.task_id === data.task_id);
+                            if (newTask) {
+                                newTask._isNew = true;
+                                setTimeout(() => {
+                                    if (newTask) delete newTask._isNew;
+                                }, 2000);
+                            }
+                            
+                            // Poll for completion
+                            pollTaskUntilComplete(data.task_id, (result) => {
+                                analysisResult.value = result;
+                                expandedTrades.value = {};
+                                if (result.analysis && result.analysis.analysis_summary && result.analysis.analysis_summary.includes('Quota Exceeded')) {
                             const m = models.value.find(m => m.id === selectedModel.value);
                             if (m) m.status = 'limit';
                         }
 
+                                // Show completion toast
+                                showToast(
+                                    currentLanguage.value === 'zh' ? `🎉 分析完成：${symbol}` : `🎉 Analysis completed: ${symbol}`,
+                                    'success',
+                                    3000
+                                );
+                                
+                                nextTick(() => {
+                                    if (chartRef.value) {
+                                        initChart(result);
+                                    }
+                                });
+                            });
+                        } else if (data.error === 'duplicate_task') {
+                            // Handle duplicate task
+                            duplicateTaskInfo.value = {
+                                symbol: symbol,
+                                task_id: data.existing_task_id,
+                                created_at: data.existing_task_created_at
+                            };
+                            pendingAnalysisSymbol.value = symbol;
+                            showDuplicateTaskDialog.value = true;
+                        } else {
+                            throw new Error(data.error || data.message || 'Failed to create task');
+                        }
                     } catch (err) {
-                        alert('分析失败 (Analysis Failed): ' + err);
+                        showToast(
+                            currentLanguage.value === 'zh' ? `❌ 创建任务失败：${err.message}` : `❌ Failed to create task: ${err.message}`,
+                            'error',
+                            4000
+                        );
                         console.error(err);
                     } finally {
-                        loadingAnalysis.value = false;
-                        if (analysisResult.value) {
-                            nextTick(() => {
-                                initChart(analysisResult.value);
-                            });
-                        }
+                        creatingTask.value = false;
                     }
                 };
 
@@ -1332,48 +2173,430 @@
                 };
 
                 const getRecommendations = async () => {
+                    if (!currentUser.value) {
+                        showLoginModal.value = true;
+                        return;
+                    }
+                    
                     loadingRecommend.value = true;
                     recommendationResult.value = null;
                     try {
-                         const res = await fetch('/api/recommend', {
+                        // Create async task
+                        const res = await fetch('/api/recommend_async', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'X-Session-ID': sessionId.value
+                            },
                             body: JSON.stringify({
                                 ...recCriteria.value,
                                 model: selectedModel.value,
                                 language: currentLanguage.value
                             })
                         });
-                        recommendationResult.value = await res.json();
+                        
+                        const data = await res.json();
+                        if (data.success) {
+                            // Show task list and add animation
+                            taskListVisible.value = true;
+                            await loadTasks();
+                            // Poll for completion
+                            pollTaskUntilComplete(data.task_id, (result) => {
+                                recommendationResult.value = result;
+                                loadingRecommend.value = false;
+                            });
+                        } else {
+                            throw new Error(data.error || 'Failed to create task');
+                        }
                     } catch (err) {
                         alert('推荐请求失败: ' + err);
                         console.error(err);
-                    } finally {
                         loadingRecommend.value = false;
                     }
                 };
 
                 const diagnosePortfolio = async () => {
                     if(!portfolio.value.symbol) return;
+                    if (!currentUser.value) {
+                        showLoginModal.value = true;
+                        return;
+                    }
+                    
+                    creatingTask.value = true;
                     loadingPortfolio.value = true; 
                     portfolioResult.value = null;
+                    
+                    showToast(
+                        currentLanguage.value === 'zh' ? `正在创建持仓诊断任务：${portfolio.value.symbol}` : `Creating portfolio diagnosis task: ${portfolio.value.symbol}`,
+                        'info',
+                        2000
+                    );
+                    
                     try {
-                         const res = await fetch('/api/portfolio_advice', {
+                        // Create async task
+                        const res = await fetch('/api/portfolio_advice_async', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'X-Session-ID': sessionId.value
+                            },
                             body: JSON.stringify({
                                 ...portfolio.value,
                                 model: selectedModel.value,
                                 language: currentLanguage.value
                             })
                         });
-                        portfolioResult.value = await res.json();
+                        const data = await res.json();
+                        if (data.success) {
+                            showToast(
+                                currentLanguage.value === 'zh' ? `诊断任务已创建：${portfolio.value.symbol}` : `Diagnosis task created: ${portfolio.value.symbol}`,
+                                'success',
+                                3000
+                            );
+                            
+                            // Show task list and add animation
+                            taskListVisible.value = true;
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            await loadTasks();
+                            
+                            // Poll for completion
+                            pollTaskUntilComplete(data.task_id, (result) => {
+                                portfolioResult.value = result;
+                                loadingPortfolio.value = false;
+                                showToast(
+                                    currentLanguage.value === 'zh' ? `🎉 持仓诊断完成：${portfolio.value.symbol}` : `🎉 Portfolio diagnosis completed: ${portfolio.value.symbol}`,
+                                    'success',
+                                    3000
+                                );
+                            });
+                        } else {
+                            throw new Error(data.error || 'Failed to create task');
+                        }
                     } catch (err) {
-                        alert('诊断请求失败: ' + err);
+                        showToast(
+                            currentLanguage.value === 'zh' ? `❌ 创建任务失败：${err.message}` : `❌ Failed to create task: ${err.message}`,
+                            'error',
+                            4000
+                        );
                         console.error(err);
-                    } finally {
                         loadingPortfolio.value = false;
+                    } finally {
+                        creatingTask.value = false;
                     }
+                };
+                
+                // ========== User Authentication Functions ==========
+                
+                const checkAuth = async () => {
+                    if (!sessionId.value) {
+                        showLoginModal.value = true;
+                        return;
+                    }
+                    
+                    try {
+                        const res = await fetch(`/api/auth/check?session_id=${sessionId.value}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.authenticated) {
+                                currentUser.value = data.user;
+                                return;
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Auth check failed:', err);
+                    }
+                    
+                    // Not authenticated, show login modal
+                    showLoginModal.value = true;
+                };
+                
+                const handleLogin = async () => {
+                    try {
+                        const res = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                nickname: loginForm.value.nickname,
+                                email: loginForm.value.email,
+                                session_id: sessionId.value
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        if (data.success) {
+                            currentUser.value = data.user;
+                            sessionId.value = data.user.session_id;
+                            localStorage.setItem('investPilotSessionId', sessionId.value);
+                            showLoginModal.value = false;
+                            loginForm.value = { nickname: '', email: '' };
+                            
+                            // Load tasks and start polling
+                            loadTasks();
+                            startTaskPolling();
+                        } else {
+                            alert(data.error || '登录失败');
+                        }
+                    } catch (err) {
+                        alert('登录失败: ' + err);
+                        console.error(err);
+                    }
+                };
+                
+                // ========== Task Management Functions ==========
+                
+                const loadTasks = async () => {
+                    if (!currentUser.value) return;
+                    
+                    try {
+                        const res = await fetch('/api/tasks', {
+                            headers: { 'X-Session-ID': sessionId.value }
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            tasks.value = data.tasks || [];
+                        } else {
+                            const errorData = await res.json().catch(() => ({}));
+                            console.error('Failed to load tasks:', errorData.error || res.statusText);
+                        }
+                    } catch (err) {
+                        console.error('Failed to load tasks:', err);
+                    }
+                };
+                
+                const startTaskPolling = () => {
+                    if (taskPollInterval) return;
+                    taskPollInterval = setInterval(() => {
+                        if (currentUser.value) {
+                            // Always poll if there are running tasks, or if we just created a task
+                            loadTasks();
+                        }
+                    }, 2000); // Poll every 2 seconds
+                };
+                
+                const stopTaskPolling = () => {
+                    if (taskPollInterval) {
+                        clearInterval(taskPollInterval);
+                        taskPollInterval = null;
+                    }
+                };
+                
+                const pollTaskUntilComplete = async (taskId, callback) => {
+                    const maxAttempts = 300; // 10 minutes max
+                    let attempts = 0;
+                    
+                    const poll = async () => {
+                        try {
+                            const res = await fetch(`/api/tasks/${taskId}`, {
+                                headers: { 'X-Session-ID': sessionId.value }
+                            });
+                            if (res.ok) {
+                                const task = await res.json();
+                                if (task.status === 'completed') {
+                                    callback(task.task_result);
+                                    loadTasks(); // Refresh task list
+                                    return;
+                                } else if (task.status === 'failed' || task.status === 'terminated') {
+                                    loadTasks(); // Refresh task list
+                                    return;
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Task poll error:', err);
+                        }
+                        
+                        attempts++;
+                        if (attempts < maxAttempts) {
+                            setTimeout(poll, 2000);
+                        }
+                    };
+                    
+                    poll();
+                };
+                
+                const terminateTask = async (taskId) => {
+                    if (!confirm(currentLanguage.value === 'zh' ? '确定要终止此任务吗？' : 'Are you sure you want to terminate this task?')) {
+                        return;
+                    }
+                    
+                    try {
+                        const res = await fetch(`/api/tasks/${taskId}/terminate`, {
+                            method: 'POST',
+                            headers: { 'X-Session-ID': sessionId.value }
+                        });
+                        if (res.ok) {
+                            await loadTasks();
+                        } else {
+                            alert(currentLanguage.value === 'zh' ? '终止任务失败' : 'Failed to terminate task');
+                        }
+                    } catch (err) {
+                        alert('终止任务失败: ' + err);
+                        console.error(err);
+                    }
+                };
+                
+                const showTaskResult = (task) => {
+                    if (!task.task_result) return;
+                    
+                    const result = task.task_result;
+                    
+                    // Determine task type and show appropriate result
+                    if (task.task_type === 'kline_analysis') {
+                        // Switch to analysis tab and show result
+                        currentTab.value = 'analysis';
+                        analysisResult.value = result;
+                        query.value = result.symbol || '';
+                        nextTick(() => {
+                            if (chartRef.value) {
+                                initChart(result);
+                            }
+                        });
+                        taskListVisible.value = false; // Close task list
+                    } else if (task.task_type === 'portfolio_diagnosis') {
+                        // Switch to portfolio tab and show result
+                        currentTab.value = 'portfolio';
+                        portfolioResult.value = result;
+                        if (task.task_params && task.task_params.symbol) {
+                            portfolio.value.symbol = task.task_params.symbol;
+                        }
+                        taskListVisible.value = false; // Close task list
+                    } else if (task.task_type === 'stock_recommendation') {
+                        // Switch to recommend tab and show result
+                        currentTab.value = 'recommend';
+                        recommendationResult.value = result;
+                        taskListVisible.value = false; // Close task list
+                    }
+                };
+                
+                const getTaskStatusLabel = (status) => {
+                    const labels = {
+                        'running': currentLanguage.value === 'zh' ? '运行中' : 'Running',
+                        'completed': currentLanguage.value === 'zh' ? '已完成' : 'Completed',
+                        'terminated': currentLanguage.value === 'zh' ? '已终止' : 'Terminated',
+                        'failed': currentLanguage.value === 'zh' ? '失败' : 'Failed'
+                    };
+                    return labels[status] || status;
+                };
+                
+                const getTaskTypeLabel = (type) => {
+                    const labels = {
+                        'kline_analysis': currentLanguage.value === 'zh' ? 'K线分析' : 'K-Line Analysis',
+                        'portfolio_diagnosis': currentLanguage.value === 'zh' ? '持仓诊断' : 'Portfolio Diagnosis',
+                        'stock_recommendation': currentLanguage.value === 'zh' ? '股票推荐' : 'Stock Recommendation'
+                    };
+                    return labels[type] || type;
+                };
+                
+                const getTaskTitle = (task) => {
+                    if (task.task_params) {
+                        if (task.task_type === 'kline_analysis' && task.task_params.symbol) {
+                            return task.task_params.symbol;
+                        } else if (task.task_type === 'portfolio_diagnosis' && task.task_params.symbol) {
+                            return `${task.task_params.symbol} - ${currentLanguage.value === 'zh' ? '持仓诊断' : 'Portfolio Diagnosis'}`;
+                        } else if (task.task_type === 'stock_recommendation') {
+                            return currentLanguage.value === 'zh' ? '股票推荐' : 'Stock Recommendation';
+                        }
+                    }
+                    return getTaskTypeLabel(task.task_type);
+                };
+                
+                const formatTime = (timeStr) => {
+                    if (!timeStr) return '';
+                    const date = new Date(timeStr);
+                    const now = new Date();
+                    const diff = now - date;
+                    const minutes = Math.floor(diff / 60000);
+                    const hours = Math.floor(diff / 3600000);
+                    const days = Math.floor(diff / 86400000);
+                    
+                    if (minutes < 1) {
+                        return currentLanguage.value === 'zh' ? '刚刚' : 'Just now';
+                    } else if (minutes < 60) {
+                        return `${minutes}${currentLanguage.value === 'zh' ? '分钟前' : 'm ago'}`;
+                    } else if (hours < 24) {
+                        return `${hours}${currentLanguage.value === 'zh' ? '小时前' : 'h ago'}`;
+                    } else {
+                        return `${days}${currentLanguage.value === 'zh' ? '天前' : 'd ago'}`;
+                    }
+                };
+                
+                const handleDuplicateTaskChoice = async (choice) => {
+                    showDuplicateTaskDialog.value = false;
+                    const symbol = pendingAnalysisSymbol.value;
+                    pendingAnalysisSymbol.value = null;
+                    
+                    if (choice === 'wait') {
+                        // 等待现有任务完成
+                        showToast(
+                            currentLanguage.value === 'zh' ? '正在等待现有任务完成...' : 'Waiting for existing task to complete...',
+                            'info',
+                            2000
+                        );
+                        
+                        // 打开任务列表
+                        taskListVisible.value = true;
+                        await loadTasks();
+                        
+                        // 找到现有任务并轮询
+                        const existingTask = tasks.value.find(t => t.task_id === duplicateTaskInfo.value.task_id);
+                        if (existingTask) {
+                            pollTaskUntilComplete(existingTask.task_id, (result) => {
+                                analysisResult.value = result;
+                                expandedTrades.value = {};
+                                if (result.analysis && result.analysis.analysis_summary && result.analysis.analysis_summary.includes('Quota Exceeded')) {
+                                    const m = models.value.find(m => m.id === selectedModel.value);
+                                    if (m) m.status = 'limit';
+                                }
+                                
+                                showToast(
+                                    currentLanguage.value === 'zh' ? `🎉 分析完成：${symbol}` : `🎉 Analysis completed: ${symbol}`,
+                                    'success',
+                                    3000
+                                );
+                                
+                                nextTick(() => {
+                                    if (chartRef.value) {
+                                        initChart(result);
+                                    }
+                                });
+                            });
+                        }
+                    } else if (choice === 'cancel') {
+                        // 取消现有任务并创建新任务
+                        try {
+                            // 先终止现有任务
+                            const res = await fetch(`/api/tasks/${duplicateTaskInfo.value.task_id}/terminate`, {
+                                method: 'POST',
+                                headers: { 'X-Session-ID': sessionId.value }
+                            });
+                            
+                            if (res.ok) {
+                                showToast(
+                                    currentLanguage.value === 'zh' ? '已取消现有任务，正在创建新任务...' : 'Cancelled existing task, creating new...',
+                                    'info',
+                                    2000
+                                );
+                                
+                                // 等待一小段时间确保任务已终止
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                
+                                // 重新调用分析
+                                await analyzeStock(symbol);
+                            } else {
+                                throw new Error('Failed to terminate existing task');
+                            }
+                        } catch (err) {
+                            showToast(
+                                currentLanguage.value === 'zh' ? `❌ 取消任务失败：${err.message}` : `❌ Failed to cancel task: ${err.message}`,
+                                'error',
+                                4000
+                            );
+                        }
+                    }
+                };
+                
+                const closeDisclaimer = () => {
+                    showDisclaimer.value = false;
+                    localStorage.setItem('disclaimerDismissed', 'true');
                 };
 
                 return {
@@ -1406,7 +2629,42 @@
                     hotStocks,
                     loadingHotStocks,
                     marketNews,
-                    loadingMarketNews
+                    loadingMarketNews,
+                    // User Auth
+                    currentUser,
+                    showLoginModal,
+                    loginForm,
+                    handleLogin,
+                    // Task Management
+                    tasks,
+                    taskListVisible,
+                    taskFilterStatus,
+                    taskStatusFilters,
+                    filteredTasks,
+                    runningTasksCount,
+                    terminateTask,
+                    showTaskResult,
+                    getTaskStatusLabel,
+                    getTaskTypeLabel,
+                    getTaskTitle,
+                    formatTime,
+                    // Draggable Button
+                    taskButtonRef,
+                    taskButtonPosition,
+                    isDragging,
+                    startDrag,
+                    // Toast
+                    toastMessage,
+                    toastType,
+                    // Duplicate Task Dialog
+                    showDuplicateTaskDialog,
+                    duplicateTaskInfo,
+                    handleDuplicateTaskChoice,
+                    // Loading States
+                    creatingTask,
+                    // Disclaimer
+                    showDisclaimer,
+                    closeDisclaimer
                 };
             }
         }).mount('#app');

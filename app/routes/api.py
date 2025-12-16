@@ -1,11 +1,14 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from app.services.data_provider import DataProvider
 from app.services.ai_analyzer import AIAnalyzer
-from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache
+from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task
 from app.services.model_config import get_models_for_frontend
+from app.services.task_service import task_service
 from app import db
 import json
 import hashlib
+import re
+import uuid
 from datetime import datetime, timedelta
 
 api_bp = Blueprint('api', __name__)
@@ -786,3 +789,265 @@ def get_time_ago(dt):
     else:
         days = int(seconds / 86400)
         return f'{days}d ago'
+
+# ========== 用户认证相关 API ==========
+
+@api_bp.route('/auth/login', methods=['POST'])
+def login():
+    """用户登录/注册"""
+    data = request.json
+    nickname = data.get('nickname', '').strip()
+    email = data.get('email', '').strip()
+    session_id = data.get('session_id')  # 用于自动登录
+    
+    # 验证输入
+    if not nickname or len(nickname) < 1:
+        return jsonify({'error': '昵称不能为空'}), 400
+    
+    if not email:
+        return jsonify({'error': '邮箱不能为空'}), 400
+    
+    # 邮箱格式验证（正则）
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_pattern, email):
+        return jsonify({'error': '邮箱格式不正确'}), 400
+    
+    # 自动登录：如果有session_id，尝试查找用户
+    if session_id:
+        user = User.query.filter_by(session_id=session_id).first()
+        if user:
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            return jsonify({
+                'success': True,
+                'user': user.to_dict(),
+                'is_new_user': False
+            })
+    
+    # 新用户注册或重新登录
+    # 检查邮箱是否已存在
+    user = User.query.filter_by(email=email).first()
+    if user:
+        # 更新昵称和登录时间
+        user.nickname = nickname
+        user.last_login = datetime.utcnow()
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'user': user.to_dict(),
+            'is_new_user': False
+        })
+    
+    # 创建新用户
+    new_session_id = str(uuid.uuid4())
+    user = User(
+        nickname=nickname,
+        email=email,
+        session_id=new_session_id
+    )
+    db.session.add(user)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'user': user.to_dict(),
+        'is_new_user': True
+    })
+
+@api_bp.route('/auth/check', methods=['GET'])
+def check_auth():
+    """检查用户登录状态"""
+    session_id = request.args.get('session_id')
+    if not session_id:
+        return jsonify({'authenticated': False}), 401
+    
+    user = User.query.filter_by(session_id=session_id).first()
+    if user:
+        return jsonify({
+            'authenticated': True,
+            'user': user.to_dict()
+        })
+    
+    return jsonify({'authenticated': False}), 401
+
+# ========== 任务管理相关 API ==========
+
+def get_user_from_request():
+    """从请求中获取用户"""
+    session_id = request.headers.get('X-Session-ID')
+    if not session_id and request.is_json and request.json:
+        session_id = request.json.get('session_id')
+    if not session_id:
+        return None
+    return User.query.filter_by(session_id=session_id).first()
+
+@api_bp.route('/tasks/create', methods=['POST'])
+def create_task():
+    """创建异步任务"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    data = request.json
+    task_type = data.get('task_type')  # 'kline_analysis', 'portfolio_diagnosis', 'stock_recommendation'
+    task_params = data.get('task_params', {})
+    
+    if not task_type:
+        return jsonify({'error': '任务类型不能为空'}), 400
+    
+    # 创建任务
+    task_id = task_service.create_task(user.id, task_type, task_params)
+    
+    return jsonify({
+        'success': True,
+        'task_id': task_id
+    })
+
+@api_bp.route('/tasks/<task_id>', methods=['GET'])
+def get_task(task_id):
+    """获取任务状态"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    task = task_service.get_task(task_id, user.id)
+    if not task:
+        return jsonify({'error': '任务不存在'}), 404
+    
+    return jsonify(task)
+
+@api_bp.route('/tasks', methods=['GET'])
+def list_tasks():
+    """获取用户的任务列表"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    status = request.args.get('status')  # 可选筛选：running, completed, terminated, failed
+    tasks = task_service.get_user_tasks(user.id, status=status)
+    
+    return jsonify({
+        'tasks': tasks,
+        'total': len(tasks)
+    })
+
+@api_bp.route('/tasks/<task_id>/terminate', methods=['POST'])
+def terminate_task(task_id):
+    """终止任务"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    success = task_service.terminate_task(task_id, user.id)
+    if not success:
+        return jsonify({'error': '无法终止任务（任务不存在或已完成）'}), 400
+    
+    return jsonify({'success': True})
+
+# ========== 修改原有的分析API，改为创建任务 ==========
+
+@api_bp.route('/analyze_async', methods=['POST'])
+def analyze_async():
+    """异步分析股票（创建任务）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    data = request.json
+    symbol = data.get('symbol')
+    model_name = data.get('model', 'gemini-2.5-flash')
+    language = data.get('language', 'zh')
+    
+    if not symbol:
+        return jsonify({'error': '股票代码不能为空'}), 400
+    
+    # 幂等性检查：检查是否有正在运行的相同任务
+    existing_task = Task.query.filter_by(
+        user_id=user.id,
+        task_type='kline_analysis',
+        status='running'
+    ).order_by(Task.created_at.desc()).first()
+    
+    if existing_task:
+        try:
+            task_params = json.loads(existing_task.task_params) if existing_task.task_params else {}
+            existing_symbol = task_params.get('symbol')
+            existing_model = task_params.get('model', 'gemini-2.5-flash')
+            
+            # 检查是否是相同的股票和模型
+            if existing_symbol == symbol and existing_model == model_name:
+                return jsonify({
+                    'success': False,
+                    'error': 'duplicate_task',
+                    'message': f'已有正在运行的 {symbol} 分析任务',
+                    'existing_task_id': existing_task.task_id,
+                    'existing_task_created_at': existing_task.created_at.isoformat()
+                }), 409  # 409 Conflict
+        except (json.JSONDecodeError, AttributeError):
+            # 如果解析失败，继续创建新任务
+            pass
+    
+    # 创建任务
+    task_id = task_service.create_task(user.id, 'kline_analysis', {
+        'symbol': symbol,
+        'model': model_name,
+        'language': language
+    })
+    
+    return jsonify({
+        'success': True,
+        'task_id': task_id
+    })
+
+@api_bp.route('/portfolio_advice_async', methods=['POST'])
+def portfolio_advice_async():
+    """异步持仓诊断（创建任务）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    data = request.json
+    model_name = data.get('model', 'gemini-2.5-flash')
+    language = data.get('language', 'zh')
+    
+    # 创建任务
+    task_id = task_service.create_task(user.id, 'portfolio_diagnosis', {
+        **data,
+        'model': model_name,
+        'language': language
+    })
+    
+    return jsonify({
+        'success': True,
+        'task_id': task_id
+    })
+
+@api_bp.route('/recommend_async', methods=['POST'])
+def recommend_async():
+    """异步股票推荐（创建任务）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    data = request.json
+    model_name = data.get('model', 'gemini-2.5-flash')
+    language = data.get('language', 'zh')
+    
+    criteria = {
+        'market': data.get('market', 'Any'),
+        'capital': data.get('capital', 'Any'),
+        'risk': data.get('risk', 'Any'),
+        'frequency': data.get('frequency', 'Any')
+    }
+    
+    # 创建任务
+    task_id = task_service.create_task(user.id, 'stock_recommendation', {
+        **criteria,
+        'model': model_name,
+        'language': language
+    })
+    
+    return jsonify({
+        'success': True,
+        'task_id': task_id
+    })

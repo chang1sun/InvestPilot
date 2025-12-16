@@ -7,5 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
+# Ensure PYTHONPATH includes the working directory
+ENV PYTHONPATH=/app
+
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--timeout", "300", "--graceful-timeout", "30", "wsgi:app"]
 

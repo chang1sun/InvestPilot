@@ -1,33 +1,74 @@
-version: '3.8'
-
 services:
+  # 数据库初始化服务（仅运行一次）
+  init-db:
+    build: .
+    command: python tools/init_db.py
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-user}:${MYSQL_PASSWORD:-password}@db/${MYSQL_DATABASE:-investpilot_db}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"  # 只运行一次，不自动重启
+    env_file:
+      - .env
+
   web:
     build: .
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=mysql+pymysql://user:password@db/investpilot_db
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-user}:${MYSQL_PASSWORD:-password}@db/${MYSQL_DATABASE:-investpilot_db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - QWEN_API_KEY=${QWEN_API_KEY}
     depends_on:
       - db
       - redis
+      - init-db  # 等待数据库初始化完成
+    env_file:
+      - .env
 
   db:
-    image: mysql:5.7
+    image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: investpilot_db
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-investpilot_db}
+      MYSQL_USER: ${MYSQL_USER:-user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
     volumes:
       - db_data:/var/lib/mysql
+    env_file:
+      - .env
+    healthcheck:
+      # 使用环境变量，如果未设置则使用默认值 rootpassword
+      test: >
+        mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD:-rootpassword} || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     ports:
       - "6379:6379"
+    command: >
+      sh -c "if [ -n \"$$REDIS_PASSWORD\" ]; then
+        redis-server --requirepass $$REDIS_PASSWORD --appendonly yes;
+      else
+        redis-server --appendonly yes;
+      fi"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    env_file:
+      - .env
+    volumes:
+      - redis_data:/data
 
 volumes:
   db_data:
+  redis_data:
 

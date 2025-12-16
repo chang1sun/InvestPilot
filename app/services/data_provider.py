@@ -141,9 +141,11 @@ class DataProvider:
         try:
             ticker = yf.Ticker(symbol)
             # Fetch history - changed default to 3y
+            # yfinance 内部使用 requests，超时由底层库处理
             hist = ticker.history(period=period, interval=interval)
             
             if hist.empty:
+                print(f"Warning: Empty data for {symbol}, possibly delisted or invalid symbol")
                 return None
 
             # Reset index to make Date a column
@@ -173,5 +175,12 @@ class DataProvider:
                 
             return data
         except Exception as e:
-            print(f"Error fetching data for {symbol}: {e}")
+            error_msg = str(e)
+            # 检查是否是已知的问题（退市、无效代码等）
+            if "delisted" in error_msg.lower() or "no price data" in error_msg.lower():
+                print(f"Warning: {symbol} possibly delisted; no price data found (period={period})")
+            elif "timeout" in error_msg.lower() or "curl" in error_msg.lower():
+                print(f"Warning: Network timeout/error fetching {symbol}: {error_msg}")
+            else:
+                print(f"Error fetching data for {symbol}: {error_msg}")
             return None
