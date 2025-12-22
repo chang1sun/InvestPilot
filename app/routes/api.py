@@ -58,7 +58,7 @@ def recommend():
     推荐结果带缓存（一天内的请求走缓存，提升响应速度并降低 API 成本）
     """
     data = request.json
-    model_name = data.get('model', 'gemini-2.5-flash')
+    model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
     criteria = {
@@ -135,7 +135,7 @@ def recommend():
 @api_bp.route('/portfolio_advice', methods=['POST'])
 def portfolio_advice():
     data = request.json
-    model_name = data.get('model', 'gemini-2.5-flash')
+    model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
     result = ai_analyzer.analyze_portfolio_item(data, model_name=model_name, language=language)
@@ -146,7 +146,7 @@ def translate():
     data = request.json
     text = data.get('text')
     target_lang = data.get('target_lang', 'en')
-    model_name = data.get('model', 'gemini-2.5-flash')
+    model_name = data.get('model', 'gemini-3-flash-preview')
     
     if not text:
         return jsonify({"error": "No text provided"}), 400
@@ -167,7 +167,7 @@ def search():
 def analyze():
     data = request.json
     symbol = data.get('symbol')
-    model_name = data.get('model', 'gemini-2.5-flash') # Default to 2.5 Flash
+    model_name = data.get('model', 'gemini-3-flash-preview') # Default to 2.5 Flash
     language = data.get('language', 'zh')
     
     if not symbol:
@@ -955,7 +955,7 @@ def analyze_async():
     
     data = request.json
     symbol = data.get('symbol')
-    model_name = data.get('model', 'gemini-2.5-flash')
+    model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
     if not symbol:
@@ -972,7 +972,7 @@ def analyze_async():
         try:
             task_params = json.loads(existing_task.task_params) if existing_task.task_params else {}
             existing_symbol = task_params.get('symbol')
-            existing_model = task_params.get('model', 'gemini-2.5-flash')
+            existing_model = task_params.get('model', 'gemini-3-flash-preview')
             
             # 检查是否是相同的股票和模型
             if existing_symbol == symbol and existing_model == model_name:
@@ -1007,7 +1007,7 @@ def portfolio_advice_async():
         return jsonify({'error': '未登录'}), 401
     
     data = request.json
-    model_name = data.get('model', 'gemini-2.5-flash')
+    model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
     # 创建任务
@@ -1030,7 +1030,7 @@ def recommend_async():
         return jsonify({'error': '未登录'}), 401
     
     data = request.json
-    model_name = data.get('model', 'gemini-2.5-flash')
+    model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
     criteria = {

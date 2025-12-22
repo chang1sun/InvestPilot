@@ -13,17 +13,9 @@ MODEL_REGISTRY = {
         "max_tokens": 2097152,  # 2M上下文
         "cost_tier": "high"
     },
-    "gemini-2.5-pro": {
+    "gemini-3-flash-preview": {
         "provider": "gemini",
-        "display_name": "Gemini 2.5 Pro",
-        "api_key_env": "GEMINI_API_KEY",
-        "supports_search": True,
-        "max_tokens": 2097152,  # 2M上下文
-        "cost_tier": "medium"
-    },
-    "gemini-2.5-flash": {
-        "provider": "gemini",
-        "display_name": "Gemini 2.5 Flash",
+        "display_name": "Gemini 3 Flash (Preview)",
         "api_key_env": "GEMINI_API_KEY",
         "supports_search": True,
         "max_tokens": 1048576,  # 1M上下文

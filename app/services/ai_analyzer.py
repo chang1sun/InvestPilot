@@ -26,7 +26,7 @@ class AIAnalyzer:
                 return None
         return self._adapters[model_id]
 
-    def analyze(self, symbol, kline_data, model_name="gemini-2.5-flash", language="zh", current_position=None):
+    def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None):
         """
         Analyze K-line data using AI models to find buy/sell points.
         Supports: Gemini, GPT, Claude, Grok, Qwen
@@ -227,7 +227,7 @@ Data:
                 friendly_msg = "AI service temporarily unavailable"
             return TechnicalStrategy.analyze(enriched_data, error_msg=friendly_msg, language=language)
 
-    def analyze_incremental(self, symbol, kline_data, last_analyzed_date, model_name="gemini-2.5-flash", language="zh"):
+    def analyze_incremental(self, symbol, kline_data, last_analyzed_date, model_name="gemini-3-flash-preview", language="zh"):
         """
         Analyze ONLY the new data points since last_analyzed_date.
         Uses full history context but only outputs signals for new dates.
@@ -255,7 +255,7 @@ Data:
         pass
 
 
-    def recommend_stocks(self, criteria, model_name="gemini-2.5-flash", language="zh"):
+    def recommend_stocks(self, criteria, model_name="gemini-3-flash-preview", language="zh"):
         """
         Recommend stocks based on criteria and live market data.
         Uses Google Search for models that support it.
@@ -394,7 +394,7 @@ Data:
                 ]
             }
 
-    def analyze_portfolio_item(self, holding_data, model_name="gemini-2.5-flash", language="zh"):
+    def analyze_portfolio_item(self, holding_data, model_name="gemini-3-flash-preview", language="zh"):
         """
         Analyze a specific holding and provide advice (Buy/Sell/Hold).
         """
@@ -495,7 +495,7 @@ Data:
                 "analysis": str(e)
             }
 
-    def translate_text(self, text, target_language="en", model_name="gemini-2.5-flash"):
+    def translate_text(self, text, target_language="en", model_name="gemini-3-flash-preview"):
         """
         Translate text to target language using AI models.
         """

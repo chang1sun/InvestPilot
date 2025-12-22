@@ -1470,7 +1470,7 @@
                 
                 // Model Management
                 const models = ref([]);
-                const selectedModel = ref(savedPreferences.selectedModel || 'gemini-2.5-flash');
+                const selectedModel = ref(savedPreferences.selectedModel || 'gemini-3-flash-preview');
                 
                 // Hot Stocks Management
                 const hotStocks = ref([]);
@@ -1570,13 +1570,13 @@
                         const validIds = modelList.map(m => m.id);
                         if (!validIds.includes(selectedModel.value)) {
                             console.warn(`Invalid saved model: ${selectedModel.value}, resetting to default`);
-                            selectedModel.value = 'gemini-2.5-flash';
+                            selectedModel.value = 'gemini-3-flash-preview';
                         }
                     } catch (err) {
                         console.error('Failed to load models:', err);
                         // Fallback to default models
                         models.value = [
-                            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', status: 'normal' },
+                            { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (Preview)', status: 'normal' },
                             { id: 'local-strategy', name: 'Local Algo (MA+RSI)', status: 'normal' }
                         ];
                     }
@@ -1725,7 +1725,7 @@
                 // Auto-switch model if invalid for current tab
                 watch(currentTab, (newTab) => {
                     if (newTab === 'recommend' && selectedModel.value === 'local-strategy') {
-                        selectedModel.value = 'models/gemini-2.5-flash';
+                        selectedModel.value = 'models/gemini-3-flash-preview';
                     }
                 });
 

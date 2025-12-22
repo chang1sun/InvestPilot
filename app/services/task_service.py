@@ -123,7 +123,7 @@ class TaskService:
         from datetime import datetime
         
         symbol = params.get('symbol')
-        model_name = params.get('model', 'gemini-2.5-flash')
+        model_name = params.get('model', 'gemini-3-flash-preview')
         language = params.get('language', 'zh')
         
         # 检查停止标志
@@ -446,7 +446,7 @@ class TaskService:
         
         result = self.ai_analyzer.analyze_portfolio_item(
             params,
-            model_name=params.get('model', 'gemini-2.5-flash'),
+            model_name=params.get('model', 'gemini-3-flash-preview'),
             language=params.get('language', 'zh')
         )
         
@@ -466,7 +466,7 @@ class TaskService:
         
         result = self.ai_analyzer.recommend_stocks(
             criteria,
-            model_name=params.get('model', 'gemini-2.5-flash'),
+            model_name=params.get('model', 'gemini-3-flash-preview'),
             language=params.get('language', 'zh')
         )
         
