@@ -131,7 +131,8 @@ Analyze the historical data for stock ({symbol}) to identify high-probability Bu
             "status": "CLOSED", 
             "holding_period": "15 days",
             "return_rate": "+18.0%",
-            "reason": "Brief technical rationale (e.g. MA Golden Cross)."
+            "reason": "Brief technical rationale for BUY (e.g. MA Golden Cross).",
+            "sell_reason": "Brief technical rationale for SELL (e.g. Trend exhaustion, Stop loss)."
         }}
     ]
 }}
@@ -180,11 +181,13 @@ Data:
                     "reason": trade['reason']
                 })
                 if trade['status'] == 'CLOSED' and trade['sell_date']:
+                    # 使用 AI 给出的原因，如果有 sell_reason 则优先使用，否则使用 reason
+                    sell_reason = trade.get('sell_reason') or trade.get('reason', 'Close position')
                     signals.append({
                         "type": "SELL",
                         "date": trade['sell_date'],
                         "price": trade['sell_price'],
-                        "reason": "Close position"
+                        "reason": sell_reason
                     })
             
             result['signals'] = signals
