@@ -459,6 +459,7 @@ class TaskService:
         
         criteria = {
             'market': params.get('market', 'Any'),
+            'asset_type': params.get('asset_type', 'STOCK'),
             'capital': params.get('capital', 'Any'),
             'risk': params.get('risk', 'Any'),
             'frequency': params.get('frequency', 'Any')

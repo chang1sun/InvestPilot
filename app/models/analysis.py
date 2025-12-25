@@ -2,7 +2,6 @@ from app import db
 from datetime import datetime
 import uuid
 import json
-from sqlalchemy.dialects.mysql import LONGTEXT
 
 class RecommendationCache(db.Model):
     __tablename__ = 'recommendation_cache'
@@ -32,11 +31,11 @@ class AnalysisLog(db.Model):
     __tablename__ = 'analysis_logs'
     
     id = db.Column(db.Integer, primary_key=True)
-    symbol = db.Column(db.String(20), nullable=False, index=True)
+    symbol = db.Column(db.String(32), nullable=False, index=True)
     market_date = db.Column(db.Date, nullable=False, index=True)  # 分析的市场数据日期（用于判断是否需要重新分析）
     model_name = db.Column(db.String(50), nullable=False)  # 使用的模型名称
     language = db.Column(db.String(10), nullable=False)  # 分析语言
-    analysis_result = db.Column(LONGTEXT, nullable=True)  # JSON string (完整的分析结果，包含 kline_data，使用 LONGTEXT 支持大容量)
+    analysis_result = db.Column(db.Text, nullable=True)  # JSON string (完整的分析结果，包含 kline_data)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     __table_args__ = (
@@ -58,17 +57,18 @@ class StockTradeSignal(db.Model):
     __tablename__ = 'stock_trade_signals'
     
     id = db.Column(db.Integer, primary_key=True)
-    symbol = db.Column(db.String(20), nullable=False, index=True)
+    symbol = db.Column(db.String(32), nullable=False, index=True)
     date = db.Column(db.Date, nullable=False, index=True)
     price = db.Column(db.Float, nullable=False)
     signal_type = db.Column(db.String(10), nullable=False) # 'BUY', 'SELL', 'HOLD'
     reason = db.Column(db.Text, nullable=True)
     source = db.Column(db.String(20), default='ai') # 'ai', 'local'
     model_name = db.Column(db.String(50), nullable=False, index=True)  # 模型名称，用于区分不同模型的结果
+    asset_type = db.Column(db.String(20), default='STOCK', index=True)  # 'STOCK', 'CRYPTO', 'COMMODITY', 'BOND'
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     __table_args__ = (
-        db.UniqueConstraint('symbol', 'date', 'model_name', name='unique_symbol_date_model'),
+        db.UniqueConstraint('symbol', 'date', 'model_name', 'asset_type', name='unique_symbol_date_model_asset'),
     )
 
     def to_dict(self):
@@ -113,8 +113,8 @@ class Task(db.Model):
     # 任务参数
     task_params = db.Column(db.Text, nullable=True)  # JSON string
     
-    # 任务结果（使用 LONGTEXT 支持大容量数据，最大 4GB）
-    task_result = db.Column(LONGTEXT, nullable=True)  # JSON string
+    # 任务结果
+    task_result = db.Column(db.Text, nullable=True)  # JSON string
     
     # 错误信息
     error_message = db.Column(db.Text, nullable=True)

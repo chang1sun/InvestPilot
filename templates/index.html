@@ -349,8 +349,8 @@
                     </svg>
                 </button>
             </div>
-        </div>
-
+                </div>
+                
         <!-- Duplicate Task Dialog -->
         <div 
             v-if="showDuplicateTaskDialog"
@@ -364,7 +364,7 @@
                             <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                             </svg>
-                        </div>
+                    </div>
                         <div class="flex-1">
                             <h3 class="text-lg font-bold text-gray-800">
                                 [[ currentLanguage === 'zh' ? '任务已存在' : 'Task Already Running' ]]
@@ -372,9 +372,9 @@
                             <p class="text-sm text-gray-500 mt-1">
                                 [[ currentLanguage === 'zh' ? '检测到正在运行的任务' : 'A running task detected' ]]
                             </p>
-                        </div>
-                    </div>
-                    
+                </div>
+            </div>
+
                     <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                         <div class="flex items-start gap-3">
                             <svg class="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -391,8 +391,8 @@
                                 </p>
                             </div>
                         </div>
-                    </div>
-                    
+                </div>
+
                     <div class="space-y-3">
                         <button 
                             @click="handleDuplicateTaskChoice('wait')"
@@ -424,7 +424,7 @@
         </div>
 
         <!-- Task List Sidebar (Always Visible) -->
-        <div class="fixed right-0 top-0 h-full w-80 bg-white shadow-2xl z-40 task-list-slide" :class="taskListVisible ? 'translate-x-0' : 'translate-x-full'">
+        <div class="fixed right-0 top-20 h-[calc(50vh-5rem)] w-80 bg-white shadow-2xl z-40 task-list-slide rounded-l-xl" :class="taskListVisible ? 'translate-x-0' : 'translate-x-full'">
             <div class="h-full flex flex-col">
                 <!-- Task List Header -->
                 <div class="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -492,11 +492,11 @@
                                             [[ getTaskStatusLabel(task.status) ]]
                                         </span>
                                         <span class="text-xs text-gray-500">[[ getTaskTypeLabel(task.task_type) ]]</span>
-                                    </div>
+                                </div>
                                     <div class="text-sm font-medium text-gray-800" v-if="task.task_params">
                                         [[ getTaskTitle(task) ]]
-                                    </div>
-                                </div>
+                            </div>
+                        </div>
                             </div>
                             
                             <!-- Task Time -->
@@ -506,7 +506,7 @@
                             
                             <!-- Task Actions -->
                             <div class="flex gap-2">
-                                <button 
+                        <button 
                                     v-if="task.status === 'running'"
                                     @click="terminateTask(task.task_id)"
                                     class="flex-1 px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 font-medium transition-colors"
@@ -526,7 +526,7 @@
                                     :title="task.error_message"
                                 >
                                     [[ currentLanguage === 'zh' ? '失败' : 'Failed' ]]
-                                </button>
+                        </button>
                             </div>
                         </div>
                     </div>
@@ -561,74 +561,77 @@
         </div>
 
         <div class="container mx-auto px-4 py-4 flex-1 flex flex-col">
-        <!-- Header & Search Row -->
-        <div class="flex items-center justify-between mb-6 bg-white p-4 rounded-xl shadow-sm">
-            <div class="flex items-center gap-4">
-                <!-- Logo -->
-                <img src="/static/logo.png" alt="Invest Pilot Logo" class="w-12 h-12 object-contain">
-                
-                <!-- Title -->
-                <div class="flex flex-col">
-                    <h1 class="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 leading-tight">Invest Pilot</h1>
-                    <p class="text-xs text-gray-500 font-medium mt-0.5 hidden sm:block">AI-Powered Investment Copilot</p>
-                </div>
-                
-                <!-- Model Selector -->
-                <div class="relative">
-                    <select 
-                        v-model="selectedModel" 
-                        class="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 pr-8 cursor-pointer font-medium"
-                    >
-                        <option v-for="m in availableModels" :key="m.id" :value="m.id" :disabled="m.disabled || m.isHeader" :class="{'font-bold text-gray-400': m.isHeader}">
-                            [[ m.name ]] [[ m.status === 'limit' ? '(已限额)' : '' ]]
-                        </option>
-                    </select>
-                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                        <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+        <!-- Top Navigation Bar -->
+        <nav class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40 mb-6" :class="{'top-[52px]': showDisclaimer, 'top-0': !showDisclaimer}">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <!-- Logo & Brand -->
+                    <div class="flex items-center cursor-pointer" @click="currentTab = 'analysis'">
+                        <img src="/static/thumbnail.png" alt="Logo" class="h-8 w-8 mr-2">
+                        <span class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Invest Pilot</span>
                     </div>
-                    <div v-if="currentModelStatus === 'limit'"  
-                         class="absolute -top-2 -right-2 bg-yellow-400 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold cursor-help shadow-sm z-10"
-                         title="该模型触发了 API 配额限制 (429)，当前可能使用模拟数据或无法工作。"
-                    >!</div>
-                </div>
-            </div>
 
-            <div class="flex items-center gap-4">
-                <!-- Language Selector -->
-                <div class="flex bg-gray-100 rounded-lg p-1">
-                    <button @click="currentLanguage = 'zh'" class="px-3 py-1 text-xs font-bold rounded-md transition-colors" :class="currentLanguage === 'zh' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">中文</button>
-                    <button @click="currentLanguage = 'en'" class="px-3 py-1 text-xs font-bold rounded-md transition-colors" :class="currentLanguage === 'en' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">EN</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tab Navigation -->
-        <div class="flex gap-8 mb-6 border-b border-gray-200 px-2">
+                    <!-- Desktop Navigation -->
+                    <div class="hidden md:flex space-x-8 items-center">
             <button 
                 @click="currentTab = 'analysis'"
-                class="pb-3 font-bold text-base border-b-2 transition-all flex items-center gap-2 px-2"
-                :class="currentTab === 'analysis' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'"
+                            class="px-3 py-2 text-sm font-medium transition-colors duration-200"
+                            :class="currentTab === 'analysis' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900'"
             >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
-                [[ currentLanguage === 'zh' ? '个股分析' : 'Trend Analysis' ]]
+                            [[ currentLanguage === 'zh' ? '个股分析' : 'Analysis' ]]
             </button>
             <button 
                 @click="currentTab = 'recommend'"
-                class="pb-3 font-bold text-base border-b-2 transition-all flex items-center gap-2 px-2"
-                :class="currentTab === 'recommend' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'"
+                            class="px-3 py-2 text-sm font-medium transition-colors duration-200"
+                            :class="currentTab === 'recommend' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900'"
             >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
-                [[ currentLanguage === 'zh' ? '市场风向' : 'Smart Picks' ]]
+                            [[ currentLanguage === 'zh' ? '市场风向' : 'Market Trends' ]]
             </button>
             <button 
                 @click="currentTab = 'portfolio'"
-                class="pb-3 font-bold text-base border-b-2 transition-all flex items-center gap-2 px-2"
-                :class="currentTab === 'portfolio' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'"
+                            class="px-3 py-2 text-sm font-medium transition-colors duration-200"
+                            :class="currentTab === 'portfolio' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900'"
             >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
-                [[ currentLanguage === 'zh' ? '持仓诊断' : 'Portfolio Diagnosis' ]]
+                            [[ currentLanguage === 'zh' ? '持仓诊断' : 'Portfolio' ]]
             </button>
         </div>
+
+                    <!-- Right Side Actions -->
+                    <div class="flex items-center space-x-4">
+                        <!-- Model Selector -->
+                        <div class="relative hidden lg:block w-40">
+                            <select 
+                                v-model="selectedModel" 
+                                class="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-xs rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2 pr-8 cursor-pointer font-medium truncate"
+                            >
+                                <option v-for="m in availableModels" :key="m.id" :value="m.id" :disabled="m.disabled || m.isHeader" :class="{'font-bold text-gray-400': m.isHeader}">
+                                    [[ m.name ]] [[ m.status === 'limit' ? '(Limit)' : '' ]]
+                                </option>
+                            </select>
+                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                <svg class="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                            </div>
+                        </div>
+
+                        <!-- Language Switcher -->
+                        <div class="flex bg-gray-100 rounded-lg p-1">
+                            <button @click="currentLanguage = 'zh'" class="px-3 py-1 text-xs font-bold rounded-md transition-colors" :class="currentLanguage === 'zh' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">CN</button>
+                            <button @click="currentLanguage = 'en'" class="px-3 py-1 text-xs font-bold rounded-md transition-colors" :class="currentLanguage === 'en' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">EN</button>
+                        </div>
+                        
+                        <!-- User Profile / Login -->
+                        <div v-if="currentUser" class="flex items-center gap-2 cursor-pointer" @click="showLoginModal = true">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs">
+                                [[ currentUser.nickname.charAt(0).toUpperCase() ]]
+                            </div>
+                        </div>
+                        <button v-else @click="showLoginModal = true" class="text-sm font-medium text-blue-600 hover:text-blue-800">
+                            [[ currentLanguage === 'zh' ? '登录' : 'Login' ]]
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
 
         <!-- Loading State -->
         <div v-if="(currentTab === 'analysis' && loadingAnalysis) || (currentTab === 'recommend' && loadingRecommend) || (currentTab === 'portfolio' && loadingPortfolio)" class="flex-1 flex items-center justify-center min-h-[400px]">
@@ -643,7 +646,7 @@
         <template v-if="currentTab === 'analysis'">
             <!-- Compact Search Section -->
             <div class="mb-6">
-                <div class="max-w-3xl mx-auto">
+                <div class="max-w-6xl mx-auto">
                     <div class="bg-white rounded-xl shadow-md border border-gray-200 p-4 flex items-center gap-3">
                         <div class="flex-shrink-0">
                             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
@@ -658,17 +661,18 @@
                                 v-model="query" 
                                 @input="handleSearch"
                                 @keyup.enter="analyzeStock(query)"
-                                :placeholder="currentLanguage === 'zh' ? '输入股票代码 (如 AAPL, 0700.HK)' : 'Enter Symbol (e.g., AAPL)'"
+                                :placeholder="currentLanguage === 'zh' ? '输入资产代码 (如 AAPL, BTC-USD, GC=F)' : 'Enter Asset Symbol (e.g., AAPL, BTC-USD, GC=F)'"
                                 class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none text-sm font-medium transition-all"
                             >
                             <div v-if="suggestions.length > 0" class="absolute z-50 w-full bg-white mt-1 rounded-lg shadow-xl border border-gray-200 max-h-60 overflow-auto">
                                 <div 
                                     v-for="item in suggestions" 
-                                    @click="selectStock(item.symbol)"
+                                    @click="selectStock(item)"
                                     class="px-4 py-2.5 hover:bg-blue-50 cursor-pointer flex justify-between items-center text-sm border-b border-gray-100 last:border-0 transition-colors"
                                 >
                                     <div class="flex items-center gap-2">
                                         <span class="font-semibold text-gray-900">[[ item.symbol ]]</span>
+                                        <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">[[ item.type || 'STOCK' ]]</span>
                                         <span class="text-gray-500 text-xs">[[ item.name ]]</span>
                                     </div>
                                     <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -700,7 +704,7 @@
             </div>
             
             <!-- Result View -->
-            <div v-if="!loadingAnalysis && analysisResult" class="flex-1 flex flex-col gap-6 animate-fade-in">
+            <div v-if="!loadingAnalysis && analysisResult" class="flex-1 flex flex-col gap-6 animate-fade-in max-w-6xl mx-auto w-full">
                 
                 <!-- Model Info Banner -->
                 <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-xl p-4 shadow-sm">
@@ -723,7 +727,7 @@
                                 </p>
                                 <p>
                                     [[ currentLanguage === 'zh' ? 
-                                        '• 相同模型对同一股票的分析结果会被缓存，当天重复分析将直接返回缓存结果' : 
+                        '• 相同模型对同一资产的分析结果会被缓存，当天重复分析将直接返回缓存结果' :
                                         '• Analysis results from the same model are cached. Repeated analysis on the same day will return cached results' 
                                     ]]
                                 </p>
@@ -890,17 +894,18 @@
 
             <!-- Empty State -->
             <div v-else-if="!loadingAnalysis && !analysisResult" class="flex-1 flex flex-col items-center justify-center animate-fade-in py-12">
-                <div class="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 max-w-3xl w-full text-center">
+                <div class="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 max-w-6xl w-full text-center">
                     <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6">
                         <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
                     </div>
                     <h2 class="text-2xl font-bold text-gray-800 mb-3">[[ currentLanguage === 'zh' ? '开启 AI 量化之旅' : 'Start AI Quant Journey' ]]</h2>
-                    <p class="text-gray-500 mb-10 max-w-lg mx-auto leading-relaxed">
-                        [[ currentLanguage === 'zh' ? '输入股票代码，让 AI 深度解析历史数据，结合技术指标与市场情绪，为您生成专业的买卖点建议。' : 'Enter a stock symbol to let AI analyze historical data, technical indicators, and market sentiment for professional trading signals.' ]]
+                    <p class="text-gray-500 mb-8 max-w-lg mx-auto leading-relaxed">
+                        [[ currentLanguage === 'zh' ? '输入资产代码，让 AI 深度解析历史数据，结合技术指标与市场情绪，为您生成专业的买卖点建议。支持股票、加密货币、大宗商品和债券。' : 'Enter an asset symbol to let AI analyze historical data, technical indicators, and market sentiment for professional trading signals. Supports stocks, crypto, commodities, and bonds.' ]]
                     </p>
                     
-                    <div class="text-left">
-                        <p class="text-xs font-bold text-gray-400 uppercase mb-4 tracking-wider text-center">[[ currentLanguage === 'zh' ? '🔥 热门标的快速分析' : '🔥 Popular Stocks' ]]</p>
+                    <!-- Hot Assets Quick Analysis (Inside Card) -->
+                    <div class="mt-8 pt-8 border-t border-gray-200">
+                        <p class="text-xs font-bold text-gray-400 uppercase mb-4 tracking-wider text-center">[[ currentLanguage === 'zh' ? '🔥 热门资产快速分析' : '🔥 Popular Assets' ]]</p>
                         
                         <!-- Loading State -->
                         <div v-if="loadingHotStocks" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -983,15 +988,16 @@
                             </button>
                         </div>
                     </div>
+
                 </div>
             </div>
         </template>
 
         <!-- Recommendation Tab Content -->
-        <div v-if="currentTab === 'recommend' && !loadingRecommend" class="flex-1 grid grid-cols-1 gap-6 animate-fade-in max-w-5xl mx-auto w-full">
-            <!-- Recommendations (Full Width) -->
-            <div class="space-y-6">
+        <div v-if="currentTab === 'recommend' && !loadingRecommend" class="flex-1 grid grid-cols-1 gap-6 animate-fade-in max-w-7xl mx-auto w-full">
                 
+            <!-- Filters & Generate Button (Top Section) -->
+            <div class="space-y-6">
                 <!-- Filters & Generate Button -->
                 <div class="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/30 p-8 rounded-2xl shadow-lg border-2 border-blue-100/50 backdrop-blur-sm">
                     <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
@@ -1004,7 +1010,7 @@
                             <div>
                                 <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
                                     [[ currentLanguage === 'zh' ? '市场机会挖掘' : 'Market Scanner' ]]
-                                </h3>
+                        </h3>
                                 <p class="text-xs text-gray-500 mt-1">[[ currentLanguage === 'zh' ? 'AI 驱动的智能选股推荐' : 'AI-Powered Stock Recommendations' ]]</p>
                             </div>
                         </div>
@@ -1029,13 +1035,29 @@
                         </button>
                     </div>
                     
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
                         <div class="portfolio-input-group">
+                            <label class="block text-xs font-bold text-gray-600 uppercase mb-2 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '资产类型' : 'Asset Type' ]]
+                            </label>
+                            <select v-model="recCriteria.asset_type" class="w-full bg-white border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-medium transition-all shadow-sm hover:shadow-md">
+                                <option value="STOCK">[[ currentLanguage === 'zh' ? '股票 (Stock)' : 'Stock' ]]</option>
+                                <option value="CRYPTO">[[ currentLanguage === 'zh' ? '加密货币 (Crypto)' : 'Crypto' ]]</option>
+                                <option value="COMMODITY">[[ currentLanguage === 'zh' ? '大宗商品 (Commodity)' : 'Commodity' ]]</option>
+                                <option value="BOND">[[ currentLanguage === 'zh' ? '债券 (Bond)' : 'Bond' ]]</option>
+                            </select>
+                        </div>
+                        <!-- Market selector - only show for STOCK asset type -->
+                        <div class="portfolio-input-group" v-show="recCriteria.asset_type === 'STOCK'" style="transition: all 0.3s ease;">
                             <label class="block text-xs font-bold text-gray-600 uppercase mb-2 flex items-center gap-1">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"></path>
                                 </svg>
                                 [[ currentLanguage === 'zh' ? '市场选择' : 'Market' ]]
+                                <span class="text-xs text-gray-400 normal-case ml-1">([[ currentLanguage === 'zh' ? '仅股票' : 'Stock only' ]])</span>
                             </label>
                             <select v-model="recCriteria.market" class="w-full bg-white border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-medium transition-all shadow-sm hover:shadow-md">
                                 <option value="Any">[[ currentLanguage === 'zh' ? '不限' : 'Any' ]]</option>
@@ -1086,9 +1108,195 @@
                                 <option value="Long-term">[[ currentLanguage === 'zh' ? '长线 (季度+)' : 'Long-term' ]]</option>
                             </select>
                         </div>
+                        </div>
                     </div>
                 </div>
 
+            <!-- Dashboard & Right Panel Row (1/2 + 1/2) -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Market Indices Dashboard (Left 1/2) -->
+                <div>
+                    <p class="text-xs font-bold text-gray-400 uppercase mb-4 tracking-wider">[[ currentLanguage === 'zh' ? '📊 全球市场大盘' : '📊 Global Market Indices' ]]</p>
+                    
+                    <!-- Loading State -->
+                    <div v-if="loadingMarketIndices" class="grid grid-cols-2 gap-3">
+                        <div v-for="i in 8" :key="i" class="p-3 border border-gray-200 rounded-lg bg-gray-50 animate-pulse">
+                            <div class="h-3 bg-gray-300 rounded w-16 mb-2"></div>
+                            <div class="h-5 bg-gray-300 rounded w-20 mb-2"></div>
+                            <div class="h-3 bg-gray-200 rounded w-12"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Indices Grid (2 columns: 4 left, 4 right) -->
+                    <div v-else class="grid grid-cols-2 gap-3">
+                        <div 
+                            v-for="index in marketIndices" 
+                            :key="index.symbol"
+                            @click="selectStock(index.symbol); currentTab='analysis'; analyzeStock(index.symbol)"
+                            @mouseenter="(e) => { showTooltip = index.symbol; tooltipPosition = { x: e.clientX, y: e.clientY }; }"
+                            @mouseleave="showTooltip = null"
+                            @mousemove="(e) => { if (showTooltip === index.symbol) tooltipPosition = { x: e.clientX, y: e.clientY }; }"
+                            class="group relative p-3 border border-gray-200 rounded-lg hover:border-blue-400 hover:shadow-md transition-all cursor-pointer bg-gradient-to-br from-white to-gray-50"
+                        >
+                            <!-- Enhanced Hover Tooltip (Fixed positioning to avoid overflow issues) -->
+                            <div 
+                                v-if="showTooltip === index.symbol"
+                                class="fixed z-[100] pointer-events-none"
+                                :style="{ 
+                                    left: (tooltipPosition.x + 15) + 'px',
+                                    top: (tooltipPosition.y - 15) + 'px',
+                                    transform: 'translateY(-100%)'
+                                }"
+                            >
+                                <div class="bg-gray-900 text-white text-xs rounded-lg px-4 py-3 shadow-2xl min-w-[220px]">
+                                    <div class="font-bold mb-2 text-sm flex items-center gap-2">
+                                        <span>[[ index.icon ]]</span>
+                                        <span>[[ currentLanguage === 'zh' ? index.name_zh : index.name ]]</span>
+                                        <span class="text-gray-400 text-xs">([[ index.symbol ]])</span>
+                                    </div>
+                                    <div class="space-y-1.5 border-t border-gray-700 pt-2 mt-2">
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-400">[[ currentLanguage === 'zh' ? '当前价' : 'Price' ]]</span>
+                                            <span class="font-semibold">[[ index.price ]]</span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-400">[[ currentLanguage === 'zh' ? '涨跌' : 'Change' ]]</span>
+                                            <span :class="index.is_up ? 'text-green-400' : 'text-red-400'" class="font-medium">
+                                                [[ index.is_up ? '+' : '' ]][[ index.change ]] ([[ index.is_up ? '+' : '' ]][[ index.change_pct ]]%)
+                                            </span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-400">[[ currentLanguage === 'zh' ? '最高' : 'High' ]]</span>
+                                            <span class="text-gray-300">[[ index.high ]]</span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-400">[[ currentLanguage === 'zh' ? '最低' : 'Low' ]]</span>
+                                            <span class="text-gray-300">[[ index.low ]]</span>
+                                        </div>
+                                        <div v-if="index.volume" class="flex justify-between items-center border-t border-gray-700 pt-1.5 mt-1.5">
+                                            <span class="text-gray-400">[[ currentLanguage === 'zh' ? '成交量' : 'Volume' ]]</span>
+                                            <span class="text-gray-300">[[ index.volume ]]</span>
+                                        </div>
+                                    </div>
+                                    <div class="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                </div>
+                </div>
+
+                            <!-- Trend Background -->
+                            <div class="absolute inset-0 opacity-5 pointer-events-none">
+                                <svg viewBox="0 0 100 40" class="w-full h-full" preserveAspectRatio="none">
+                                    <polyline
+                                        :points="index.trend_data"
+                                        fill="none"
+                                        :stroke="index.is_up ? '#10b981' : '#ef4444'"
+                                        stroke-width="2"
+                                    />
+                                </svg>
+                            </div>
+                            
+                            <!-- Content -->
+                            <div class="relative z-10">
+                                <!-- Icon & Name -->
+                                <div class="flex items-center gap-1 mb-1.5">
+                                    <span class="text-base">[[ index.icon ]]</span>
+                                    <span class="text-xs font-bold text-gray-700 truncate">[[ currentLanguage === 'zh' ? index.name_zh : index.name ]]</span>
+                                </div>
+                                
+                                <!-- Price -->
+                                <div class="text-base font-bold text-gray-900 mb-1">[[ index.price ]]</div>
+                                
+                                <!-- Change -->
+                                <div class="flex items-center gap-1">
+                                    <span 
+                                        class="text-xs font-semibold px-1.5 py-0.5 rounded"
+                                        :class="index.is_up ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
+                                    >
+                                        [[ index.is_up ? '▲' : '▼' ]] [[ Math.abs(index.change_pct) ]]%
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Panel: News (Right 1/2) -->
+                <div>
+                    <div class="mb-4 flex items-center justify-between">
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">[[ currentLanguage === 'zh' ? '📈 实时市场动态' : '📈 Live Market Insights' ]]</p>
+                    </div>
+                    
+                    <!-- News Container with Scroll -->
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm h-[600px] flex flex-col overflow-hidden">
+                    <!-- Loading State -->
+                            <div v-if="loadingMarketNews" class="flex-1 overflow-y-auto p-4 space-y-3">
+                                <div v-for="i in 6" :key="i" class="bg-gray-50 p-4 rounded-lg border border-gray-100 animate-pulse">
+                                    <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                                    <div class="h-3 bg-gray-100 rounded w-1/2 mb-2"></div>
+                                    <div class="h-3 bg-gray-100 rounded w-1/4"></div>
+                        </div>
+                    </div>
+                    
+                            <!-- News List (Scrollable) -->
+                            <div v-else-if="marketNews.length > 0" class="flex-1 overflow-y-auto p-4 space-y-3">
+                        <a 
+                            v-for="news in marketNews" 
+                            :key="news.id"
+                            :href="news.link"
+                            target="_blank"
+                                    class="block bg-gradient-to-br from-gray-50 to-blue-50/30 p-4 rounded-lg border border-gray-100 hover:border-blue-300 hover:shadow-md transition-all group cursor-pointer"
+                                >
+                                    <!-- Type Badge -->
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <span 
+                                            class="px-2 py-0.5 rounded-full text-xs font-semibold"
+                                            :class="{
+                                                'bg-purple-100 text-purple-700': news.type === 'earnings',
+                                                'bg-yellow-100 text-yellow-700': news.type === 'rating',
+                                                'bg-blue-100 text-blue-700': news.type === 'deal',
+                                                'bg-green-100 text-green-700': news.type === 'dividend' || news.type === 'bullish',
+                                                'bg-red-100 text-red-700': news.type === 'bearish',
+                                                'bg-gray-100 text-gray-700': news.type === 'news'
+                                            }"
+                                        >
+                                            [[ news.icon ]] 
+                                            <span v-if="news.type === 'earnings'">[[ currentLanguage === 'zh' ? '财报' : 'Earnings' ]]</span>
+                                            <span v-else-if="news.type === 'rating'">[[ currentLanguage === 'zh' ? '评级' : 'Rating' ]]</span>
+                                            <span v-else-if="news.type === 'deal'">[[ currentLanguage === 'zh' ? '交易' : 'Deal' ]]</span>
+                                            <span v-else-if="news.type === 'dividend'">[[ currentLanguage === 'zh' ? '分红' : 'Dividend' ]]</span>
+                                            <span v-else-if="news.type === 'bullish'">[[ currentLanguage === 'zh' ? '利好' : 'Bullish' ]]</span>
+                                            <span v-else-if="news.type === 'bearish'">[[ currentLanguage === 'zh' ? '利空' : 'Bearish' ]]</span>
+                                            <span v-else>[[ currentLanguage === 'zh' ? '资讯' : 'News' ]]</span>
+                                        </span>
+                                        <span class="text-xs text-gray-400">[[ news.time_ago ]]</span>
+                                    </div>
+                                    
+                                    <!-- Title -->
+                                    <h4 class="text-sm font-bold text-gray-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-snug mb-2">
+                                        [[ news.title ]]
+                                    </h4>
+                                    
+                                    <!-- Footer -->
+                                    <div class="flex items-center justify-between text-xs text-gray-400">
+                                        <span class="truncate">[[ news.publisher ]]</span>
+                                        <span v-if="news.related_symbols.length > 0" class="font-mono font-semibold ml-2">[[ news.related_symbols[0] ]]</span>
+                            </div>
+                        </a>
+                    </div>
+                    
+                    <!-- Empty State -->
+                            <div v-else class="flex-1 flex items-center justify-center p-8">
+                                <div class="text-center">
+                                    <div class="text-gray-300 text-4xl mb-2">📰</div>
+                                    <p class="text-gray-400 text-sm">[[ currentLanguage === 'zh' ? '暂无市场资讯' : 'No market news available' ]]</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                    </div>
+                    
+            <!-- Market Overview & Recommendations (Below Dashboard) -->
+            <div class="space-y-6">
                 <!-- Market Overview -->
                 <div v-if="recommendationResult && recommendationResult.market_overview" class="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200/50 p-6 rounded-2xl text-gray-800 leading-relaxed shadow-lg relative overflow-hidden">
                     <div class="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full -mr-16 -mt-16"></div>
@@ -1099,7 +1307,7 @@
                                 <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
                                 </svg>
-                            </div>
+                    </div>
                             <div class="font-bold text-blue-700 text-lg flex items-center gap-2">
                                 [[ currentLanguage === 'zh' ? '市场风向' : 'Market Overview' ]]
                             </div>
@@ -1145,102 +1353,10 @@
                     </div>
                 </div>
                 
-                <!-- Market News Section (shown when no recommendations) -->
-                <div v-if="!recommendationResult" class="space-y-6">
-                    <!-- Header -->
-                    <div class="text-center mb-8">
-                        <h3 class="text-2xl font-bold text-gray-800 mb-2">[[ currentLanguage === 'zh' ? '📈 实时市场动态' : '📈 Live Market Insights' ]]</h3>
-                        <p class="text-sm text-gray-500">[[ currentLanguage === 'zh' ? '最新资讯、财报发布、机构评级变动' : 'Latest news, earnings, and analyst ratings' ]]</p>
-                    </div>
-                    
-                    <!-- Loading State -->
-                    <div v-if="loadingMarketNews" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div v-for="i in 6" :key="i" class="bg-white p-5 rounded-xl border border-gray-100 animate-pulse">
-                            <div class="flex gap-3">
-                                <div class="w-16 h-16 bg-gray-200 rounded-lg"></div>
-                                <div class="flex-1">
-                                    <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                                    <div class="h-3 bg-gray-100 rounded w-1/2 mb-2"></div>
-                                    <div class="h-3 bg-gray-100 rounded w-1/4"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- News Grid -->
-                    <div v-else-if="marketNews.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <a 
-                            v-for="news in marketNews" 
-                            :key="news.id"
-                            :href="news.link"
-                            target="_blank"
-                            class="bg-white p-5 rounded-xl border border-gray-100 hover:border-blue-300 hover:shadow-lg transition-all group cursor-pointer"
-                        >
-                            <div class="flex gap-4">
-                                <!-- Icon or Thumbnail -->
-                                <div class="flex-shrink-0">
-                                    <div v-if="news.thumbnail" class="w-20 h-20 rounded-lg overflow-hidden bg-gray-100">
-                                        <img :src="news.thumbnail" :alt="news.title" class="w-full h-full object-cover group-hover:scale-110 transition-transform">
-                                    </div>
-                                    <div v-else class="w-20 h-20 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center text-3xl">
-                                        [[ news.icon ]]
-                                    </div>
-                                </div>
-                                
-                                <!-- Content -->
-                                <div class="flex-1 min-w-0">
-                                    <!-- Type Badge -->
-                                    <div class="flex items-center gap-2 mb-2">
-                                        <span 
-                                            class="px-2 py-0.5 rounded-full text-xs font-semibold"
-                                            :class="{
-                                                'bg-purple-100 text-purple-700': news.type === 'earnings',
-                                                'bg-yellow-100 text-yellow-700': news.type === 'rating',
-                                                'bg-blue-100 text-blue-700': news.type === 'deal',
-                                                'bg-green-100 text-green-700': news.type === 'dividend' || news.type === 'bullish',
-                                                'bg-red-100 text-red-700': news.type === 'bearish',
-                                                'bg-gray-100 text-gray-700': news.type === 'news'
-                                            }"
-                                        >
-                                            [[ news.icon ]] 
-                                            <span v-if="news.type === 'earnings'">[[ currentLanguage === 'zh' ? '财报' : 'Earnings' ]]</span>
-                                            <span v-else-if="news.type === 'rating'">[[ currentLanguage === 'zh' ? '评级' : 'Rating' ]]</span>
-                                            <span v-else-if="news.type === 'deal'">[[ currentLanguage === 'zh' ? '交易' : 'Deal' ]]</span>
-                                            <span v-else-if="news.type === 'dividend'">[[ currentLanguage === 'zh' ? '分红' : 'Dividend' ]]</span>
-                                            <span v-else-if="news.type === 'bullish'">[[ currentLanguage === 'zh' ? '利好' : 'Bullish' ]]</span>
-                                            <span v-else-if="news.type === 'bearish'">[[ currentLanguage === 'zh' ? '利空' : 'Bearish' ]]</span>
-                                            <span v-else>[[ currentLanguage === 'zh' ? '资讯' : 'News' ]]</span>
-                                        </span>
-                                        <span class="text-xs text-gray-400">[[ news.time_ago ]]</span>
-                                    </div>
-                                    
-                                    <!-- Title -->
-                                    <h4 class="text-sm font-bold text-gray-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-snug mb-2">
-                                        [[ news.title ]]
-                                    </h4>
-                                    
-                                    <!-- Footer -->
-                                    <div class="flex items-center justify-between text-xs text-gray-400">
-                                        <span>[[ news.publisher ]]</span>
-                                        <span v-if="news.related_symbols.length > 0" class="font-mono font-semibold">[[ news.related_symbols[0] ]]</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </a>
-                    </div>
-                    
-                    <!-- Empty State -->
-                    <div v-else class="text-center py-12">
-                        <div class="text-gray-300 text-6xl mb-4">📰</div>
-                        <p class="text-gray-400">[[ currentLanguage === 'zh' ? '暂无市场资讯' : 'No market news available' ]]</p>
-                    </div>
-                    
-                    <!-- Call to Action -->
-                    <div class="text-center mt-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-                        <p class="text-gray-600 mb-4">
-                            [[ currentLanguage === 'zh' ? '👆 点击上方「AI 智能扫描」获取个性化选股推荐' : '👆 Click "AI Smart Scan" above for personalized recommendations' ]]
-                        </p>
-                    </div>
+                <!-- Empty State (when no recommendations) -->
+                <div v-if="!recommendationResult" class="text-center py-12 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                    <div class="text-gray-300 text-6xl mb-4">🔍</div>
+                    <p class="text-gray-500 text-sm">[[ currentLanguage === 'zh' ? 'AI 将根据您的筛选条件推荐优质资产' : 'AI will recommend quality assets based on your criteria' ]]</p>
                 </div>
             </div>
         </div>
@@ -1264,12 +1380,26 @@
                             <div class="text-center">
                                 <h3 class="text-3xl font-extrabold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                                     [[ currentLanguage === 'zh' ? '持仓诊断专家' : 'Portfolio Doctor' ]]
-                                </h3>
+                    </h3>
                                 <p class="text-sm text-gray-500 mt-1">[[ currentLanguage === 'zh' ? 'AI 驱动的专业持仓分析' : 'AI-Powered Portfolio Analysis' ]]</p>
                             </div>
                         </div>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                            <div class="portfolio-input-group">
+                                <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                                    </svg>
+                                    [[ currentLanguage === 'zh' ? '资产类型' : 'Asset Type' ]]
+                                </label>
+                                <select v-model="portfolio.asset_type" class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none font-bold transition-all shadow-sm hover:shadow-md">
+                                    <option value="STOCK">[[ currentLanguage === 'zh' ? '股票' : 'Stock' ]]</option>
+                                    <option value="CRYPTO">[[ currentLanguage === 'zh' ? '加密货币' : 'Crypto' ]]</option>
+                                    <option value="COMMODITY">[[ currentLanguage === 'zh' ? '大宗商品' : 'Commodity' ]]</option>
+                                    <option value="BOND">[[ currentLanguage === 'zh' ? '债券' : 'Bond' ]]</option>
+                                </select>
+                        </div>
                             <div class="portfolio-input-group">
                                 <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
                                     <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1283,7 +1413,7 @@
                                     placeholder="例如 AAPL" 
                                     class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base uppercase focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none font-bold text-center transition-all shadow-sm hover:shadow-md"
                                 >
-                            </div>
+                        </div>
                             <div class="portfolio-input-group">
                                 <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
                                     <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1311,8 +1441,8 @@
                                     placeholder="20" 
                                     class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-center transition-all shadow-sm hover:shadow-md"
                                 >
-                            </div>
                         </div>
+                    </div>
 
                         <button 
                             @click="diagnosePortfolio" 
@@ -1332,7 +1462,7 @@
                             <span class="relative z-10">
                                 [[ creatingTask ? (currentLanguage === 'zh' ? '创建任务中...' : 'Creating task...') : (currentLanguage === 'zh' ? '开始诊断' : 'Start Diagnosis') ]]
                             </span>
-                        </button>
+                    </button>
                     </div>
                 </div>
 
@@ -1347,7 +1477,7 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
                                 [[ currentLanguage === 'zh' ? '诊断对象' : 'Target' ]]
-                            </div>
+                        </div>
                             <div class="text-4xl font-extrabold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                                 [[ portfolioResult.symbol ]]
                             </div>
@@ -1384,8 +1514,8 @@
                         </div>
                         <div class="bg-gradient-to-br from-gray-50 to-purple-50/30 p-6 rounded-xl border border-gray-200">
                             <p class="text-gray-700 leading-relaxed font-serif text-justify text-base">
-                                [[ portfolioResult.analysis ]]
-                            </p>
+                            [[ portfolioResult.analysis ]]
+                        </p>
                         </div>
                     </div>
                 </div>
@@ -1457,12 +1587,13 @@
                 const creatingTask = ref(false);
                 
                 // 从 sessionStorage 恢复会话数据（刷新页面时保留）
-                const recCriteria = ref(sessionData.recCriteria || { market: 'Any', capital: 'Any', risk: 'Any', frequency: 'Any' });
+                const recCriteria = ref(sessionData.recCriteria || { market: 'Any', asset_type: 'STOCK', capital: 'Any', risk: 'Any', frequency: 'Any' });
                 const recommendationResult = ref(sessionData.recommendationResult || null);
-                const portfolio = ref(sessionData.portfolio || { symbol: '', avg_price: '', percentage: '' });
+                const portfolio = ref(sessionData.portfolio || { symbol: '', avg_price: '', percentage: '', asset_type: 'STOCK' });
                 const portfolioResult = ref(sessionData.portfolioResult || null);
                 
                 const query = ref(sessionData.query || '');
+                const selectedAssetType = ref('STOCK');
                 const suggestions = ref([]);
                 const analysisResult = ref(sessionData.analysisResult || null);
                 const chartRef = ref(null);
@@ -1471,6 +1602,12 @@
                 // Model Management
                 const models = ref([]);
                 const selectedModel = ref(savedPreferences.selectedModel || 'gemini-3-flash-preview');
+                
+                // Market Indices Dashboard
+                const marketIndices = ref([]);
+                const loadingMarketIndices = ref(false);
+                const showTooltip = ref(null);
+                const tooltipPosition = ref({ x: 0, y: 0 });
                 
                 // Hot Stocks Management
                 const hotStocks = ref([]);
@@ -1604,6 +1741,29 @@
                         ];
                     } finally {
                         loadingHotStocks.value = false;
+                    }
+                };
+                
+                // Load market indices for dashboard
+                const loadMarketIndices = async () => {
+                    loadingMarketIndices.value = true;
+                    try {
+                        const res = await fetch('/api/market_indices');
+                        const indicesList = await res.json();
+                        marketIndices.value = indicesList;
+                    } catch (err) {
+                        console.error('Failed to load market indices:', err);
+                        // Fallback to default indices
+                        marketIndices.value = [
+                            { symbol: '^GSPC', name: 'S&P 500', name_zh: '标普500', market: 'US', icon: '🇺🇸', price: '4,783.45', price_raw: 4783.45, change: 25.6, change_pct: 0.54, high: 4800.2, low: 4765.3, volume: '', trend_data: '0,35 25,32 50,38 75,34 100,40', is_up: true },
+                            { symbol: '^NDX', name: 'NASDAQ 100', name_zh: '纳斯达克100', market: 'US', icon: '🇺🇸', price: '15,011.35', price_raw: 15011.35, change: 102.5, change_pct: 0.69, high: 15050.8, low: 14980.2, volume: '', trend_data: '0,30 25,28 50,35 75,32 100,38', is_up: true },
+                            { symbol: '^HSI', name: 'Hang Seng Index', name_zh: '恒生指数', market: 'HK', icon: '🇭🇰', price: '16,543.21', price_raw: 16543.21, change: 125.5, change_pct: 0.76, high: 16600.0, low: 16500.0, volume: '', trend_data: '0,25 25,28 50,30 75,27 100,32', is_up: true },
+                            { symbol: 'HSTECH.HK', name: 'Hang Seng Tech', name_zh: '恒生科技指数', market: 'HK', icon: '🇭🇰', price: '3,456.78', price_raw: 3456.78, change: -23.4, change_pct: -0.67, high: 3480.0, low: 3450.0, volume: '', trend_data: '0,30 25,28 50,25 75,27 100,24', is_up: false },
+                            { symbol: '^N225', name: 'Nikkei 225', name_zh: '日经225', market: 'JP', icon: '🇯🇵', price: '33,464.17', price_raw: 33464.17, change: -156.2, change_pct: -0.46, high: 33650.5, low: 33420.8, volume: '', trend_data: '0,25 25,28 50,22 75,26 100,20', is_up: false },
+                            { symbol: 'BTC-USD', name: 'Bitcoin', name_zh: '比特币', market: 'CRYPTO', icon: '₿', price: '$43,256.80', price_raw: 43256.80, change: 1250.3, change_pct: 2.98, high: 43500.0, low: 42800.5, volume: '25.3B', trend_data: '0,20 25,25 50,22 75,30 100,35', is_up: true }
+                        ];
+                    } finally {
+                        loadingMarketIndices.value = false;
                     }
                 };
                 
@@ -1813,7 +1973,7 @@
                         };
                     }
                 };
-                
+
                 // 刷新页面后恢复图表（如果有 analysisResult）
                 onMounted(async () => {
                     // Load button position
@@ -1834,6 +1994,7 @@
                     
                     // Load available models, trending stocks, and market news
                     loadModels();
+                    loadMarketIndices();
                     loadTrendingStocks();
                     loadMarketNews();
                     
@@ -1874,8 +2035,9 @@
                     }
                 }, 300);
 
-                const selectStock = (symbol) => {
-                    query.value = symbol;
+                const selectStock = (item) => {
+                    query.value = item.symbol;
+                    selectedAssetType.value = item.type || 'STOCK';
                     suggestions.value = [];
                 };
 
@@ -1920,6 +2082,7 @@
                             },
                             body: JSON.stringify({ 
                                 symbol,
+                                asset_type: selectedAssetType.value,
                                 model: selectedModel.value,
                                 language: currentLanguage.value
                             })
@@ -2078,7 +2241,12 @@
                                 splitArea: { show: true },
                                 splitNumber: 5,
                                 axisLabel: {
-                                    formatter: '{value}'
+                                    formatter: function (value) {
+                                        if (Math.abs(value) < 1 && value !== 0) {
+                                            return value.toFixed(4);
+                                        }
+                                        return value.toFixed(2);
+                                    }
                                 }
                             },
                             { 
@@ -2481,7 +2649,7 @@
                     const labels = {
                         'kline_analysis': currentLanguage.value === 'zh' ? 'K线分析' : 'K-Line Analysis',
                         'portfolio_diagnosis': currentLanguage.value === 'zh' ? '持仓诊断' : 'Portfolio Diagnosis',
-                        'stock_recommendation': currentLanguage.value === 'zh' ? '股票推荐' : 'Stock Recommendation'
+                'stock_recommendation': currentLanguage.value === 'zh' ? '资产推荐' : 'Asset Recommendation'
                     };
                     return labels[type] || type;
                 };
@@ -2493,7 +2661,7 @@
                         } else if (task.task_type === 'portfolio_diagnosis' && task.task_params.symbol) {
                             return `${task.task_params.symbol} - ${currentLanguage.value === 'zh' ? '持仓诊断' : 'Portfolio Diagnosis'}`;
                         } else if (task.task_type === 'stock_recommendation') {
-                            return currentLanguage.value === 'zh' ? '股票推荐' : 'Stock Recommendation';
+                return currentLanguage.value === 'zh' ? '资产推荐' : 'Asset Recommendation';
                         }
                     }
                     return getTaskTypeLabel(task.task_type);
@@ -2501,7 +2669,9 @@
                 
                 const formatTime = (timeStr) => {
                     if (!timeStr) return '';
-                    const date = new Date(timeStr);
+                    // 后端存储的是UTC时间，需要添加'Z'后缀确保正确解析为UTC
+                    const utcTimeStr = timeStr.endsWith('Z') ? timeStr : timeStr + 'Z';
+                    const date = new Date(utcTimeStr);
                     const now = new Date();
                     const diff = now - date;
                     const minutes = Math.floor(diff / 60000);
@@ -2598,6 +2768,15 @@
                     showDisclaimer.value = false;
                     localStorage.setItem('disclaimerDismissed', 'true');
                 };
+                
+                // Watch for asset_type changes in recommendation criteria
+                // Auto-reset market to 'Any' when switching to non-stock assets
+                watch(() => recCriteria.value.asset_type, (newAssetType, oldAssetType) => {
+                    if (newAssetType !== 'STOCK' && recCriteria.value.market !== 'Any') {
+                        console.log(`Asset type changed from ${oldAssetType} to ${newAssetType}, resetting market to 'Any'`);
+                        recCriteria.value.market = 'Any';
+                    }
+                });
 
                 return {
                     currentTab,
@@ -2628,8 +2807,12 @@
                     toggleTrade,
                     hotStocks,
                     loadingHotStocks,
+                    marketIndices,
+                    loadingMarketIndices,
                     marketNews,
                     loadingMarketNews,
+                    showTooltip,
+                    tooltipPosition,
                     // User Auth
                     currentUser,
                     showLoginModal,

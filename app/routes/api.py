@@ -63,6 +63,7 @@ def recommend():
     
     criteria = {
         'market': data.get('market', 'Any'),
+        'asset_type': data.get('asset_type', 'STOCK'),
         'capital': data.get('capital', 'Any'),
         'risk': data.get('risk', 'Any'),
         'frequency': data.get('frequency', 'Any')
@@ -167,6 +168,7 @@ def search():
 def analyze():
     data = request.json
     symbol = data.get('symbol')
+    asset_type = data.get('asset_type', 'STOCK')
     model_name = data.get('model', 'gemini-3-flash-preview') # Default to 2.5 Flash
     language = data.get('language', 'zh')
     
@@ -264,7 +266,8 @@ def analyze():
                     exists = StockTradeSignal.query.filter_by(
                         symbol=symbol,
                         date=sig_date,
-                        model_name=model_name
+                        model_name=model_name,
+                        asset_type=asset_type
                     ).first()
                     if not exists:
                         new_signal = StockTradeSignal(
@@ -274,7 +277,8 @@ def analyze():
                             signal_type=sig['type'], # BUY/SELL
                             reason=sig.get('reason', ''),
                             source='ai',
-                            model_name=model_name
+                            model_name=model_name,
+                            asset_type=asset_type
                         )
                         db.session.add(new_signal)
                 except Exception as e:
@@ -334,7 +338,8 @@ def analyze():
                                 signal_type=sig['type'],
                                 reason=sig.get('reason', ''),
                                 source='ai',
-                                model_name=model_name
+                                model_name=model_name,
+                                asset_type=asset_type
                             )
                             db.session.add(new_signal)
                             print(f"[{symbol}] New signal added for {model_name}: {sig_date} {sig['type']}")
@@ -354,7 +359,8 @@ def analyze():
     
     db_signals = StockTradeSignal.query.filter_by(
         symbol=symbol,
-        model_name=model_name
+        model_name=model_name,
+        asset_type=asset_type
     ).order_by(StockTradeSignal.date.asc()).all()
     
     # Reconstruct 'trades' (pair of Buy/Sell) from signals for the UI
@@ -505,6 +511,130 @@ def analyze():
         print(f"[{symbol}] Skipping cache due to local strategy fallback.")
 
     return jsonify(final_response)
+
+@api_bp.route('/market_indices', methods=['GET'])
+def get_market_indices():
+    """Get major market indices for dashboard"""
+    import yfinance as yf
+    from app import r
+    
+    # Check cache first (cache for 5 minutes for real-time feel)
+    cache_key = 'market_indices'
+    try:
+        cached = r.get(cache_key)
+        if cached:
+            return jsonify(json.loads(cached))
+    except:
+        pass
+    
+    # Define major indices with their symbols and metadata
+    indices = [
+        {'symbol': '^GSPC', 'name': 'S&P 500', 'name_zh': '标普500', 'market': 'US', 'icon': '🇺🇸'},
+        {'symbol': '^NDX', 'name': 'NASDAQ 100', 'name_zh': '纳斯达克100', 'market': 'US', 'icon': '🇺🇸'},
+        {'symbol': '^HSI', 'name': 'Hang Seng Index', 'name_zh': '恒生指数', 'market': 'HK', 'icon': '🇭🇰'},
+        {'symbol': '3033.HK', 'name': 'Hang Seng Tech', 'name_zh': '恒生科技ETF', 'market': 'HK', 'icon': '🇭🇰'},
+        {'symbol': '^N225', 'name': 'Nikkei 225', 'name_zh': '日经225', 'market': 'JP', 'icon': '🇯🇵'},
+        {'symbol': '^KS11', 'name': 'KOSPI', 'name_zh': 'KOSPI', 'market': 'KR', 'icon': '🇰🇷'},
+        {'symbol': '000001.SS', 'name': 'SSE Index', 'name_zh': '上证指数', 'market': 'CN', 'icon': '🇨🇳'},
+        {'symbol': '399006.SZ', 'name': 'ChiNext', 'name_zh': '创业板指', 'market': 'CN', 'icon': '🇨🇳'},
+        {'symbol': 'GC=F', 'name': 'Gold', 'name_zh': '黄金', 'market': 'COMMODITY', 'icon': '🥇'},
+        {'symbol': 'CL=F', 'name': 'Crude Oil', 'name_zh': '原油', 'market': 'COMMODITY', 'icon': '🛢️'},
+        {'symbol': 'BTC-USD', 'name': 'Bitcoin', 'name_zh': '比特币', 'market': 'CRYPTO', 'icon': '₿'}
+    ]
+    
+    result = []
+    
+    for index_info in indices:
+        try:
+            symbol = index_info['symbol']
+            # Try multiple symbol formats for HSTECH if primary fails
+            hist = None
+            used_symbol = symbol
+            
+            # Current price and change
+            current_price = hist['Close'].iloc[-1]
+            prev_close = hist['Close'].iloc[-2]
+            change = current_price - prev_close
+            change_pct = (change / prev_close) * 100
+            
+            # Get today's high and low
+            today_high = hist['High'].iloc[-1]
+            today_low = hist['Low'].iloc[-1]
+            
+            # Get volume if available
+            volume = hist['Volume'].iloc[-1] if 'Volume' in hist.columns else 0
+            volume_str = ''
+            if volume > 0:
+                if volume >= 1e9:
+                    volume_str = f"{volume/1e9:.2f}B"
+                elif volume >= 1e6:
+                    volume_str = f"{volume/1e6:.1f}M"
+                else:
+                    volume_str = f"{volume/1e3:.1f}K"
+            
+            # Generate trend data for sparkline (last 5 days)
+            trend_points = []
+            min_price = hist['Close'].min()
+            max_price = hist['Close'].max()
+            price_range = max_price - min_price if max_price != min_price else 1
+            
+            for i, price in enumerate(hist['Close']):
+                x = i * 25
+                y = 40 - ((price - min_price) / price_range * 35)
+                trend_points.append(f"{x},{y:.1f}")
+            
+            # Format price based on asset type
+            if index_info['market'] == 'CRYPTO':
+                price_str = f"${current_price:,.2f}"
+                decimals = 2
+            elif index_info['market'] == 'COMMODITY':
+                if 'Gold' in index_info['name']:
+                    price_str = f"${current_price:,.2f}"
+                else:
+                    price_str = f"${current_price:.2f}"
+                decimals = 2
+            elif index_info['market'] in ['CN', 'HK']:
+                price_str = f"{current_price:,.2f}"
+                decimals = 2
+            else:
+                price_str = f"{current_price:,.2f}"
+                decimals = 2
+            
+            result.append({
+                'symbol': used_symbol,
+                'name': index_info['name'],
+                'name_zh': index_info['name_zh'],
+                'market': index_info['market'],
+                'icon': index_info['icon'],
+                'price': price_str,
+                'price_raw': float(round(current_price, decimals)),
+                'change': float(round(change, decimals)),
+                'change_pct': float(round(change_pct, 2)),
+                'high': float(round(today_high, decimals)),
+                'low': float(round(today_low, decimals)),
+                'volume': volume_str,
+                'trend_data': ' '.join(trend_points),
+                'is_up': 1 if change >= 0 else 0
+            })
+            
+        except Exception as e:
+            print(f"Error fetching {index_info['name_zh']} ({index_info['symbol']}): {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    # Cache for 5 minutes
+    try:
+        r.setex(cache_key, 300, json.dumps(result))
+        print(f"✅ Market indices cached: {len(result)} indices")
+    except Exception as e:
+        print(f"⚠️ Failed to cache market indices: {e}")
+    
+    # Debug: Print which indices were successfully fetched
+    fetched_symbols = [r['symbol'] for r in result]
+    print(f"📊 Successfully fetched indices: {fetched_symbols}")
+    
+    return jsonify(result)
 
 @api_bp.route('/trending', methods=['GET'])
 def get_trending_stocks():
@@ -690,12 +820,15 @@ def get_market_news():
     try:
         cached = r.get(cache_key)
         if cached:
+            print(f"Using cached market news")
             return jsonify(json.loads(cached))
     except:
+        print(f"Error checking market news cache")
         pass
     
     news_items = []
-    news_symbols = []
+    # Major market indices and popular stocks for news
+    news_symbols = ['^GSPC', '^DJI', '^IXIC', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META']
     
     for symbol in news_symbols:
         try:
@@ -704,12 +837,21 @@ def get_market_news():
             
             if ticker_news and len(ticker_news) > 0:
                 for item in ticker_news[:2]:  # Top 2 news per symbol
-                    # Parse timestamp
-                    published_time = datetime.fromtimestamp(item.get('providerPublishTime', 0))
+                    # Extract content from nested structure
+                    content = item.get('content', {})
+                    
+                    # Parse timestamp from pubDate
+                    pub_date_str = content.get('pubDate', '')
+                    try:
+                        # Parse ISO format: 2025-12-24T18:05:42Z
+                        published_time = datetime.fromisoformat(pub_date_str.replace('Z', '+00:00'))
+                    except:
+                        published_time = datetime.now()
+                    
                     time_ago = get_time_ago(published_time)
                     
                     # Determine news type based on title keywords
-                    title = item.get('title', '')
+                    title = content.get('title', '')
                     news_type = 'news'
                     icon = '📰'
                     
@@ -735,28 +877,39 @@ def get_market_news():
                     # Extract related symbols from title
                     related = [symbol.replace('^', '')]
                     
+                    # Get thumbnail URL
+                    thumbnail_url = ''
+                    thumbnail = content.get('thumbnail', {})
+                    if thumbnail and 'resolutions' in thumbnail and thumbnail['resolutions']:
+                        thumbnail_url = thumbnail['resolutions'][0].get('url', '')
+                    
+                    # Get canonical URL
+                    canonical_url = content.get('canonicalUrl', {}).get('url', '')
+                    
                     news_items.append({
-                        'id': item.get('uuid', ''),
+                        'id': item.get('id', ''),
                         'title': title,
-                        'publisher': item.get('publisher', 'Unknown'),
-                        'link': item.get('link', ''),
+                        'publisher': content.get('provider', {}).get('displayName', 'Unknown'),
+                        'link': canonical_url,
                         'published': published_time.isoformat(),
                         'time_ago': time_ago,
                         'type': news_type,
                         'icon': icon,
                         'related_symbols': related,
-                        'thumbnail': item.get('thumbnail', {}).get('resolutions', [{}])[0].get('url', '') if item.get('thumbnail') else ''
+                        'thumbnail': thumbnail_url
                     })
         except Exception as e:
             print(f"Error fetching news for {symbol}: {e}")
             continue
     
-    # Remove duplicates by UUID
+    # Remove duplicates by UUID or link
     seen_ids = set()
     unique_news = []
     for item in news_items:
-        if item['id'] and item['id'] not in seen_ids:
-            seen_ids.add(item['id'])
+        # Use UUID if available, otherwise use link as identifier
+        identifier = item['id'] if item['id'] else item['link']
+        if identifier and identifier not in seen_ids:
+            seen_ids.add(identifier)
             unique_news.append(item)
     
     # Sort by publish time (newest first) and limit to 10
@@ -955,6 +1108,7 @@ def analyze_async():
     
     data = request.json
     symbol = data.get('symbol')
+    asset_type = data.get('asset_type', 'STOCK')
     model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
@@ -990,6 +1144,7 @@ def analyze_async():
     # 创建任务
     task_id = task_service.create_task(user.id, 'kline_analysis', {
         'symbol': symbol,
+        'asset_type': asset_type,
         'model': model_name,
         'language': language
     })
@@ -1035,6 +1190,7 @@ def recommend_async():
     
     criteria = {
         'market': data.get('market', 'Any'),
+        'asset_type': data.get('asset_type', 'STOCK'),
         'capital': data.get('capital', 'Any'),
         'risk': data.get('risk', 'Any'),
         'frequency': data.get('frequency', 'Any')

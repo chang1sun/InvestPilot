@@ -25,12 +25,44 @@ class AIAnalyzer:
                 print(f"Failed to get adapter for {model_id}: {e}")
                 return None
         return self._adapters[model_id]
+    
+    def _get_forbidden_assets(self, asset_type):
+        """Get list of forbidden asset types for the prompt"""
+        all_types = {
+            'STOCK': 'Stocks, Equities, Company shares',
+            'CRYPTO': 'Cryptocurrencies, Digital currencies, Tokens',
+            'COMMODITY': 'Commodities, Futures, Raw materials',
+            'BOND': 'Bonds, Fixed income, Treasuries'
+        }
+        forbidden = [desc for type_key, desc in all_types.items() if type_key != asset_type]
+        return ', '.join(forbidden)
+    
+    def _get_allowed_assets(self, asset_type):
+        """Get description of allowed assets"""
+        descriptions = {
+            'STOCK': 'Stocks, Equities, Company shares (e.g., AAPL, TSLA, MSFT)',
+            'CRYPTO': 'Cryptocurrencies, Digital currencies, Tokens (e.g., BTC-USD, ETH-USD, SOL-USD)',
+            'COMMODITY': 'Commodities, Futures, Raw materials (e.g., GC=F, CL=F, SI=F)',
+            'BOND': 'Bonds, Fixed income, Treasuries (e.g., ^TNX, ^IRX, ^TYX)'
+        }
+        return descriptions.get(asset_type, 'Unknown asset type')
+    
+    def _get_example_symbol(self, asset_type):
+        """Get example symbol for the asset type"""
+        examples = {
+            'STOCK': 'AAPL, TSLA, MSFT',
+            'CRYPTO': 'BTC-USD, ETH-USD, SOL-USD',
+            'COMMODITY': 'GC=F, CL=F, SI=F',
+            'BOND': '^TNX, ^IRX, ^TYX'
+        }
+        return examples.get(asset_type, 'SYMBOL')
 
-    def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None):
+    def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None, asset_type="STOCK"):
         """
         Analyze K-line data using AI models to find buy/sell points.
         Supports: Gemini, GPT, Claude, Grok, Qwen
         :param current_position: Optional dict { 'date': 'YYYY-MM-DD', 'price': float, 'reason': str } indicating last BUY signal.
+        :param asset_type: STOCK, CRYPTO, COMMODITY, BOND
         """
         # 1. Preprocess data: Add indicators to help the LLM (also used for local strategy)
         enriched_data = calculate_indicators(kline_data)
@@ -55,12 +87,30 @@ class AIAnalyzer:
         # Language specific instruction
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
 
+        # Asset Type Specific Context
+        if asset_type == "CRYPTO":
+            role_desc = "You are a professional **Crypto Asset Analyst** specializing in **Swing Trading**."
+            macro_focus = "Focus on On-chain data, Market Sentiment, Regulatory news, and Bitcoin correlation. Avoid traditional equity metrics like P/E ratio or dividends."
+            asset_name = "cryptocurrency"
+        elif asset_type == "COMMODITY":
+            role_desc = "You are a professional **Commodities Trader**."
+            macro_focus = "Focus on Supply/Demand dynamics, Geopolitics, Dollar Index (DXY), and Inventory reports. Consider seasonal patterns and production data."
+            asset_name = "commodity"
+        elif asset_type == "BOND":
+            role_desc = "You are a professional **Fixed Income Strategist**."
+            macro_focus = "Focus on Central Bank Policy, Inflation Data (CPI/PPI), Yield Curve, and Economic Cycle. Analyze interest rate expectations and credit spreads."
+            asset_name = "bond"
+        else: # STOCK
+            role_desc = "You are a professional **Macro-Quant Strategist** specializing in **Low-Frequency Swing Trading**."
+            macro_focus = "Consider current global macro trends (e.g., Interest Rates, Tech Cycles, Geopolitics) relevant to this stock. Analyze fundamentals like earnings, valuation, and sector rotation."
+            asset_name = "stock"
+
         # Build Position Context
         position_context = ""
         if current_position:
             position_context = f"""
     **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
-    - The system IS CURRENTLY HOLDING this stock.
+    - The system IS CURRENTLY HOLDING this asset.
     - Last Buy Date: {current_position['date']}
     - Last Buy Price: {current_position['price']}
     - Original Reason: {current_position.get('reason', 'N/A')}
@@ -80,21 +130,24 @@ class AIAnalyzer:
     """
 
         prompt = f"""
-You are a professional **Macro-Quant Strategist** specializing in **Low-Frequency Swing Trading**.
+{role_desc}
 Your goal is to generate alpha by combining **Technical Precision** (Price/Volume/Indicators) with **Macro/Fundamental Insight**.
+
+**ASSET TYPE**: {asset_type} ({asset_name})
+**IMPORTANT**: This is a {asset_name} analysis. Use {asset_name}-specific terminology and avoid metrics that don't apply to this asset class.
 
 **CORE PHILOSOPHY:**
 "Price action reflects all known information, but understanding the Macro Context explains the 'Why' behind the moves."
 
 **TASK:**
-Analyze the historical data for stock ({symbol}) to identify high-probability Buying and Selling points.
+Analyze the historical data for this {asset_type} ({symbol}) to identify high-probability Buying and Selling points.
 
 **ANALYSIS FRAMEWORK:**
 1. **Quantitative (70%)**: Rigorous analysis of Price, Volume, and Trends (MA5, MA20, RSI) provided in the data.
 2. **Macro & Fundamental (30%)**:
-   - Use your **internal knowledge** about this specific stock ({symbol}) and its sector/industry.
-   - Consider current global macro trends (e.g., Interest Rates, Tech Cycles, Geopolitics) relevant to this asset.
-   - If the stock is unknown to you, infer "Smart Money" sentiment strictly from Volume/Price divergence.
+   - Use your **internal knowledge** about this specific {asset_name} ({symbol}).
+   - {macro_focus}
+   - If the asset is unknown to you, infer "Smart Money" sentiment strictly from Volume/Price divergence.
 
 **STRATEGY GUIDELINES: SWING TRADING**
 1. **Timeframe**: Aim for multi-week trends (2 weeks to 1 month). Avoid daily noise.
@@ -272,51 +325,97 @@ Data:
         
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
         
+        asset_type = criteria.get('asset_type', 'STOCK')
+        
+        # Asset Type Instruction
+        asset_instruction = ""
+        if asset_type == 'CRYPTO':
+            asset_instruction = """
+        **ASSET FOCUS: CRYPTOCURRENCIES**
+        - Recommend top cryptocurrencies or tokens (e.g., BTC-USD, ETH-USD, SOL-USD).
+        - Focus on On-chain activity, adoption trends, and technical breakouts.
+        - Consider market cap, liquidity, and regulatory environment.
+        - DO NOT recommend stocks or other asset types.
+        """
+        elif asset_type == 'COMMODITY':
+            asset_instruction = """
+        **ASSET FOCUS: COMMODITIES**
+        - Recommend commodities (Gold GC=F, Oil CL=F, Silver SI=F, etc.) or related ETFs/Futures.
+        - Focus on Supply/Demand imbalances, inventory levels, and Macro trends.
+        - Consider seasonal patterns, geopolitical risks, and currency impacts.
+        - DO NOT recommend stocks or other asset types.
+        """
+        elif asset_type == 'BOND':
+            asset_instruction = """
+        **ASSET FOCUS: BONDS / FIXED INCOME**
+        - Recommend Government Bonds (US Treasuries like ^TNX, ^IRX, ^TYX) or High-Grade Corporate Bond ETFs.
+        - Focus on Yield levels, Interest Rate Policy, and Economic Data.
+        - Consider duration risk, credit quality, and yield curve positioning.
+        - DO NOT recommend stocks or other asset types.
+        """
+        else:
+            asset_instruction = """
+        **ASSET FOCUS: STOCKS (EQUITIES)**
+        - Recommend stocks from various sectors and market caps.
+        - Focus on earnings growth, valuation, and sector trends.
+        - Consider fundamental metrics like P/E, revenue growth, and profitability.
+        - DO NOT recommend crypto, commodities, or bonds.
+        """
+
         # 处理市场选择
         market = criteria.get('market', 'Any')
         market_instruction = ""
         if market == 'US':
             market_instruction = """
-        **MARKET FOCUS: US STOCKS ONLY**
-        - Focus exclusively on US stock market (NYSE, NASDAQ)
-        - Use US stock ticker format (e.g., NVDA, AAPL, TSLA)
-        - Consider US market hours, economic indicators, and Fed policy
+        **MARKET FOCUS: US MARKETS ONLY**
+        - Focus exclusively on US listed assets.
         """
         elif market == 'HK':
             market_instruction = """
-        **MARKET FOCUS: HONG KONG STOCKS ONLY**
-        - Focus exclusively on Hong Kong stock market (HKEX)
-        - Use HK stock ticker format (e.g., 0700.HK, 9988.HK, 3690.HK)
-        - Consider HK market hours, HKD exchange rate, and mainland China policies
+        **MARKET FOCUS: HONG KONG MARKETS ONLY**
+        - Focus exclusively on Hong Kong listed assets.
         """
         elif market == 'A':
             market_instruction = """
         **MARKET FOCUS: A-SHARES (MAINLAND CHINA) ONLY**
-        - Focus exclusively on A-shares market (Shanghai SSE, Shenzhen SZSE)
-        - Use A-share ticker format (e.g., 000001.SZ, 600000.SH, 300750.SZ)
-        - Consider A-share market hours, CNY exchange rate, and Chinese regulatory policies
+        - Focus exclusively on A-shares market.
         """
         else:
             market_instruction = """
         **MARKET FOCUS: ALL MARKETS**
-        - You can recommend stocks from US, Hong Kong, or A-shares markets
-        - Use appropriate ticker format for each market:
-          * US: NVDA, AAPL (no suffix)
-          * HK: 0700.HK, 9988.HK
-          * A-shares: 000001.SZ, 600000.SH
-        - Ensure diversity across markets if beneficial
+        - You can recommend assets from any major global market.
         """
         
         search_instruction = """
-        1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation, and breaking news affecting stock prices TODAY.
-        2. **CRITICAL**: For every recommended stock, you MUST use Search to find its **current real-time price** (or latest close). Do NOT guess prices."""
+        1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation, and breaking news affecting asset prices TODAY.
+        2. **CRITICAL**: For every recommended asset, you MUST use Search to find its **current real-time price** (or latest close). Do NOT guess prices."""
         prompt = f"""
         You are a professional financial advisor and quantitative analyst.
-        Task: Recommend 10 promising stocks for purchase in the near future (next 1-4 weeks).
+        
+        ═══════════════════════════════════════════════════════════════
+        ⚠️  CRITICAL INSTRUCTION - READ THIS FIRST ⚠️
+        ═══════════════════════════════════════════════════════════════
+        
+        ASSET TYPE REQUIREMENT: {asset_type}
+        
+        You MUST recommend ONLY {asset_type} assets. 
+        
+        ❌ DO NOT recommend:
+        {self._get_forbidden_assets(asset_type)}
+        
+        ✅ ONLY recommend: {self._get_allowed_assets(asset_type)}
+        
+        If you recommend ANY asset that is NOT a {asset_type}, your response will be REJECTED.
+        
+        ═══════════════════════════════════════════════════════════════
+        
+        Task: Recommend 10 promising {asset_type} assets for purchase in the near future (next 1-4 weeks).
         
         {market_instruction}
+        {asset_instruction}
         
         User Criteria:
+        - Asset Type: {asset_type} (MANDATORY - DO NOT DEVIATE)
         - Market: {criteria.get('market', 'Any (All markets)')}
         - Capital Size: {criteria.get('capital', 'Not specified')}
         - Risk Tolerance: {criteria.get('risk', 'Not specified')}
@@ -324,18 +423,20 @@ Data:
         
         Instructions:
         {search_instruction}
-        3. Select 10 stocks that currently show strong technical setups or fundamental catalysts.
-        4. **STRICTLY FOLLOW** the market focus specified above. If a specific market is selected, ONLY recommend stocks from that market.
+        3. Select 10 {asset_type} assets that currently show strong technical setups or fundamental catalysts.
+        4. **VERIFY EACH RECOMMENDATION**: Before adding any asset to your list, confirm it is a {asset_type}.
         5. Assign a recommendation strength: "High Confidence" (⭐⭐⭐), "Medium" (⭐⭐), or "Speculative" (⭐).
         6. **LANGUAGE**: {lang_instruction}
         
+        ⚠️  FINAL REMINDER: Your recommendations MUST be 100% {asset_type} assets. No exceptions.
+        
         Output Format (JSON):
         {{
-            "market_overview": "Brief summary of current market sentiment (e.g., Bullish on Tech, Bearish on Energy).",
+            "market_overview": "Brief summary of current {asset_type} market sentiment.",
             "recommendations": [
                 {{
-                    "symbol": "Ticker (e.g. NVDA, 0700.HK)",
-                    "name": "Company Name",
+                    "symbol": "Ticker (e.g. {self._get_example_symbol(asset_type)})",
+                    "name": "Asset Name",
                     "price": "Current Price (Approx)",
                     "level": "⭐⭐⭐",
                     "reason": "Detailed reason citing recent news or technical breakout."
@@ -352,8 +453,9 @@ Data:
             print(f"  Model: {model_name}")
             print(f"  Provider: {config.get('provider', 'unknown')}")
             print(f"  Language: {language}")
+            print(f"  Asset Type: {asset_type}")
             print(f"  Supports search: {True}")
-            print(f"  Criteria: market={criteria.get('market')}, capital={criteria.get('capital')}, risk={criteria.get('risk')}, frequency={criteria.get('frequency')}")
+            print(f"  Criteria: market={criteria.get('market')}, asset_type={asset_type}, capital={criteria.get('capital')}, risk={criteria.get('risk')}, frequency={criteria.get('frequency')}")
             
             # Use unified adapter interface
             text, usage = adapter.generate(prompt, use_search=True)
@@ -412,26 +514,72 @@ Data:
         symbol = holding_data.get('symbol')
         avg_price = holding_data.get('avg_price')
         percentage = holding_data.get('percentage')
+        asset_type = holding_data.get('asset_type', 'STOCK')
         
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
         
+        # Asset-specific analysis guidance
+        asset_guidance = ""
+        if asset_type == "CRYPTO":
+            asset_guidance = """
+        **CRYPTO ANALYSIS GUIDANCE**:
+        - Focus on on-chain metrics, adoption trends, and regulatory news.
+        - Consider market sentiment, whale movements, and exchange flows.
+        - Avoid traditional equity metrics (P/E, dividends, etc.).
+        - Assess volatility risk and correlation with Bitcoin.
+        """
+        elif asset_type == "COMMODITY":
+            asset_guidance = """
+        **COMMODITY ANALYSIS GUIDANCE**:
+        - Focus on supply/demand fundamentals and inventory levels.
+        - Consider geopolitical risks, weather patterns, and production data.
+        - Analyze dollar strength (DXY) impact on commodity prices.
+        - Assess seasonal trends and storage costs.
+        """
+        elif asset_type == "BOND":
+            asset_guidance = """
+        **BOND ANALYSIS GUIDANCE**:
+        - Focus on interest rate expectations and central bank policy.
+        - Consider inflation data (CPI/PPI) and economic growth indicators.
+        - Analyze yield curve positioning and duration risk.
+        - Assess credit quality and default risk (if corporate bonds).
+        """
+        else:  # STOCK
+            asset_guidance = """
+        **STOCK ANALYSIS GUIDANCE**:
+        - Focus on earnings growth, valuation metrics (P/E, P/S), and profitability.
+        - Consider sector trends, competitive positioning, and management quality.
+        - Analyze dividend yield and payout sustainability (if applicable).
+        - Assess technical levels and institutional ownership.
+        """
+        
         search_instruction = ""
         if supports_search:
-            search_instruction = "1. **Use Google Search or Web Search** to check the latest price and news for " + symbol + "."
+            search_instruction = f"1. **Use Google Search or Web Search** to check the latest price and news for this {asset_type} ({symbol})."
         else:
-            search_instruction = "1. Based on your knowledge, analyze the current situation for " + symbol + "."
+            search_instruction = f"1. Based on your knowledge, analyze the current situation for this {asset_type} ({symbol})."
         
         prompt = f"""
-        You are a portfolio manager. A client holds {symbol}.
+        You are a portfolio manager analyzing a client's {asset_type} holding.
+        
+        **ASSET TYPE**: {asset_type}
+        **IMPORTANT**: Use {asset_type}-specific analysis framework. Do not apply stock-specific metrics to non-stock assets.
         
         Holding Details:
         - Symbol: {symbol}
+        - Asset Type: {asset_type}
         - Average Buy Price: {avg_price}
-        - Portfolio Weight: {percentage}
+        - Portfolio Weight: {percentage}%
+        
+        {asset_guidance}
         
         Instructions:
         {search_instruction}
-        2. Analyze if they should Hold, Buy More, or Sell based on current price vs avg price and market outlook.
+        2. Analyze if they should Hold, Buy More, or Sell based on:
+           - Current price vs average buy price
+           - Market outlook for this {asset_type}
+           - Risk/reward at current levels
+           - Portfolio weight appropriateness
         3. Provide a rating: "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell".
         4. **LANGUAGE**: {lang_instruction}
         
