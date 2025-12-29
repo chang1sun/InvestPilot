@@ -1112,8 +1112,8 @@
                     </div>
                 </div>
 
-            <!-- Dashboard & Right Panel Row (1/2 + 1/2) -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Dashboard & Right Panel Row (1/2 + 1/2) - Only show when no recommendations -->
+            <div v-if="currentTab === 'recommend' && !recommendationResult" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <!-- Market Indices Dashboard (Left 1/2) -->
                 <div>
                     <p class="text-xs font-bold text-gray-400 uppercase mb-4 tracking-wider">[[ currentLanguage === 'zh' ? '📊 全球市场大盘' : '📊 Global Market Indices' ]]</p>
@@ -1295,10 +1295,24 @@
                 </div>
                     </div>
                     
-            <!-- Market Overview & Recommendations (Below Dashboard) -->
-            <div class="space-y-6">
+            <!-- Market Overview & Recommendations (Replaces Dashboard when available) -->
+            <div v-if="currentTab === 'recommend' && recommendationResult" class="space-y-6">
+                <!-- Header with Clear Button -->
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-gray-800">[[ currentLanguage === 'zh' ? '📊 市场推荐结果' : '📊 Market Recommendations' ]]</h2>
+                    <button 
+                        @click="recommendationResult = null"
+                        class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                        [[ currentLanguage === 'zh' ? '返回大盘视图' : 'Back to Dashboard' ]]
+                    </button>
+                </div>
+                
                 <!-- Market Overview -->
-                <div v-if="recommendationResult && recommendationResult.market_overview" class="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200/50 p-6 rounded-2xl text-gray-800 leading-relaxed shadow-lg relative overflow-hidden">
+                <div v-if="recommendationResult.market_overview" class="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200/50 p-6 rounded-2xl text-gray-800 leading-relaxed shadow-lg relative overflow-hidden">
                     <div class="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full -mr-16 -mt-16"></div>
                     <div class="absolute bottom-0 left-0 w-24 h-24 bg-indigo-200/20 rounded-full -ml-12 -mb-12"></div>
                     <div class="relative z-10">
@@ -1317,7 +1331,7 @@
                 </div>
 
                 <!-- Recommendations List -->
-                <div v-if="recommendationResult && recommendationResult.recommendations" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div v-if="recommendationResult.recommendations" class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="(rec, idx) in recommendationResult.recommendations" :key="idx" class="recommendation-card p-6 rounded-2xl group relative overflow-hidden">
                         <!-- Decorative gradient overlay -->
                         <div class="absolute inset-0 bg-gradient-to-br from-blue-50/0 via-indigo-50/0 to-purple-50/0 group-hover:from-blue-50/50 group-hover:via-indigo-50/30 group-hover:to-purple-50/20 transition-all duration-300"></div>
@@ -1353,11 +1367,12 @@
                     </div>
                 </div>
                 
-                <!-- Empty State (when no recommendations) -->
-                <div v-if="!recommendationResult" class="text-center py-12 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-                    <div class="text-gray-300 text-6xl mb-4">🔍</div>
-                    <p class="text-gray-500 text-sm">[[ currentLanguage === 'zh' ? 'AI 将根据您的筛选条件推荐优质资产' : 'AI will recommend quality assets based on your criteria' ]]</p>
-                </div>
+            </div>
+            
+            <!-- Empty State (when no recommendations) - Show below dashboard -->
+            <div v-if="currentTab === 'recommend' && !recommendationResult" class="text-center py-12 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 mt-6">
+                <div class="text-gray-300 text-6xl mb-4">🔍</div>
+                <p class="text-gray-500 text-sm">[[ currentLanguage === 'zh' ? 'AI 将根据您的筛选条件推荐优质资产' : 'AI will recommend quality assets based on your criteria' ]]</p>
             </div>
         </div>
 

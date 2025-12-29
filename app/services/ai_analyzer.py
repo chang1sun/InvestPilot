@@ -386,15 +386,24 @@ Data:
         - You can recommend assets from any major global market.
         """
         
-        search_instruction = """
-        1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation, and breaking news affecting asset prices TODAY.
-        2. **CRITICAL**: For every recommended asset, you MUST use Search to find its **current real-time price** (or latest close). Do NOT guess prices."""
+        # Get current date for prompt
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        current_date_full = datetime.now().strftime('%Y年%m月%d日') if language == 'zh' else datetime.now().strftime('%B %d, %Y')
+        
+        search_instruction = f"""
+        1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation, and breaking news affecting asset prices as of {current_date} (TODAY).
+        2. **CRITICAL**: For every recommended asset, you MUST use Search to find its **current real-time price** (or latest close as of {current_date}). Do NOT guess prices. Do NOT use prices from 2024 or earlier.
+        3. **DATE VERIFICATION**: When searching for market data, ensure you are getting information from {current_date} or the most recent trading day. Reject any data that appears to be from 2024 or earlier."""
         prompt = f"""
         You are a professional financial advisor and quantitative analyst.
         
         ═══════════════════════════════════════════════════════════════
         ⚠️  CRITICAL INSTRUCTION - READ THIS FIRST ⚠️
         ═══════════════════════════════════════════════════════════════
+        
+        📅 CURRENT DATE: {current_date} ({current_date_full})
+        ⚠️  IMPORTANT: Today is {current_date}. You MUST provide recommendations based on the LATEST market data as of {current_date}. 
+        ⚠️  DO NOT use outdated data from 2024 or earlier. All prices, news, and market information MUST be current as of {current_date}.
         
         ASSET TYPE REQUIREMENT: {asset_type}
         
@@ -409,7 +418,7 @@ Data:
         
         ═══════════════════════════════════════════════════════════════
         
-        Task: Recommend 10 promising {asset_type} assets for purchase in the near future (next 1-4 weeks).
+        Task: Recommend 10 promising {asset_type} assets for purchase in the near future (next 1-4 weeks) based on market conditions as of {current_date}.
         
         {market_instruction}
         {asset_instruction}

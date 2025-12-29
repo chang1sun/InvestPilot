@@ -547,9 +547,16 @@ def get_market_indices():
     for index_info in indices:
         try:
             symbol = index_info['symbol']
-            # Try multiple symbol formats for HSTECH if primary fails
-            hist = None
             used_symbol = symbol
+            
+            # Fetch historical data using yfinance
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period='5d')
+            
+            # Check if data is available
+            if hist.empty or len(hist) < 2:
+                print(f"Warning: No data for {symbol}, skipping...")
+                continue
             
             # Current price and change
             current_price = hist['Close'].iloc[-1]
