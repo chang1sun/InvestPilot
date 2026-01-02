@@ -6,9 +6,9 @@
     <title>Invest Pilot</title>
     <link rel="icon" type="image/png" href="/static/thumbnail.png">
     <link rel="apple-touch-icon" href="/static/thumbnail.png">
-    <script src="https://cdn.staticfile.net/vue/3.3.4/vue.global.prod.min.js"></script>
-    <script src="https://cdn.staticfile.net/echarts/5.4.3/echarts.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{ url_for('static', filename='vue.global.prod.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='echarts.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='tailwind.min.js') }}"></script>
     <style>
         [v-cloak] { display: none !important; }
         .chart-container { height: 500px; width: 100%; } /* Fixed height for chart */
@@ -562,7 +562,7 @@
 
         <div class="container mx-auto px-4 py-4 flex-1 flex flex-col">
         <!-- Top Navigation Bar -->
-        <nav class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40 mb-6" :class="{'top-[52px]': showDisclaimer, 'top-0': !showDisclaimer}">
+        <nav class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40 mb-4" :class="{'top-[52px]': showDisclaimer, 'top-0': !showDisclaimer}">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between h-16">
                     <!-- Logo & Brand -->
@@ -574,11 +574,18 @@
                     <!-- Desktop Navigation -->
                     <div class="hidden md:flex space-x-8 items-center">
             <button 
+                @click="currentTab = 'portfolio'"
+                            class="px-3 py-2 text-sm font-medium transition-colors duration-200"
+                            :class="currentTab === 'portfolio' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900'"
+            >
+                            [[ currentLanguage === 'zh' ? '持仓管理' : 'Portfolio' ]]
+            </button>
+            <button 
                 @click="currentTab = 'analysis'"
                             class="px-3 py-2 text-sm font-medium transition-colors duration-200"
                             :class="currentTab === 'analysis' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900'"
             >
-                            [[ currentLanguage === 'zh' ? '个股分析' : 'Analysis' ]]
+                            [[ currentLanguage === 'zh' ? 'K线分析' : 'K-Line Analysis' ]]
             </button>
             <button 
                 @click="currentTab = 'recommend'"
@@ -586,13 +593,6 @@
                             :class="currentTab === 'recommend' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900'"
             >
                             [[ currentLanguage === 'zh' ? '市场风向' : 'Market Trends' ]]
-            </button>
-            <button 
-                @click="currentTab = 'portfolio'"
-                            class="px-3 py-2 text-sm font-medium transition-colors duration-200"
-                            :class="currentTab === 'portfolio' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900'"
-            >
-                            [[ currentLanguage === 'zh' ? '持仓诊断' : 'Portfolio' ]]
             </button>
         </div>
 
@@ -660,13 +660,28 @@
                                 type="text" 
                                 v-model="query" 
                                 @input="handleSearch"
-                                @keyup.enter="analyzeStock(query)"
+                                @keyup.enter="klineSymbolSelected ? analyzeStock(query) : null"
+                                :readonly="klineSymbolSelected"
                                 :placeholder="currentLanguage === 'zh' ? '输入资产代码 (如 AAPL, BTC-USD, GC=F)' : 'Enter Asset Symbol (e.g., AAPL, BTC-USD, GC=F)'"
-                                class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none text-sm font-medium transition-all"
+                                :class="[
+                                    'w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none text-sm font-medium transition-all',
+                                    klineSymbolSelected ? 'bg-blue-50 border-blue-300 text-blue-900 font-semibold' : ''
+                                ]"
                             >
-                            <div v-if="suggestions.length > 0" class="absolute z-50 w-full bg-white mt-1 rounded-lg shadow-xl border border-gray-200 max-h-60 overflow-auto">
+                            <!--清除按钮-->
+                            <button 
+                                v-if="query && klineSymbolSelected"
+                                @click="clearKlineSelection"
+                                class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-1 transition-colors"
+                                title="[[ currentLanguage === 'zh' ? '清除选择' : 'Clear selection' ]]"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                            <div v-if="suggestions && suggestions.length > 0" class="absolute z-50 w-full bg-white mt-1 rounded-lg shadow-xl border border-gray-200 max-h-60 overflow-auto">
                                 <div 
-                                    v-for="item in suggestions" 
+                                    v-for="item in suggestions"
                                     @click="selectStock(item)"
                                     class="px-4 py-2.5 hover:bg-blue-50 cursor-pointer flex justify-between items-center text-sm border-b border-gray-100 last:border-0 transition-colors"
                                 >
@@ -680,10 +695,14 @@
                                     </svg>
                                 </div>
                             </div>
+                            <!--提示信息：必须从搜索结果中选择-->
+                            <div v-if="query && !klineSymbolSelected" class="absolute z-40 w-full mt-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                <span class="font-medium">⚠️ [[ currentLanguage === 'zh' ? '请从搜索结果中选择' : 'Please select from search results' ]]</span>
+                            </div>
                         </div>
                         <button 
                             @click="analyzeStock(query)" 
-                            :disabled="creatingTask || !query"
+                            :disabled="creatingTask || !query || !klineSymbolSelected"
                             :class="[
                                 'px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm whitespace-nowrap flex items-center gap-2 relative overflow-hidden',
                                 creatingTask ? 'btn-click-animation' : ''
@@ -771,6 +790,35 @@
                     </div>
                 </div>
                 
+                <!-- Portfolio Info Banner -->
+                <div v-if="currentPortfolio" class="bg-gradient-to-r from-purple-50 to-pink-50 border-l-4 border-purple-500 rounded-xl p-5 shadow-sm mb-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="p-2 bg-purple-100 rounded-lg">
+                                <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-900">
+                                    [[ currentLanguage === 'zh' ? '当前持仓' : 'Current Holdings' ]]
+                                </h3>
+                                <div class="flex gap-4 text-sm text-gray-600 mt-1">
+                                    <span>[[ currentLanguage === 'zh' ? '数量' : 'Qty' ]]: <strong>[[ currentPortfolio.total_quantity ]]</strong></span>
+                                    <span>[[ currentLanguage === 'zh' ? '均价' : 'Avg' ]]: <strong>[[ currentPortfolio.avg_cost.toFixed(2) ]]</strong></span>
+                                    <span>[[ currentLanguage === 'zh' ? '成本' : 'Cost' ]]: <strong>[[ currentPortfolio.total_cost.toFixed(2) ]]</strong></span>
+                                </div>
+                            </div>
+                        </div>
+                        <button 
+                            @click="openAddTransactionModal(currentPortfolio)"
+                            class="px-4 py-2 bg-white border border-purple-200 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors text-sm font-bold"
+                        >
+                            [[ currentLanguage === 'zh' ? '调整持仓' : 'Adjust' ]]
+                        </button>
+                    </div>
+                </div>
+
                 <!-- 1. Stats Bar -->
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="bg-white p-4 rounded-xl shadow-sm border-l-4" :class="analysisResult.analysis.is_fallback ? 'border-orange-500' : 'border-blue-500'">
@@ -790,6 +838,9 @@
                     <div class="bg-white p-4 rounded-xl shadow-sm border-l-4" :class="analysisResult.analysis.is_fallback ? 'border-orange-500' : 'border-purple-500'">
                         <div class="text-xs text-gray-500 uppercase font-bold">[[ currentLanguage === 'zh' ? '当前状态' : 'Status' ]]</div>
                         <div class="text-xl font-bold" :class="analysisResult.analysis.is_fallback ? 'text-orange-700' : 'text-purple-700'">[[ stats.currentStatus ]]</div>
+                        <div v-if="stats.currentStatus === 'HOLDING' || stats.currentStatus === '持仓中'" class="text-sm mt-1 font-semibold" :class="stats.unrealizedReturn > 0 ? 'text-green-600' : 'text-red-600'">
+                            [[ currentLanguage === 'zh' ? '未实现' : 'Unrealized' ]]: [[ stats.unrealizedReturn > 0 ? '+' : '' ]][[ stats.unrealizedReturn ]]%
+                        </div>
                     </div>
                 </div>
 
@@ -1237,9 +1288,9 @@
                     </div>
                     
                             <!-- News List (Scrollable) -->
-                            <div v-else-if="marketNews.length > 0" class="flex-1 overflow-y-auto p-4 space-y-3">
+                            <div v-else-if="marketNews && marketNews.length > 0" class="flex-1 overflow-y-auto p-4 space-y-3">
                         <a 
-                            v-for="news in marketNews" 
+                            v-for="news in marketNews"
                             :key="news.id"
                             :href="news.link"
                             target="_blank"
@@ -1278,7 +1329,7 @@
                                     <!-- Footer -->
                                     <div class="flex items-center justify-between text-xs text-gray-400">
                                         <span class="truncate">[[ news.publisher ]]</span>
-                                        <span v-if="news.related_symbols.length > 0" class="font-mono font-semibold ml-2">[[ news.related_symbols[0] ]]</span>
+                                        <span v-if="news.related_symbols && news.related_symbols.length > 0" class="font-mono font-semibold ml-2">[[ news.related_symbols[0] ]]</span>
                             </div>
                         </a>
                     </div>
@@ -1331,7 +1382,7 @@
                 </div>
 
                 <!-- Recommendations List -->
-                <div v-if="recommendationResult.recommendations" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div v-if="recommendationResult.recommendations && Array.isArray(recommendationResult.recommendations) && recommendationResult.recommendations.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="(rec, idx) in recommendationResult.recommendations" :key="idx" class="recommendation-card p-6 rounded-2xl group relative overflow-hidden">
                         <!-- Decorative gradient overlay -->
                         <div class="absolute inset-0 bg-gradient-to-br from-blue-50/0 via-indigo-50/0 to-purple-50/0 group-hover:from-blue-50/50 group-hover:via-indigo-50/30 group-hover:to-purple-50/20 transition-all duration-300"></div>
@@ -1374,164 +1425,1098 @@
                 <div class="text-gray-300 text-6xl mb-4">🔍</div>
                 <p class="text-gray-500 text-sm">[[ currentLanguage === 'zh' ? 'AI 将根据您的筛选条件推荐优质资产' : 'AI will recommend quality assets based on your criteria' ]]</p>
             </div>
-        </div>
 
         <!-- Portfolio Diagnosis Tab Content -->
-        <div v-if="currentTab === 'portfolio' && !loadingPortfolio" class="flex-1 flex flex-col items-center animate-fade-in">
-             <div class="max-w-3xl w-full space-y-8">
-                <!-- Input Form Card -->
-                <div class="bg-gradient-to-br from-white via-purple-50/30 to-pink-50/30 p-8 rounded-2xl shadow-xl border-2 border-purple-100/50 backdrop-blur-sm relative overflow-hidden">
-                    <!-- Decorative elements -->
-                    <div class="absolute top-0 right-0 w-40 h-40 bg-purple-200/20 rounded-full -mr-20 -mt-20"></div>
-                    <div class="absolute bottom-0 left-0 w-32 h-32 bg-pink-200/20 rounded-full -ml-16 -mb-16"></div>
-                    
-                    <div class="relative z-10">
-                        <div class="flex items-center justify-center gap-4 mb-8">
-                            <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl flex items-center justify-center shadow-lg">
-                                <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                            </div>
-                            <div class="text-center">
-                                <h3 class="text-3xl font-extrabold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                                    [[ currentLanguage === 'zh' ? '持仓诊断专家' : 'Portfolio Doctor' ]]
-                    </h3>
-                                <p class="text-sm text-gray-500 mt-1">[[ currentLanguage === 'zh' ? 'AI 驱动的专业持仓分析' : 'AI-Powered Portfolio Analysis' ]]</p>
-                            </div>
-                        </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                            <div class="portfolio-input-group">
-                                <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
-                                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-                                    </svg>
-                                    [[ currentLanguage === 'zh' ? '资产类型' : 'Asset Type' ]]
-                                </label>
-                                <select v-model="portfolio.asset_type" class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none font-bold transition-all shadow-sm hover:shadow-md">
-                                    <option value="STOCK">[[ currentLanguage === 'zh' ? '股票' : 'Stock' ]]</option>
-                                    <option value="CRYPTO">[[ currentLanguage === 'zh' ? '加密货币' : 'Crypto' ]]</option>
-                                    <option value="COMMODITY">[[ currentLanguage === 'zh' ? '大宗商品' : 'Commodity' ]]</option>
-                                    <option value="BOND">[[ currentLanguage === 'zh' ? '债券' : 'Bond' ]]</option>
-                                </select>
-                        </div>
-                            <div class="portfolio-input-group">
-                                <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
-                                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
-                                    </svg>
-                                    [[ currentLanguage === 'zh' ? '持有代码' : 'Symbol' ]]
-                                </label>
-                                <input 
-                                    v-model="portfolio.symbol" 
-                                    type="text" 
-                                    placeholder="例如 AAPL" 
-                                    class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base uppercase focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none font-bold text-center transition-all shadow-sm hover:shadow-md"
-                                >
-                        </div>
-                            <div class="portfolio-input-group">
-                                <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
-                                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    [[ currentLanguage === 'zh' ? '买入均价' : 'Avg Price' ]]
-                                </label>
-                                <input 
-                                    v-model="portfolio.avg_price" 
-                                    type="text" 
-                                    placeholder="0.00" 
-                                    class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-center transition-all shadow-sm hover:shadow-md"
-                                >
-                            </div>
-                            <div class="portfolio-input-group">
-                                <label class="block text-sm font-bold text-gray-600 uppercase mb-3 flex items-center gap-2">
-                                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                                    </svg>
-                                    [[ currentLanguage === 'zh' ? '仓位占比 (%)' : 'Weight (%)' ]]
-                                </label>
-                                <input 
-                                    v-model="portfolio.percentage" 
-                                    type="number" 
-                                    placeholder="20" 
-                                    class="w-full bg-white border-2 border-gray-200 rounded-xl px-5 py-4 text-base focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-center transition-all shadow-sm hover:shadow-md"
-                                >
-                        </div>
+        <div v-if="currentTab === 'portfolio' && !loadingPortfolio" class="animate-fade-in">
+            <div class="max-w-7xl mx-auto space-y-4">
+                <!-- Header -->
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-900">
+                            [[ currentLanguage === 'zh' ? '持仓管理' : 'Portfolio Management' ]]
+                        </h2>
+                        <p class="text-xs text-gray-500 mt-0.5">
+                            [[ currentLanguage === 'zh' ? '管理您的虚拟投资组合' : 'Manage your virtual investment portfolio' ]]
+                        </p>
                     </div>
-
+                    <div class="flex gap-2">
                         <button 
-                            @click="diagnosePortfolio" 
-                            :disabled="!portfolio.symbol || creatingTask"
-                            :class="[
-                                'w-full py-5 bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white rounded-2xl hover:shadow-2xl transition-all disabled:opacity-50 font-bold text-lg shadow-xl flex justify-center items-center gap-3 relative overflow-hidden',
-                                creatingTask ? 'btn-click-animation' : ''
-                            ]"
+                            @click="diagnosePortfolio()"
+                            :disabled="portfolios.length === 0"
+                            class="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1.5 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <span class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></span>
-                            <svg v-if="!creatingTask" class="w-6 h-6 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
                             </svg>
-                            <svg v-else class="w-6 h-6 spinner relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            [[ currentLanguage === 'zh' ? '持仓分析' : 'Analysis' ]]
+                        </button>
+                        <button 
+                            @click="openCashModal()"
+                            class="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1.5 text-xs font-medium"
+                        >
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            <span class="relative z-10">
-                                [[ creatingTask ? (currentLanguage === 'zh' ? '创建任务中...' : 'Creating task...') : (currentLanguage === 'zh' ? '开始诊断' : 'Start Diagnosis') ]]
-                            </span>
-                    </button>
+                            [[ currentLanguage === 'zh' ? '现金操作' : 'Cash' ]]
+                        </button>
+                        <button 
+                            @click="openAddTransactionModal()"
+                            class="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 text-xs font-medium"
+                        >
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            [[ currentLanguage === 'zh' ? '添加交易' : 'Add Transaction' ]]
+                        </button>
                     </div>
                 </div>
 
-                <!-- Diagnosis Result -->
-                <div v-if="portfolioResult" class="portfolio-result-card rounded-2xl p-8 animate-fade-in relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500"></div>
-                    
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b-2 border-purple-100 pb-6 gap-4">
-                        <div>
-                            <div class="text-xs text-gray-400 uppercase font-bold mb-2 flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                [[ currentLanguage === 'zh' ? '诊断对象' : 'Target' ]]
-                        </div>
-                            <div class="text-4xl font-extrabold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                                [[ portfolioResult.symbol ]]
-                            </div>
-                        </div>
-                        <div class="text-center md:text-right">
-                            <div class="text-xs text-gray-400 uppercase font-bold mb-2">[[ currentLanguage === 'zh' ? '评级' : 'Rating' ]]</div>
-                            <span class="px-6 py-3 rounded-xl text-xl font-bold shadow-lg inline-block transform hover:scale-105 transition-transform"
-                                :class="{
-                                    'bg-gradient-to-r from-green-400 to-emerald-500 text-white': portfolioResult.rating && portfolioResult.rating.includes('Buy'),
-                                    'bg-gradient-to-r from-red-400 to-rose-500 text-white': portfolioResult.rating && portfolioResult.rating.includes('Sell'),
-                                    'bg-gradient-to-r from-gray-400 to-slate-500 text-white': portfolioResult.rating && portfolioResult.rating.includes('Hold')
-                                }">
-                                [[ portfolioResult.rating ]]
+                <!-- AI Analysis Result -->
+                <div v-if="portfolioResult" class="bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg border border-purple-200 p-6 mb-4 animate-fade-in">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                            </svg>
+                            <h3 class="text-lg font-bold text-gray-900">
+                                [[ currentLanguage === 'zh' ? 'AI 持仓分析' : 'AI Portfolio Analysis' ]]
+                            </h3>
+                            <span v-if="portfolioResult.overall_rating" class="ml-2 px-3 py-1 rounded-full text-sm font-semibold"
+                                  :class="{
+                                      'bg-green-100 text-green-800': portfolioResult.overall_rating === '优秀' || portfolioResult.overall_rating === 'Excellent',
+                                      'bg-blue-100 text-blue-800': portfolioResult.overall_rating === '良好' || portfolioResult.overall_rating === 'Good',
+                                      'bg-yellow-100 text-yellow-800': portfolioResult.overall_rating === '一般' || portfolioResult.overall_rating === 'Fair',
+                                      'bg-red-100 text-red-800': portfolioResult.overall_rating === '较差' || portfolioResult.overall_rating === 'Poor'
+                                  }">
+                                [[ portfolioResult.overall_rating ]]
                             </span>
                         </div>
-                    </div>
-                    
-                    <div class="mb-8 bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 p-6 rounded-2xl border-2 border-purple-200/50 shadow-md">
-                        <div class="text-sm text-purple-700 font-bold mb-3 flex items-center gap-2">
-                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                             </svg>
-                             [[ currentLanguage === 'zh' ? '建议操作' : 'Action' ]]
-                        </div>
-                        <div class="font-bold text-gray-900 text-xl leading-relaxed">[[ portfolioResult.action ]]</div>
-                    </div>
-                    
-                    <div>
-                        <div class="mb-4 flex items-center gap-2">
-                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        <button 
+                            @click="portfolioResult = null"
+                            class="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                             </svg>
-                            <span class="text-sm text-gray-600 font-bold uppercase">[[ currentLanguage === 'zh' ? '深度分析' : 'Analysis' ]]</span>
+                        </button>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <!-- Performance Analysis -->
+                        <div v-if="portfolioResult.performance_analysis" class="bg-white rounded-lg p-4 shadow-sm">
+                            <h4 class="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '收益分析' : 'Performance Analysis' ]]
+                            </h4>
+                            <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">[[ portfolioResult.performance_analysis ]]</p>
                         </div>
-                        <div class="bg-gradient-to-br from-gray-50 to-purple-50/30 p-6 rounded-xl border border-gray-200">
-                            <p class="text-gray-700 leading-relaxed font-serif text-justify text-base">
-                            [[ portfolioResult.analysis ]]
-                        </p>
+                        
+                        <!-- Asset Allocation Analysis -->
+                        <div v-if="portfolioResult.asset_allocation_analysis" class="bg-white rounded-lg p-4 shadow-sm">
+                            <h4 class="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '资产配置分析' : 'Asset Allocation Analysis' ]]
+                            </h4>
+                            <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">[[ portfolioResult.asset_allocation_analysis ]]</p>
                         </div>
+                        
+                        <!-- Risk Assessment -->
+                        <div v-if="portfolioResult.risk_assessment" class="bg-white rounded-lg p-4 shadow-sm">
+                            <h4 class="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '风险评估' : 'Risk Assessment' ]]
+                            </h4>
+                            <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">[[ portfolioResult.risk_assessment ]]</p>
+                        </div>
+                        
+                        <!-- Market Outlook -->
+                        <div v-if="portfolioResult.market_outlook" class="bg-white rounded-lg p-4 shadow-sm">
+                            <h4 class="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '市场展望' : 'Market Outlook' ]]
+                            </h4>
+                            <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">[[ portfolioResult.market_outlook ]]</p>
+                        </div>
+                        
+                        <!-- Recommendations -->
+                        <div v-if="portfolioResult.recommendations && portfolioResult.recommendations.length > 0" class="bg-white rounded-lg p-4 shadow-sm">
+                            <h4 class="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                [[ currentLanguage === 'zh' ? '操作建议' : 'Recommendations' ]]
+                            </h4>
+                            <ul class="space-y-2">
+                                <li v-for="(rec, index) in portfolioResult.recommendations" :key="index" 
+                                    class="flex items-start gap-2 text-sm text-gray-700">
+                                    <span class="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-semibold mt-0.5">
+                                        [[ index + 1 ]]
+                                    </span>
+                                    <span class="flex-1 leading-relaxed">[[ rec ]]</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div v-if="loadingPortfolios" class="flex justify-center items-center py-20">
+                    <div class="spinner w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+                </div>
+
+                <!-- Empty State -->
+                <div v-else-if="portfolios.length === 0" class="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                    <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                    </svg>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2">
+                        [[ currentLanguage === 'zh' ? '暂无持仓' : 'No Holdings' ]]
+                    </h3>
+                    <p class="text-sm text-gray-500">
+                        [[ currentLanguage === 'zh' ? '点击上方按钮添加您的第一笔交易' : 'Click the button above to add your first transaction' ]]
+                    </p>
+                </div>
+
+                <!-- Portfolio Display (with Total Assets Summary) -->
+                <div v-else>
+                    <!-- Total Assets Summary -->
+                    <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-5 mb-4 shadow-md">
+                        <div class="grid grid-cols-3 gap-4">
+                            <!-- Total Assets -->
+                            <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm relative group">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="text-blue-100 text-xs font-medium uppercase tracking-wider mb-1">
+                                            [[ currentLanguage === 'zh' ? '总资产' : 'Total Assets' ]]
+                                        </p>
+                                        <p class="text-white text-2xl font-bold">
+                                            [[ displayCurrency === 'USD' ? '$' : '¥' ]][[ formatNumber(displayedTotalAssets) ]]
+                                        </p>
+                                    </div>
+                                    <button 
+                                        @click="toggleCurrency"
+                                        class="text-xs bg-white/20 hover:bg-white/30 text-white px-2 py-1 rounded transition-colors"
+                                        :title="currentLanguage === 'zh' ? '切换币种' : 'Switch Currency'"
+                                    >
+                                        [[ displayCurrency ]]
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- Total Profit/Loss -->
+                            <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                                <p class="text-blue-100 text-xs font-medium uppercase tracking-wider mb-1">
+                                    [[ currentLanguage === 'zh' ? '总盈亏' : 'Total Profit/Loss' ]]
+                                </p>
+                                <p :class="totalProfitLoss >= 0 ? 'text-green-300' : 'text-red-300'" class="text-2xl font-bold">
+                                    [[ totalProfitLoss >= 0 ? '+' : '' ]][[ displayCurrency === 'USD' ? '$' : '¥' ]][[ formatNumber(displayedTotalProfitLoss) ]]
+                                </p>
+                            </div>
+                            <!-- Total Profit/Loss Percentage -->
+                            <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                                <p class="text-blue-100 text-xs font-medium uppercase tracking-wider mb-1">
+                                    [[ currentLanguage === 'zh' ? '总收益率' : 'Total Return' ]]
+                                </p>
+                                <p :class="totalProfitLossPercent >= 0 ? 'text-green-300' : 'text-red-300'" class="text-2xl font-bold">
+                                    [[ totalProfitLossPercent >= 0 ? '+' : '' ]][[ totalProfitLossPercent.toFixed(2) ]]%
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Portfolio Tables by Asset Type -->
+                    <div class="space-y-4">
+                    <!-- Cash Holdings -->
+                    <div v-if="portfoliosByType.CASH && portfoliosByType.CASH.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                [[ currentLanguage === 'zh' ? '现金' : 'Cash' ]]
+                            </h3>
+                        </div>
+                        <table class="w-full">
+                            <thead class="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '币种' : 'Currency' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '余额' : 'Balance' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '占比' : 'Allocation' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '操作' : 'Actions' ]]
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <tr v-for="p in portfoliosByType.CASH" :key="p.id" class="hover:bg-gray-50 cursor-pointer" @click="togglePortfolioExpand(p.id)">
+                                    <td class="px-4 py-2.5 whitespace-nowrap">
+                                        <div class="flex flex-col">
+                                            <span class="text-sm font-medium text-gray-900">[[ p.currency ]]</span>
+                                            <span v-if="p.currency !== 'USD' && p.exchange_rate" class="text-xs text-gray-500">
+                                                1:[[ p.exchange_rate.toFixed(4) ]]
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-2.5 whitespace-nowrap text-right">
+                                        <div class="flex flex-col items-end">
+                                            <span v-if="p.currency !== 'USD'" class="text-sm font-semibold text-gray-900">
+                                                $[[ formatNumber(p.value_in_usd) ]]
+                                            </span>
+                                            <span :class="p.currency !== 'USD' ? 'text-xs text-gray-500' : 'text-sm font-semibold text-gray-900'">
+                                                [[ formatNumber(p.total_quantity) ]] [[ p.currency !== 'USD' ? p.currency : '' ]]
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-2.5 whitespace-nowrap text-right">
+                                        <span class="text-sm text-gray-600">[[ calculateAllocation(p.value_in_usd || p.total_quantity) ]]%</span>
+                                    </td>
+                                    <td class="px-4 py-2.5 whitespace-nowrap text-center">
+                                        <button 
+                                            @click.stop="openCashModal()"
+                                            class="text-green-600 hover:text-green-800 text-sm font-medium"
+                                        >
+                                            [[ currentLanguage === 'zh' ? '入金/出金' : 'Deposit/Withdraw' ]]
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Stock Holdings -->
+                    <div v-if="portfoliosByType.STOCK && portfoliosByType.STOCK.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                [[ currentLanguage === 'zh' ? '股票' : 'Stocks' ]]
+                            </h3>
+                        </div>
+                        <table class="w-full">
+                            <thead class="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '标的' : 'Symbol' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '数量' : 'Quantity' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '均价' : 'Avg Cost' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '现价' : 'Current' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '市值' : 'Value' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '盈亏' : 'P&L' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '占比' : 'Allocation' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '操作' : 'Actions' ]]
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <template v-for="p in portfoliosByType.STOCK" :key="p.id">
+                                    <tr class="hover:bg-gray-50 cursor-pointer" @click="togglePortfolioExpand(p.id)">
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <svg v-if="expandedPortfolios.includes(p.id)" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                </svg>
+                                                <svg v-else class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                                </svg>
+                                                <span class="text-sm font-semibold text-gray-900">[[ p.symbol ]]</span>
+                                                <span class="text-xs text-gray-500">[[ p.currency ]]</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span class="text-sm text-gray-900">[[ formatNumber(p.total_quantity) ]]</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span v-if="p.currency !== 'USD'" class="text-sm text-gray-900">
+                                                    $[[ formatNumber(p.avg_cost * (p.exchange_rate || 1)) ]]
+                                                </span>
+                                                <span :class="p.currency !== 'USD' ? 'text-xs text-gray-500' : 'text-sm text-gray-900'">
+                                                    [[ formatNumber(p.avg_cost) ]] [[ p.currency !== 'USD' ? p.currency : '' ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span v-if="p.currency !== 'USD'" class="text-sm font-medium text-gray-900">
+                                                    $[[ formatNumber((p.current_price || p.avg_cost) * (p.exchange_rate || 1)) ]]
+                                                </span>
+                                                <span :class="p.currency !== 'USD' ? 'text-xs text-gray-500' : 'text-sm font-medium text-gray-900'">
+                                                    [[ formatNumber(p.current_price || p.avg_cost) ]] [[ p.currency !== 'USD' ? p.currency : '' ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span class="text-sm font-semibold text-gray-900">
+                                                    $[[ formatNumber(p.value_in_usd || (p.current_value || p.total_cost)) ]]
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ formatNumber(p.current_value || p.total_cost) ]] [[ p.currency ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span :class="[
+                                                    'text-sm font-bold',
+                                                    (p.profit_loss || 0) > 0 ? 'text-green-600' : (p.profit_loss || 0) < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ (p.profit_loss || 0) >= 0 ? '+' : '' ]][[ formatNumber((p.profit_loss || 0) * (p.exchange_rate || 1)) ]] USD
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ (p.profit_loss || 0) >= 0 ? '+' : '' ]][[ formatNumber(p.profit_loss || 0) ]] [[ p.currency ]]
+                                                </span>
+                                                <span :class="[
+                                                    'text-xs font-semibold',
+                                                    (p.profit_loss_percent || 0) > 0 ? 'text-green-600' : (p.profit_loss_percent || 0) < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ (p.profit_loss_percent || 0) >= 0 ? '+' : '' ]][[ formatNumber(p.profit_loss_percent || 0) ]]%
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span class="text-sm text-gray-600">[[ calculateAllocation(p.value_in_usd || (p.current_value || p.total_cost)) ]]%</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                                            <div class="flex items-center justify-center gap-3">
+                                                <button 
+                                                    @click.stop="openAddTransactionModal(p)"
+                                                    class="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                                >
+                                                    [[ currentLanguage === 'zh' ? '交易' : 'Trade' ]]
+                                                </button>
+                                                <button 
+                                                    @click.stop="query = p.symbol; currentTab = 'analysis'; analyzeStock(p.symbol)"
+                                                    class="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                                                >
+                                                    [[ currentLanguage === 'zh' ? '分析' : 'Analyze' ]]
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <!-- Expanded Transaction Records -->
+                                    <tr v-if="expandedPortfolios.includes(p.id)" class="bg-gray-50">
+                                        <td colspan="8" class="px-4 py-3">
+                                            <div class="text-xs text-gray-600 mb-2 font-semibold">
+                                                [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction History' ]]
+                                            </div>
+                                            <div v-if="loadingTransactions[p.id]" class="text-center py-4">
+                                                <div class="spinner w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+                                            </div>
+                                            <div v-else-if="!portfolioTransactions[p.id] || portfolioTransactions[p.id].length === 0" class="text-center py-4 text-sm text-gray-500">
+                                                [[ currentLanguage === 'zh' ? '暂无交易记录' : 'No transactions' ]]
+                                            </div>
+                                            <table v-else class="w-full text-xs">
+                                                <thead class="bg-gray-100">
+                                                    <tr>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '日期' : 'Date' ]]</th>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '类型' : 'Type' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '价格' : 'Price' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '数量' : 'Quantity' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '金额' : 'Amount' ]]</th>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '备注' : 'Notes' ]]</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="bg-white">
+                                                    <tr v-for="t in portfolioTransactions[p.id]" :key="t.id" class="border-t border-gray-200">
+                                                        <td class="px-4 py-2 text-gray-700">[[ t.trade_date ]]</td>
+                                                        <td class="px-4 py-2">
+                                                            <span :class="t.transaction_type === 'BUY' ? 'text-red-600' : 'text-green-600'" class="font-medium">
+                                                                [[ t.transaction_type === 'BUY' ? (currentLanguage === 'zh' ? '买入' : 'BUY') : (currentLanguage === 'zh' ? '卖出' : 'SELL') ]]
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-4 py-2 text-right text-gray-700">[[ formatNumber(t.price) ]]</td>
+                                                        <td class="px-4 py-2 text-right text-gray-700">[[ formatNumber(t.quantity) ]]</td>
+                                                        <td class="px-4 py-2 text-right font-medium text-gray-900">[[ formatNumber(t.amount) ]]</td>
+                                                        <td class="px-4 py-2 text-gray-600">[[ t.notes || '-' ]]</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Bitcoin Holdings -->
+                    <div v-if="portfoliosByType.BITCOIN && portfoliosByType.BITCOIN.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                [[ currentLanguage === 'zh' ? '比特币' : 'Bitcoin' ]]
+                            </h3>
+                        </div>
+                        <table class="w-full">
+                            <thead class="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '标的' : 'Symbol' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '数量' : 'Quantity' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '均价' : 'Avg Cost' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '现价' : 'Current' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '市值' : 'Value' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '盈亏' : 'P&L' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '占比' : 'Allocation' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '操作' : 'Actions' ]]
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <template v-for="p in portfoliosByType.BITCOIN" :key="p.id">
+                                    <tr class="hover:bg-gray-50 cursor-pointer" @click="togglePortfolioExpand(p.id)">
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <svg v-if="expandedPortfolios.includes(p.id)" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                </svg>
+                                                <svg v-else class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                                </svg>
+                                                <span class="text-sm font-semibold text-gray-900">[[ p.symbol ]]</span>
+                                                <span class="text-xs text-gray-500">[[ p.currency ]]</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span class="text-sm text-gray-900">[[ formatNumber(p.total_quantity) ]]</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span v-if="p.currency !== 'USD'" class="text-sm text-gray-900">
+                                                    $[[ formatNumber(p.avg_cost * (p.exchange_rate || 1)) ]]
+                                                </span>
+                                                <span :class="p.currency !== 'USD' ? 'text-xs text-gray-500' : 'text-sm text-gray-900'">
+                                                    [[ formatNumber(p.avg_cost) ]] [[ p.currency !== 'USD' ? p.currency : '' ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span v-if="p.currency !== 'USD'" class="text-sm font-medium text-gray-900">
+                                                    $[[ formatNumber((p.current_price || p.avg_cost) * (p.exchange_rate || 1)) ]]
+                                                </span>
+                                                <span :class="p.currency !== 'USD' ? 'text-xs text-gray-500' : 'text-sm font-medium text-gray-900'">
+                                                    [[ formatNumber(p.current_price || p.avg_cost) ]] [[ p.currency !== 'USD' ? p.currency : '' ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span class="text-sm font-semibold text-gray-900">
+                                                    $[[ formatNumber(p.value_in_usd || (p.current_value || p.total_cost)) ]]
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ formatNumber(p.current_value || p.total_cost) ]] [[ p.currency ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span :class="[
+                                                    'text-sm font-bold',
+                                                    (p.profit_loss || 0) > 0 ? 'text-green-600' : (p.profit_loss || 0) < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ (p.profit_loss || 0) >= 0 ? '+' : '' ]][[ formatNumber((p.profit_loss || 0) * (p.exchange_rate || 1)) ]] USD
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ (p.profit_loss || 0) >= 0 ? '+' : '' ]][[ formatNumber(p.profit_loss || 0) ]] [[ p.currency ]]
+                                                </span>
+                                                <span :class="[
+                                                    'text-xs font-semibold',
+                                                    (p.profit_loss_percent || 0) > 0 ? 'text-green-600' : (p.profit_loss_percent || 0) < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ (p.profit_loss_percent || 0) >= 0 ? '+' : '' ]][[ formatNumber(p.profit_loss_percent || 0) ]]%
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span class="text-sm text-gray-600">[[ calculateAllocation(p.value_in_usd || (p.current_value || p.total_cost)) ]]%</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                                            <div class="flex items-center justify-center gap-3">
+                                                <button 
+                                                    @click.stop="openAddTransactionModal(p)"
+                                                    class="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                                >
+                                                    [[ currentLanguage === 'zh' ? '交易' : 'Trade' ]]
+                                                </button>
+                                                <button 
+                                                    @click.stop="query = p.symbol; currentTab = 'analysis'; analyzeStock(p.symbol)"
+                                                    class="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                                                >
+                                                    [[ currentLanguage === 'zh' ? '分析' : 'Analyze' ]]
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <!-- Expanded Transaction Records -->
+                                    <tr v-if="expandedPortfolios.includes(p.id)" class="bg-gray-50">
+                                        <td colspan="8" class="px-4 py-3">
+                                            <div class="text-xs text-gray-600 mb-2 font-semibold">
+                                                [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction History' ]]
+                                            </div>
+                                            <div v-if="loadingTransactions[p.id]" class="text-center py-4">
+                                                <div class="spinner w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+                                            </div>
+                                            <div v-else-if="!portfolioTransactions[p.id] || portfolioTransactions[p.id].length === 0" class="text-center py-4 text-sm text-gray-500">
+                                                [[ currentLanguage === 'zh' ? '暂无交易记录' : 'No transactions' ]]
+                                            </div>
+                                            <table v-else class="w-full text-xs">
+                                                <thead class="bg-gray-100">
+                                                    <tr>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '日期' : 'Date' ]]</th>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '类型' : 'Type' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '价格' : 'Price' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '数量' : 'Quantity' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '金额' : 'Amount' ]]</th>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '备注' : 'Notes' ]]</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="bg-white">
+                                                    <tr v-for="t in portfolioTransactions[p.id]" :key="t.id" class="border-t border-gray-200">
+                                                        <td class="px-4 py-2 text-gray-700">[[ t.trade_date ]]</td>
+                                                        <td class="px-4 py-2">
+                                                            <span :class="t.transaction_type === 'BUY' ? 'text-red-600' : 'text-green-600'" class="font-medium">
+                                                                [[ t.transaction_type === 'BUY' ? (currentLanguage === 'zh' ? '买入' : 'BUY') : (currentLanguage === 'zh' ? '卖出' : 'SELL') ]]
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-4 py-2 text-right text-gray-700">[[ formatNumber(t.price) ]]</td>
+                                                        <td class="px-4 py-2 text-right text-gray-700">[[ formatNumber(t.quantity) ]]</td>
+                                                        <td class="px-4 py-2 text-right font-medium text-gray-900">[[ formatNumber(t.amount) ]]</td>
+                                                        <td class="px-4 py-2 text-gray-600">[[ t.notes || '-' ]]</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Gold Holdings -->
+                    <div v-if="portfoliosByType.GOLD && portfoliosByType.GOLD.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                [[ currentLanguage === 'zh' ? '黄金' : 'Gold' ]]
+                            </h3>
+                        </div>
+                        <table class="w-full">
+                            <thead class="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '标的' : 'Symbol' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '数量' : 'Quantity' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '均价' : 'Avg Cost' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '现价' : 'Current' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '市值' : 'Value' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '盈亏' : 'P&L' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '占比' : 'Allocation' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '操作' : 'Actions' ]]
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <template v-for="p in portfoliosByType.GOLD" :key="p.id">
+                                    <tr class="hover:bg-gray-50 cursor-pointer" @click="togglePortfolioExpand(p.id)">
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <svg v-if="expandedPortfolios.includes(p.id)" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                </svg>
+                                                <svg v-else class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                                </svg>
+                                                <span class="text-sm font-semibold text-gray-900">[[ p.symbol ]]</span>
+                                                <span class="text-xs text-gray-500">[[ p.currency ]]</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span class="text-sm text-gray-900">[[ formatNumber(p.total_quantity) ]]</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span v-if="p.currency !== 'USD'" class="text-sm text-gray-900">
+                                                    $[[ formatNumber(p.avg_cost * (p.exchange_rate || 1)) ]]
+                                                </span>
+                                                <span :class="p.currency !== 'USD' ? 'text-xs text-gray-500' : 'text-sm text-gray-900'">
+                                                    [[ formatNumber(p.avg_cost) ]] [[ p.currency !== 'USD' ? p.currency : '' ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span v-if="p.currency !== 'USD'" class="text-sm font-medium text-gray-900">
+                                                    $[[ formatNumber((p.current_price || p.avg_cost) * (p.exchange_rate || 1)) ]]
+                                                </span>
+                                                <span :class="p.currency !== 'USD' ? 'text-xs text-gray-500' : 'text-sm font-medium text-gray-900'">
+                                                    [[ formatNumber(p.current_price || p.avg_cost) ]] [[ p.currency !== 'USD' ? p.currency : '' ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span class="text-sm font-semibold text-gray-900">
+                                                    $[[ formatNumber(p.value_in_usd || (p.current_value || p.total_cost)) ]]
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ formatNumber(p.current_value || p.total_cost) ]] [[ p.currency ]]
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span :class="[
+                                                    'text-sm font-bold',
+                                                    (p.profit_loss || 0) > 0 ? 'text-green-600' : (p.profit_loss || 0) < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ (p.profit_loss || 0) >= 0 ? '+' : '' ]][[ formatNumber((p.profit_loss || 0) * (p.exchange_rate || 1)) ]] USD
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ (p.profit_loss || 0) >= 0 ? '+' : '' ]][[ formatNumber(p.profit_loss || 0) ]] [[ p.currency ]]
+                                                </span>
+                                                <span :class="[
+                                                    'text-xs font-semibold',
+                                                    (p.profit_loss_percent || 0) > 0 ? 'text-green-600' : (p.profit_loss_percent || 0) < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ (p.profit_loss_percent || 0) >= 0 ? '+' : '' ]][[ formatNumber(p.profit_loss_percent || 0) ]]%
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span class="text-sm text-gray-600">[[ calculateAllocation(p.current_value || p.total_cost) ]]%</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                                            <div class="flex items-center justify-center gap-3">
+                                                <button 
+                                                    @click.stop="openAddTransactionModal(p)"
+                                                    class="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                                >
+                                                    [[ currentLanguage === 'zh' ? '交易' : 'Trade' ]]
+                                                </button>
+                                                <button 
+                                                    @click.stop="query = p.symbol; currentTab = 'analysis'; analyzeStock(p.symbol)"
+                                                    class="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                                                >
+                                                    [[ currentLanguage === 'zh' ? '分析' : 'Analyze' ]]
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <!-- Expanded Transaction Records -->
+                                    <tr v-if="expandedPortfolios.includes(p.id)" class="bg-gray-50">
+                                        <td colspan="8" class="px-4 py-3">
+                                            <div class="text-xs text-gray-600 mb-2 font-semibold">
+                                                [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction History' ]]
+                                            </div>
+                                            <div v-if="loadingTransactions[p.id]" class="text-center py-4">
+                                                <div class="spinner w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+                                            </div>
+                                            <div v-else-if="!portfolioTransactions[p.id] || portfolioTransactions[p.id].length === 0" class="text-center py-4 text-sm text-gray-500">
+                                                [[ currentLanguage === 'zh' ? '暂无交易记录' : 'No transactions' ]]
+                                            </div>
+                                            <table v-else class="w-full text-xs">
+                                                <thead class="bg-gray-100">
+                                                    <tr>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '日期' : 'Date' ]]</th>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '类型' : 'Type' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '价格' : 'Price' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '数量' : 'Quantity' ]]</th>
+                                                        <th class="px-4 py-2 text-right text-gray-600">[[ currentLanguage === 'zh' ? '金额' : 'Amount' ]]</th>
+                                                        <th class="px-4 py-2 text-left text-gray-600">[[ currentLanguage === 'zh' ? '备注' : 'Notes' ]]</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="bg-white">
+                                                    <tr v-for="t in portfolioTransactions[p.id]" :key="t.id" class="border-t border-gray-200">
+                                                        <td class="px-4 py-2 text-gray-700">[[ t.trade_date ]]</td>
+                                                        <td class="px-4 py-2">
+                                                            <span :class="t.transaction_type === 'BUY' ? 'text-red-600' : 'text-green-600'" class="font-medium">
+                                                                [[ t.transaction_type === 'BUY' ? (currentLanguage === 'zh' ? '买入' : 'BUY') : (currentLanguage === 'zh' ? '卖出' : 'SELL') ]]
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-4 py-2 text-right text-gray-700">[[ formatNumber(t.price) ]]</td>
+                                                        <td class="px-4 py-2 text-right text-gray-700">[[ formatNumber(t.quantity) ]]</td>
+                                                        <td class="px-4 py-2 text-right font-medium text-gray-900">[[ formatNumber(t.amount) ]]</td>
+                                                        <td class="px-4 py-2 text-gray-600">[[ t.notes || '-' ]]</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    </div>  <!-- End v-else block -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Transaction Modal -->
+        <div v-if="showAddTransactionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showAddTransactionModal = false">
+            <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-bold text-gray-900">
+                        [[ currentLanguage === 'zh' ? '添加交易记录' : 'Add Transaction' ]]
+                    </h3>
+                    <button @click="showAddTransactionModal = false" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Symbol -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '标的代码' : 'Symbol' ]]
+                        </label>
+                        <div class="relative">
+                            <input 
+                                v-model="transactionForm.symbol" 
+                                @input="handleTransactionSymbolSearch"
+                                type="text" 
+                                placeholder="AAPL"
+                                :readonly="transactionSymbolSelected"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none uppercase"
+                            >
+                            <button 
+                                v-if="transactionForm.symbol && transactionSymbolSelected"
+                                @click="clearTransactionSymbol"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                            <div v-if="transactionSymbolSuggestions && transactionSymbolSuggestions.length > 0" class="absolute z-50 w-full bg-white mt-1 rounded-lg shadow-xl border border-gray-200 max-h-60 overflow-auto">
+                                <div 
+                                    v-for="item in transactionSymbolSuggestions"
+                                    @click="selectTransactionSymbol(item)"
+                                    class="px-4 py-2.5 hover:bg-purple-50 cursor-pointer flex justify-between items-center text-sm border-b border-gray-100 last:border-0 transition-colors"
+                                >
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-900">[[ item.symbol ]]</span>
+                                        <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">[[ item.type || 'STOCK' ]]</span>
+                                        <span class="text-gray-500 text-xs">[[ item.name ]]</span>
+                                    </div>
+                                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                            <!--提示信息：必须从搜索结果中选择-->
+                            <div v-if="transactionForm.symbol && !transactionSymbolSelected" class="absolute z-40 w-full mt-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                <span class="font-medium">⚠️ [[ currentLanguage === 'zh' ? '请从搜索结果中选择' : 'Please select from search results' ]]</span>
+                            </div>
+                        </div>                    </div>
+
+                    <!-- Asset Type & Currency -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-2">
+                                [[ currentLanguage === 'zh' ? '资产类型' : 'Asset Type' ]]
+                            </label>
+                            <select v-model="transactionForm.asset_type" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none">
+                                <option value="STOCK">[[ currentLanguage === 'zh' ? '股票' : 'Stock' ]]</option>
+                                <option value="CRYPTO">[[ currentLanguage === 'zh' ? '加密货币' : 'Crypto' ]]</option>
+                                <option value="GOLD">[[ currentLanguage === 'zh' ? '黄金' : 'Gold' ]]</option>
+                                <option value="CASH">[[ currentLanguage === 'zh' ? '现金' : 'Cash' ]]</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-2">
+                                [[ currentLanguage === 'zh' ? '币种' : 'Currency' ]]
+                            </label>
+                            <select v-model="transactionForm.currency" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none">
+                                <option value="USD">USD</option>
+                                <option value="HKD">HKD</option>
+                                <option value="CNY">CNY</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Transaction Type -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '交易类型' : 'Type' ]]
+                        </label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <button 
+                                @click="transactionForm.transaction_type = 'BUY'"
+                                :class="[
+                                    'px-4 py-3 rounded-xl font-bold transition-all',
+                                    transactionForm.transaction_type === 'BUY' 
+                                        ? 'bg-green-500 text-white' 
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                ]"
+                            >
+                                [[ currentLanguage === 'zh' ? '买入' : 'BUY' ]]
+                            </button>
+                            <button 
+                                @click="transactionForm.transaction_type = 'SELL'"
+                                :class="[
+                                    'px-4 py-3 rounded-xl font-bold transition-all',
+                                    transactionForm.transaction_type === 'SELL' 
+                                        ? 'bg-red-500 text-white' 
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                ]"
+                            >
+                                [[ currentLanguage === 'zh' ? '卖出' : 'SELL' ]]
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Date -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '交易日期' : 'Date' ]]
+                        </label>
+                        <input 
+                            v-model="transactionForm.trade_date" 
+                            type="date" 
+                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+                        >
+                    </div>
+
+                    <!-- Price, Quantity & Total Amount -->
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-2">
+                                [[ currentLanguage === 'zh' ? '价格' : 'Price' ]]
+                            </label>
+                            <input 
+                                v-model="transactionForm.price" 
+                                @input="calculateTotal"
+                                type="number" 
+                                step="0.01"
+                                placeholder="0.00"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+                            >
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-2">
+                                [[ currentLanguage === 'zh' ? '数量' : 'Quantity' ]]
+                            </label>
+                            <input 
+                                v-model="transactionForm.quantity" 
+                                @input="calculateTotal"
+                                type="number" 
+                                step="0.01"
+                                placeholder="0"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+                            >
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-2">
+                                [[ currentLanguage === 'zh' ? '总金额' : 'Total' ]]
+                            </label>
+                            <input 
+                                v-model="transactionForm.total_amount" 
+                                @input="calculateQuantity"
+                                type="number" 
+                                step="0.01"
+                                placeholder="0.00"
+                                class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+                            >
+                        </div>
+                    </div>
+
+                    <!-- Notes -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '备注' : 'Notes' ]] ([[ currentLanguage === 'zh' ? '可选' : 'Optional' ]])
+                        </label>
+                        <textarea 
+                            v-model="transactionForm.notes" 
+                            rows="3"
+                            placeholder="..."
+                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none resize-none"
+                        ></textarea>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex gap-4 pt-4">
+                        <button 
+                            @click="showAddTransactionModal = false"
+                            class="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-bold"
+                        >
+                            [[ currentLanguage === 'zh' ? '取消' : 'Cancel' ]]
+                        </button>
+                        <button 
+                            @click="addTransaction"
+                            :disabled="!transactionSymbolSelected"
+                            class="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            [[ currentLanguage === 'zh' ? '确认' : 'Confirm' ]]
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cash Operation Modal -->
+        <div v-if="showCashModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showCashModal = false">
+            <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-bold text-gray-900">
+                        [[ currentLanguage === 'zh' ? '现金操作' : 'Cash Operation' ]]
+                    </h3>
+                    <button @click="showCashModal = false" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Operation Type -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '操作类型' : 'Operation Type' ]]
+                        </label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <button 
+                                @click="cashForm.transaction_type = 'BUY'"
+                                :class="[
+                                    'px-4 py-3 rounded-xl font-bold transition-all',
+                                    cashForm.transaction_type === 'BUY' 
+                                        ? 'bg-green-500 text-white' 
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                ]"
+                            >
+                                [[ currentLanguage === 'zh' ? '入金' : 'DEPOSIT' ]]
+                            </button>
+                            <button 
+                                @click="cashForm.transaction_type = 'SELL'"
+                                :class="[
+                                    'px-4 py-3 rounded-xl font-bold transition-all',
+                                    cashForm.transaction_type === 'SELL' 
+                                        ? 'bg-red-500 text-white' 
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                ]"
+                            >
+                                [[ currentLanguage === 'zh' ? '出金' : 'WITHDRAW' ]]
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Currency -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '币种' : 'Currency' ]]
+                        </label>
+                        <select v-model="cashForm.currency" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                            <option value="USD">USD (美元)</option>
+                            <option value="HKD">HKD (港币)</option>
+                            <option value="CNY">CNY (人民币)</option>
+                        </select>
+                    </div>
+
+                    <!-- Amount -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '金额' : 'Amount' ]]
+                        </label>
+                        <input 
+                            v-model="cashForm.amount" 
+                            type="number" 
+                            step="0.01"
+                            placeholder="0.00"
+                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-lg font-bold"
+                        >
+                    </div>
+
+                    <!-- Date -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '日期' : 'Date' ]]
+                        </label>
+                        <input 
+                            v-model="cashForm.trade_date" 
+                            type="date" 
+                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+                        >
+                    </div>
+
+                    <!-- Notes -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '备注' : 'Notes' ]] ([[ currentLanguage === 'zh' ? '可选' : 'Optional' ]])
+                        </label>
+                        <textarea 
+                            v-model="cashForm.notes" 
+                            rows="3"
+                            placeholder="..."
+                            class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none resize-none"
+                        ></textarea>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex gap-4 pt-4">
+                        <button 
+                            @click="showCashModal = false"
+                            class="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-bold"
+                        >
+                            [[ currentLanguage === 'zh' ? '取消' : 'Cancel' ]]
+                        </button>
+                        <button 
+                            @click="addCashTransaction"
+                            class="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg transition-all font-bold"
+                        >
+                            [[ currentLanguage === 'zh' ? '确认' : 'Confirm' ]]
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1580,7 +2565,7 @@
                 const savedPreferences = getSavedPreferences();
                 const sessionData = getSessionData();
 
-                const currentTab = ref(savedPreferences.currentTab || 'analysis');
+                const currentTab = ref(savedPreferences.currentTab || 'portfolio');
                 const currentLanguage = ref(savedPreferences.currentLanguage || 'en');
                 
                 // Disclaimer Banner State
@@ -1610,6 +2595,7 @@
                 const query = ref(sessionData.query || '');
                 const selectedAssetType = ref('STOCK');
                 const suggestions = ref([]);
+                const klineSymbolSelected = ref(false); // Track if user selected from suggestions
                 const analysisResult = ref(sessionData.analysisResult || null);
                 const chartRef = ref(null);
                 let chartInstance = null;
@@ -1631,6 +2617,128 @@
                 // Market News Management
                 const marketNews = ref([]);
                 const loadingMarketNews = ref(false);
+
+                // Portfolio Management State
+                const portfolios = ref([]);
+                const loadingPortfolios = ref(false);
+                const displayCurrency = ref('USD');
+                const rates = ref({ USD_CNY: 7.2 }); // Default fallback
+                const showAddTransactionModal = ref(false);
+                const selectedPortfolio = ref(null);
+                const transactionForm = ref({
+                    symbol: '',
+                    asset_type: 'STOCK',
+                    transaction_type: 'BUY',
+                    trade_date: new Date().toISOString().split('T')[0],
+                    price: '',
+                    quantity: '',
+                    total_amount: '',
+                    notes: '',
+                    currency: 'USD'
+                });
+                
+                // Transaction symbol search
+                const transactionSymbolSuggestions = ref([]);
+                const transactionSymbolSelected = ref(false);
+                
+                // Portfolio expansion and transactions
+                const expandedPortfolios = ref([]);
+                const portfolioTransactions = ref({});
+                const loadingTransactions = ref({});
+                
+                // Cash Management
+                const showCashModal = ref(false);
+                const cashForm = ref({
+                    transaction_type: 'BUY', // BUY = 入金, SELL = 出金
+                    trade_date: new Date().toISOString().split('T')[0],
+                    amount: '',
+                    notes: '',
+                    currency: 'USD'
+                });
+                
+                // Computed: Group portfolios by asset type
+                const portfoliosByType = computed(() => {
+                    const grouped = {
+                        CASH: [],
+                        STOCK: [],
+                        BITCOIN: [],
+                        GOLD: []
+                    };
+                    portfolios.value.forEach(p => {
+                        if (!grouped[p.asset_type]) {
+                            grouped[p.asset_type] = [];
+                        }
+                        grouped[p.asset_type].push(p);
+                    });
+                    return grouped;
+                });
+                
+                // Computed: Total assets value (using current market value)
+                const totalAssetsValue = computed(() => {
+                    return portfolios.value.reduce((sum, p) => {
+                        // Use value_in_usd for all assets to ensure proper currency conversion
+                        if (p.value_in_usd !== undefined) {
+                            return sum + p.value_in_usd;
+                        }
+                        // Fallback for assets without value_in_usd
+                        if (p.asset_type === 'CASH') {
+                            return sum + p.total_quantity;
+                        }
+                        // Use current_value if available, otherwise use total_cost
+                        return sum + (p.current_value || p.total_cost);
+                    }, 0);
+                });
+                
+                // Computed: Total cost (original investment)
+                const totalCost = computed(() => {
+                    return portfolios.value.reduce((sum, p) => {
+                        // For cash, use value_in_usd if available for proper currency conversion
+                        if (p.asset_type === 'CASH') {
+                            if (p.value_in_usd !== undefined) {
+                                return sum + p.value_in_usd;
+                            }
+                            return sum + p.total_quantity; // Fallback
+                        }
+                        return sum + p.total_cost;
+                    }, 0);
+                });
+                
+                // Computed: Total profit/loss
+                const totalProfitLoss = computed(() => {
+                    return portfolios.value.reduce((sum, p) => {
+                        if (p.asset_type === 'CASH') {
+                            return sum + 0; // Cash has no profit/loss
+                        }
+                        return sum + (p.profit_loss || 0);
+                    }, 0);
+                });
+                
+                // Computed: Total profit/loss percentage
+                const totalProfitLossPercent = computed(() => {
+                    if (totalCost.value === 0) return 0;
+                    return (totalProfitLoss.value / totalCost.value) * 100;
+                });
+                
+                // Computed: Displayed total assets (with currency conversion)
+                const displayedTotalAssets = computed(() => {
+                    const usdValue = totalAssetsValue.value;
+                    const currency = displayCurrency.value;
+                    const rate = rates.value?.USD_CNY || 7.2;
+                    if (currency === 'CNY') {
+                        return usdValue * rate;
+                    }
+                    return usdValue;
+                });
+                
+                // Computed: Displayed total profit/loss (with currency conversion)
+                const displayedTotalProfitLoss = computed(() => {
+                    const usdValue = totalProfitLoss.value;
+                    if (displayCurrency.value === 'CNY') {
+                        const rate = rates.value?.USD_CNY || 7.2;
+                        return usdValue * rate;
+                    }
+                    return usdValue;
+                });
                 
                 // User Authentication
                 const currentUser = ref(null);
@@ -1660,6 +2768,9 @@
                 
                 // Computed: Filtered tasks
                 const filteredTasks = computed(() => {
+                    if (!tasks.value || !Array.isArray(tasks.value)) {
+                        return [];
+                    }
                     if (!taskFilterStatus.value) {
                         return tasks.value;
                     }
@@ -1668,6 +2779,7 @@
                 
                 // Computed: Running tasks count
                 const runningTasksCount = computed(() => {
+                    if (!tasks.value || !Array.isArray(tasks.value)) return 0;
                     return tasks.value.filter(t => t.status === 'running').length;
                 });
                 
@@ -1739,8 +2851,17 @@
                     loadingHotStocks.value = true;
                     try {
                         const res = await fetch('/api/trending');
-                        const trendingList = await res.json();
-                        hotStocks.value = trendingList;
+                        if (res.ok) {
+                            const trendingList = await res.json();
+                            if (Array.isArray(trendingList)) {
+                                hotStocks.value = trendingList;
+                            } else {
+                                console.error('Trending stocks data is not an array:', trendingList);
+                                hotStocks.value = [];
+                            }
+                        } else {
+                            throw new Error('Failed to fetch trending stocks');
+                        }
                     } catch (err) {
                         console.error('Failed to load trending stocks:', err);
                         // Fallback to default stocks
@@ -1764,8 +2885,17 @@
                     loadingMarketIndices.value = true;
                     try {
                         const res = await fetch('/api/market_indices');
-                        const indicesList = await res.json();
-                        marketIndices.value = indicesList;
+                        if (res.ok) {
+                            const indicesList = await res.json();
+                            if (Array.isArray(indicesList)) {
+                                marketIndices.value = indicesList;
+                            } else {
+                                console.error('Market indices data is not an array:', indicesList);
+                                throw new Error('Invalid data format');
+                            }
+                        } else {
+                            throw new Error('Failed to fetch market indices');
+                        }
                     } catch (err) {
                         console.error('Failed to load market indices:', err);
                         // Fallback to default indices
@@ -1787,14 +2917,302 @@
                     loadingMarketNews.value = true;
                     try {
                         const res = await fetch('/api/market_news');
-                        const newsList = await res.json();
-                        marketNews.value = newsList;
+                        if (res.ok) {
+                            const newsList = await res.json();
+                            if (Array.isArray(newsList)) {
+                                marketNews.value = newsList;
+                            } else {
+                                marketNews.value = [];
+                            }
+                        } else {
+                            marketNews.value = [];
+                        }
                     } catch (err) {
                         console.error('Failed to load market news:', err);
                         marketNews.value = [];
                     } finally {
                         loadingMarketNews.value = false;
                     }
+                };
+
+                // Load portfolios
+                const loadPortfolios = async () => {
+                    if (!currentUser.value) return;
+                    
+                    loadingPortfolios.value = true;
+                    try {
+                        const res = await fetch('/api/portfolios', {
+                            headers: { 'X-Session-ID': sessionId.value }
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            portfolios.value = (data && Array.isArray(data.portfolios)) ? data.portfolios : [];
+                            if (data.rates) {
+                                rates.value = { ...rates.value, ...data.rates };
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to load portfolios:', err);
+                        showToast('加载持仓失败', 'error');
+                    } finally {
+                        loadingPortfolios.value = false;
+                    }
+                };
+
+                // Calculate total amount based on price and quantity
+                const calculateTotal = () => {
+                    if (transactionForm.value.price && transactionForm.value.quantity) {
+                        transactionForm.value.total_amount = (parseFloat(transactionForm.value.price) * parseFloat(transactionForm.value.quantity)).toFixed(2);
+                    }
+                };
+
+                // Calculate quantity based on price and total amount
+                const calculateQuantity = () => {
+                    if (transactionForm.value.price && transactionForm.value.total_amount) {
+                        transactionForm.value.quantity = (parseFloat(transactionForm.value.total_amount) / parseFloat(transactionForm.value.price)).toFixed(4);
+                    }
+                };
+
+                // Toggle display currency
+                const toggleCurrency = () => {
+                    console.log('Before toggle:', displayCurrency.value);
+                    console.log('totalAssetsValue:', totalAssetsValue.value);
+                    console.log('rates:', rates.value);
+                    displayCurrency.value = displayCurrency.value === 'USD' ? 'CNY' : 'USD';
+                    console.log('After toggle:', displayCurrency.value);
+                    console.log('displayedTotalAssets:', displayedTotalAssets.value);
+                };
+
+                // Add transaction
+                const addTransaction = async () => {
+                    if (!transactionForm.value.symbol || !transactionForm.value.price || (!transactionForm.value.quantity && !transactionForm.value.total_amount)) {
+                        showToast('请填写完整信息', 'error');
+                        return;
+                    }
+                    
+                    try {
+                        const res = await fetch('/api/transactions', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Session-ID': sessionId.value
+                            },
+                            body: JSON.stringify(transactionForm.value)
+                        });
+                        
+                        if (res.ok) {
+                            const data = await res.json();
+                            showToast('交易记录添加成功', 'success');
+                            showAddTransactionModal.value = false;
+                            
+                            // Reset form
+                            transactionForm.value = {
+                                symbol: '',
+                                asset_type: 'STOCK',
+                                transaction_type: 'BUY',
+                                trade_date: new Date().toISOString().split('T')[0],
+                                price: '',
+                                quantity: '',
+                                total_amount: '',
+                                notes: '',
+                                currency: 'USD'
+                            };
+                            
+                            // Refresh portfolios
+                            await loadPortfolios();
+                        } else {
+                            const error = await res.json();
+                            showToast(error.error || '添加失败', 'error');
+                        }
+                    } catch (err) {
+                        console.error('Failed to add transaction:', err);
+                        showToast('添加交易记录失败', 'error');
+                    }
+                };
+
+                // Open add transaction modal
+                const openAddTransactionModal = (portfolio = null) => {
+                    if (portfolio) {
+                        transactionForm.value.symbol = portfolio.symbol;
+                        transactionForm.value.asset_type = portfolio.asset_type;
+                        transactionForm.value.currency = portfolio.currency;
+                        transactionSymbolSelected.value = true;
+                    } else {
+                        transactionSymbolSelected.value = false;
+                    }
+                    transactionSymbolSuggestions.value = [];
+                    showAddTransactionModal.value = true;
+                };
+                
+                // Handle transaction symbol search
+                let transactionSearchTimeout = null;
+                const handleTransactionSymbolSearch = (e) => {
+                    const val = e.target.value;
+                    if (val.length < 1) {
+                        transactionSymbolSuggestions.value = [];
+                        transactionSymbolSelected.value = false;
+                        return;
+                    }
+                    
+                    if (transactionSymbolSelected.value) {
+                        return; // Don't search if already selected
+                    }
+                    
+                    // Clear previous timeout
+                    if (transactionSearchTimeout) {
+                        clearTimeout(transactionSearchTimeout);
+                    }
+                    
+                    // Set new timeout for debounce
+                    transactionSearchTimeout = setTimeout(async () => {
+                        try {
+                            const res = await fetch(`/api/search?q=${val}`);
+                            transactionSymbolSuggestions.value = await res.json();
+                        } catch (err) {
+                            console.error(err);
+                        }
+                    }, 300);
+                };
+                
+                // Select transaction symbol from suggestions
+                const selectTransactionSymbol = async (item) => {
+                    transactionForm.value.symbol = item.symbol;
+                    transactionForm.value.asset_type = item.type || 'STOCK';
+                    transactionForm.value.trade_date = new Date().toISOString().split('T')[0];
+                    transactionSymbolSuggestions.value = [];
+                    transactionSymbolSelected.value = true;
+                    
+                    // Auto-fetch current price
+                    try {
+                        const res = await fetch(`/api/current-price?symbol=${item.symbol}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            transactionForm.value.price = data.price;
+                        }
+                    } catch (err) {
+                        console.error('Failed to fetch current price:', err);
+                        // If price fetch fails, leave price empty for user to input
+                    }
+                };
+                
+                // Clear transaction symbol selection
+                const clearTransactionSymbol = () => {
+                    transactionForm.value.symbol = '';
+                    transactionForm.value.asset_type = 'STOCK';
+                    transactionForm.value.price = '';
+                    transactionForm.value.trade_date = new Date().toISOString().split('T')[0];
+                    transactionSymbolSelected.value = false;
+                    transactionSymbolSuggestions.value = [];
+                };
+                
+                // Open cash modal
+                const openCashModal = () => {
+                    showCashModal.value = true;
+                };
+                
+                // Add cash transaction
+                const addCashTransaction = async () => {
+                    if (!cashForm.value.amount) {
+                        showToast(currentLanguage.value === 'zh' ? '请填写金额' : 'Please enter amount', 'error');
+                        return;
+                    }
+                    
+                    try {
+                        const res = await fetch('/api/transactions', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Session-ID': sessionId.value
+                            },
+                            body: JSON.stringify({
+                                symbol: 'CASH',
+                                asset_type: 'CASH',
+                                transaction_type: cashForm.value.transaction_type,
+                                trade_date: cashForm.value.trade_date,
+                                price: 1, // 现金价格固定为1
+                                quantity: parseFloat(cashForm.value.amount),
+                                notes: cashForm.value.notes,
+                                currency: cashForm.value.currency
+                            })
+                        });
+                        
+                        if (res.ok) {
+                            const data = await res.json();
+                            showToast(
+                                currentLanguage.value === 'zh' 
+                                    ? (cashForm.value.transaction_type === 'BUY' ? '入金成功' : '出金成功')
+                                    : (cashForm.value.transaction_type === 'BUY' ? 'Deposit successful' : 'Withdrawal successful'),
+                                'success'
+                            );
+                            showCashModal.value = false;
+                            
+                            // Reset form
+                            cashForm.value = {
+                                transaction_type: 'BUY',
+                                trade_date: new Date().toISOString().split('T')[0],
+                                amount: '',
+                                notes: '',
+                                currency: 'USD'
+                            };
+                            
+                            // Refresh portfolios
+                            await loadPortfolios();
+                        } else {
+                            const error = await res.json();
+                            showToast(error.error || (currentLanguage.value === 'zh' ? '操作失败' : 'Operation failed'), 'error');
+                        }
+                    } catch (err) {
+                        console.error('Failed to add cash transaction:', err);
+                        showToast(currentLanguage.value === 'zh' ? '操作失败' : 'Operation failed', 'error');
+                    }
+                };
+                
+                // Toggle portfolio expand/collapse
+                const togglePortfolioExpand = async (portfolioId) => {
+                    const index = expandedPortfolios.value.indexOf(portfolioId);
+                    if (index > -1) {
+                        // Collapse
+                        expandedPortfolios.value.splice(index, 1);
+                    } else {
+                        // Expand and load transactions
+                        expandedPortfolios.value.push(portfolioId);
+                        await loadPortfolioTransactions(portfolioId);
+                    }
+                };
+                
+                // Load transactions for a portfolio
+                const loadPortfolioTransactions = async (portfolioId) => {
+                    if (!currentUser.value) return;
+                    
+                    loadingTransactions.value[portfolioId] = true;
+                    try {
+                        const res = await fetch(`/api/portfolios/${portfolioId}/transactions`, {
+                            headers: { 'X-Session-ID': sessionId.value }
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            portfolioTransactions.value[portfolioId] = data.transactions || [];
+                        }
+                    } catch (err) {
+                        console.error('Failed to load transactions:', err);
+                    } finally {
+                        loadingTransactions.value[portfolioId] = false;
+                    }
+                };
+                
+                // Format number with commas
+                const formatNumber = (num) => {
+                    if (num === null || num === undefined) return '0';
+                    const n = parseFloat(num);
+                    if (isNaN(n)) return '0';
+                    return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                };
+                
+                // Calculate allocation percentage
+                const calculateAllocation = (value) => {
+                    const total = totalAssetsValue.value;
+                    if (total === 0) return '0.00';
+                    return ((value / total) * 100).toFixed(2);
                 };
                 
                 // Trade Expansion State
@@ -1837,6 +3255,7 @@
                     
                     let winCount = 0;
                     let totalReturnVal = 0.0;
+                    let unrealizedReturnVal = 0.0;
                     let closedCount = 0;
                     let isHolding = false;
 
@@ -1851,6 +3270,11 @@
                             }
                         } else if (t.status === 'HOLDING') {
                             isHolding = true;
+                            const rateStr = t.return_rate.split('%')[0];
+                            const rate = parseFloat(rateStr);
+                            if (!isNaN(rate)) {
+                                unrealizedReturnVal += rate;
+                            }
                         }
                     });
 
@@ -1860,8 +3284,15 @@
                         totalTrades,
                         winRate,
                         totalReturn: totalReturnVal.toFixed(1),
+                        unrealizedReturn: unrealizedReturnVal.toFixed(1),
                         currentStatus: isHolding ? (currentLanguage.value === 'zh' ? '持仓中' : 'HOLDING') : (currentLanguage.value === 'zh' ? '空仓' : 'EMPTY')
                     };
+                });
+
+                // Computed: Current Portfolio for Analysis
+                const currentPortfolio = computed(() => {
+                    if (!query.value) return null;
+                    return portfolios.value.find(p => p.symbol === query.value);
                 });
 
                 // --- Persistence & Watchers ---
@@ -1901,6 +3332,9 @@
                 watch(currentTab, (newTab) => {
                     if (newTab === 'recommend' && selectedModel.value === 'local-strategy') {
                         selectedModel.value = 'models/gemini-3-flash-preview';
+                    }
+                    if (newTab === 'portfolio' && currentUser.value) {
+                        loadPortfolios();
                     }
                 });
 
@@ -2023,6 +3457,7 @@
                     if (currentUser.value) {
                         loadTasks();
                         startTaskPolling();
+                        loadPortfolios();
                     }
                 });
 
@@ -2040,8 +3475,10 @@
                     const val = e.target.value;
                     if (val.length < 1) {
                         suggestions.value = [];
+                        klineSymbolSelected.value = false; // Reset selection state
                         return;
                     }
+                    klineSymbolSelected.value = false; // User is typing, not selected from suggestions
                     try {
                         const res = await fetch(`/api/search?q=${val}`);
                         suggestions.value = await res.json();
@@ -2054,6 +3491,14 @@
                     query.value = item.symbol;
                     selectedAssetType.value = item.type || 'STOCK';
                     suggestions.value = [];
+                    klineSymbolSelected.value = true; // Mark as selected from suggestions
+                };
+
+                const clearKlineSelection = () => {
+                    query.value = '';
+                    klineSymbolSelected.value = false;
+                    suggestions.value = [];
+                    selectedAssetType.value = 'STOCK';
                 };
 
                 const toggleTrade = (index) => {
@@ -2385,7 +3830,17 @@
                             await loadTasks();
                             // Poll for completion
                             pollTaskUntilComplete(data.task_id, (result) => {
-                                recommendationResult.value = result;
+                                // Ensure result has proper structure
+                                if (result) {
+                                    if (!result.recommendations) {
+                                        result.recommendations = [];
+                                    } else if (!Array.isArray(result.recommendations)) {
+                                        result.recommendations = [];
+                                    }
+                                    recommendationResult.value = result;
+                                } else {
+                                    recommendationResult.value = null;
+                                }
                                 loadingRecommend.value = false;
                             });
                         } else {
@@ -2399,9 +3854,18 @@
                 };
 
                 const diagnosePortfolio = async () => {
-                    if(!portfolio.value.symbol) return;
                     if (!currentUser.value) {
                         showLoginModal.value = true;
+                        return;
+                    }
+                    
+                    // Check if there are any portfolios
+                    if (!portfolios.value || portfolios.value.length === 0) {
+                        showToast(
+                            currentLanguage.value === 'zh' ? '暂无持仓数据' : 'No portfolio data',
+                            'warning',
+                            2000
+                        );
                         return;
                     }
                     
@@ -2410,13 +3874,13 @@
                     portfolioResult.value = null;
                     
                     showToast(
-                        currentLanguage.value === 'zh' ? `正在创建持仓诊断任务：${portfolio.value.symbol}` : `Creating portfolio diagnosis task: ${portfolio.value.symbol}`,
+                        currentLanguage.value === 'zh' ? '正在创建持仓分析任务...' : 'Creating portfolio analysis task...',
                         'info',
                         2000
                     );
                     
                     try {
-                        // Create async task
+                        // Create async task with all portfolios
                         const res = await fetch('/api/portfolio_advice_async', {
                             method: 'POST',
                             headers: { 
@@ -2424,7 +3888,7 @@
                                 'X-Session-ID': sessionId.value
                             },
                             body: JSON.stringify({
-                                ...portfolio.value,
+                                portfolios: portfolios.value,
                                 model: selectedModel.value,
                                 language: currentLanguage.value
                             })
@@ -2432,7 +3896,7 @@
                         const data = await res.json();
                         if (data.success) {
                             showToast(
-                                currentLanguage.value === 'zh' ? `诊断任务已创建：${portfolio.value.symbol}` : `Diagnosis task created: ${portfolio.value.symbol}`,
+                                currentLanguage.value === 'zh' ? '持仓分析任务已创建' : 'Portfolio analysis task created',
                                 'success',
                                 3000
                             );
@@ -2447,7 +3911,7 @@
                                 portfolioResult.value = result;
                                 loadingPortfolio.value = false;
                                 showToast(
-                                    currentLanguage.value === 'zh' ? `🎉 持仓诊断完成：${portfolio.value.symbol}` : `🎉 Portfolio diagnosis completed: ${portfolio.value.symbol}`,
+                                    currentLanguage.value === 'zh' ? '🎉 持仓分析完成' : '🎉 Portfolio analysis completed',
                                     'success',
                                     3000
                                 );
@@ -2536,7 +4000,7 @@
                         });
                         if (res.ok) {
                             const data = await res.json();
-                            tasks.value = data.tasks || [];
+                            tasks.value = (data && Array.isArray(data.tasks)) ? data.tasks : [];
                         } else {
                             const errorData = await res.json().catch(() => ({}));
                             console.error('Failed to load tasks:', errorData.error || res.statusText);
@@ -2618,9 +4082,15 @@
                 };
                 
                 const showTaskResult = (task) => {
-                    if (!task.task_result) return;
+                    console.log('showTaskResult called with task:', task);
+                    
+                    if (!task.task_result) {
+                        console.log('No task_result found');
+                        return;
+                    }
                     
                     const result = task.task_result;
+                    console.log('Task type:', task.task_type, 'Result:', result);
                     
                     // Determine task type and show appropriate result
                     if (task.task_type === 'kline_analysis') {
@@ -2636,8 +4106,10 @@
                         taskListVisible.value = false; // Close task list
                     } else if (task.task_type === 'portfolio_diagnosis') {
                         // Switch to portfolio tab and show result
+                        console.log('Setting portfolioResult to:', result);
                         currentTab.value = 'portfolio';
                         portfolioResult.value = result;
+                        console.log('portfolioResult.value is now:', portfolioResult.value);
                         if (task.task_params && task.task_params.symbol) {
                             portfolio.value.symbol = task.task_params.symbol;
                         }
@@ -2645,7 +4117,17 @@
                     } else if (task.task_type === 'stock_recommendation') {
                         // Switch to recommend tab and show result
                         currentTab.value = 'recommend';
-                        recommendationResult.value = result;
+                        // Ensure result has proper structure
+                        if (result) {
+                            if (!result.recommendations) {
+                                result.recommendations = [];
+                            } else if (!Array.isArray(result.recommendations)) {
+                                result.recommendations = [];
+                            }
+                            recommendationResult.value = result;
+                        } else {
+                            recommendationResult.value = null;
+                        }
                         taskListVisible.value = false; // Close task list
                     }
                 };
@@ -2804,6 +4286,7 @@
                     diagnosePortfolio,
                     query,
                     suggestions,
+                    klineSymbolSelected,
                     loadingAnalysis,
                     loadingRecommend,
                     loadingPortfolio,
@@ -2811,6 +4294,7 @@
                     chartRef,
                     handleSearch,
                     selectStock,
+                    clearKlineSelection,
                     analyzeStock,
                     stats,
                     models,
@@ -2862,7 +4346,46 @@
                     creatingTask,
                     // Disclaimer
                     showDisclaimer,
-                    closeDisclaimer
+                    closeDisclaimer,
+                    // Portfolio Management
+                    portfolios,
+                    loadingPortfolios,
+                    loadPortfolios,
+                    displayCurrency,
+                    toggleCurrency,
+                    rates,
+                    displayedTotalAssets,
+                    displayedTotalProfitLoss,
+                    showAddTransactionModal,
+                    selectedPortfolio,
+                    transactionForm,
+                    transactionSymbolSuggestions,
+                    transactionSymbolSelected,
+                    addTransaction,
+                    calculateTotal,
+                    calculateQuantity,
+                    openAddTransactionModal,
+                    handleTransactionSymbolSearch,
+                    selectTransactionSymbol,
+                    clearTransactionSymbol,
+                    currentPortfolio,
+                    // Cash Management
+                    showCashModal,
+                    cashForm,
+                    openCashModal,
+                    addCashTransaction,
+                    // Portfolio Grouping & Expansion
+                    portfoliosByType,
+                    totalAssetsValue,
+                    totalCost,
+                    totalProfitLoss,
+                    totalProfitLossPercent,
+                    expandedPortfolios,
+                    portfolioTransactions,
+                    loadingTransactions,
+                    togglePortfolioExpand,
+                    formatNumber,
+                    calculateAllocation
                 };
             }
         }).mount('#app');

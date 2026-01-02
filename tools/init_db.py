@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app import create_app, db
-from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task
+from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task, Portfolio, Transaction
 
 def init_database():
     """初始化数据库表（幂等性：如果表已存在则跳过）"""
@@ -23,7 +23,7 @@ def init_database():
         inspector = inspect(db.engine)
         existing_tables = inspector.get_table_names()
         
-        required_tables = ['users', 'tasks', 'analysis_logs', 'stock_trade_signals', 'recommendation_cache']
+        required_tables = ['users', 'tasks', 'analysis_logs', 'stock_trade_signals', 'recommendation_cache', 'portfolios', 'transactions']
         missing_tables = [t for t in required_tables if t not in existing_tables]
         
         if missing_tables:
@@ -40,6 +40,8 @@ def init_database():
         print("- recommendation_cache")
         print("- users")
         print("- tasks")
+        print("- portfolios")
+        print("- transactions")
         
         # 显示统计信息
         try:
@@ -48,6 +50,8 @@ def init_database():
             cache_count = RecommendationCache.query.count()
             user_count = User.query.count()
             task_count = Task.query.count()
+            portfolio_count = Portfolio.query.count()
+            transaction_count = Transaction.query.count()
             
             print(f"\nCurrent data:")
             print(f"- Analysis logs: {analysis_count}")
@@ -55,6 +59,8 @@ def init_database():
             print(f"- Recommendation cache: {cache_count}")
             print(f"- Users: {user_count}")
             print(f"- Tasks: {task_count}")
+            print(f"- Portfolios: {portfolio_count}")
+            print(f"- Transactions: {transaction_count}")
         except Exception as e:
             print(f"\nWarning: Could not query statistics: {e}")
 

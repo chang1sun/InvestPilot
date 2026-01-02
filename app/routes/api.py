@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, session
 from app.services.data_provider import DataProvider
 from app.services.ai_analyzer import AIAnalyzer
-from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task
+from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task, Portfolio, Transaction
 from app.services.model_config import get_models_for_frontend
 from app.services.task_service import task_service
 from app import db
@@ -9,10 +9,75 @@ import json
 import hashlib
 import re
 import uuid
+import math
+import pandas as pd
 from datetime import datetime, timedelta
 
 api_bp = Blueprint('api', __name__)
 ai_analyzer = AIAnalyzer()
+
+def update_cash_balance(user_id, currency, amount, transaction_type, trade_date, notes=''):
+    """
+    更新现金余额
+    :param user_id: 用户ID
+    :param currency: 币种
+    :param amount: 金额（正数）
+    :param transaction_type: 'BUY' 表示入金，'SELL' 表示出金
+    :param trade_date: 交易日期
+    :param notes: 备注
+    :return: 是否成功
+    """
+    # 查找或创建现金持仓
+    cash_portfolio = Portfolio.query.filter_by(
+        user_id=user_id,
+        symbol='CASH',
+        asset_type='CASH',
+        currency=currency
+    ).first()
+    
+    if not cash_portfolio:
+        # 创建现金持仓
+        cash_portfolio = Portfolio(
+            user_id=user_id,
+            symbol='CASH',
+            asset_type='CASH',
+            currency=currency,
+            total_quantity=0,
+            avg_cost=1,  # 现金成本固定为1
+            total_cost=0
+        )
+        db.session.add(cash_portfolio)
+        db.session.flush()
+    
+    # 检查余额是否足够（出金时）
+    if transaction_type == 'SELL' and cash_portfolio.total_quantity < amount:
+        return False, f'现金余额不足，当前余额: {cash_portfolio.total_quantity:.2f}'
+    
+    # 更新现金持仓
+    if transaction_type == 'BUY':
+        # 入金
+        cash_portfolio.total_quantity += amount
+        cash_portfolio.total_cost += amount
+    else:
+        # 出金
+        cash_portfolio.total_quantity -= amount
+        cash_portfolio.total_cost -= amount
+    
+    # 创建现金交易记录
+    cash_transaction = Transaction(
+        portfolio_id=cash_portfolio.id,
+        user_id=user_id,
+        transaction_type=transaction_type,
+        trade_date=trade_date,
+        price=1,  # 现金价格固定为1
+        quantity=amount,
+        amount=amount,
+        notes=notes,
+        source='auto'  # 标记为自动生成
+    )
+    db.session.add(cash_transaction)
+    
+    return True, 'success'
 
 @api_bp.route('/models', methods=['GET'])
 def get_models():
@@ -164,8 +229,25 @@ def search():
     results = DataProvider.search_symbol(query)
     return jsonify(results)
 
+@api_bp.route('/current-price', methods=['GET'])
+def get_current_price():
+    from app.services.data_provider import batch_fetcher
+    
+    symbol = request.args.get('symbol', '')
+    if not symbol:
+        return jsonify({'error': 'Symbol is required'}), 400
+    
+    # Use cached version to reduce API calls
+    price = batch_fetcher.get_cached_current_price(symbol)
+    if price is None:
+        return jsonify({'error': 'Could not fetch current price'}), 404
+    
+    return jsonify({'symbol': symbol, 'price': price})
+
 @api_bp.route('/analyze', methods=['POST'])
 def analyze():
+    from app.services.data_provider import batch_fetcher
+    
     data = request.json
     symbol = data.get('symbol')
     asset_type = data.get('asset_type', 'STOCK')
@@ -175,8 +257,8 @@ def analyze():
     if not symbol:
         return jsonify({'error': 'Symbol is required'}), 400
         
-    # 1. Get K-line Data (Always fetch fresh market data)
-    kline_data = DataProvider.get_kline_data(symbol)
+    # 1. Get K-line Data (Use cached version to reduce API calls)
+    kline_data = batch_fetcher.get_cached_kline_data(symbol, period="3y", interval="1d")
     if not kline_data:
         return jsonify({'error': 'Could not fetch data for symbol'}), 404
     
@@ -515,8 +597,8 @@ def analyze():
 @api_bp.route('/market_indices', methods=['GET'])
 def get_market_indices():
     """Get major market indices for dashboard"""
-    import yfinance as yf
     from app import r
+    import time
     
     # Check cache first (cache for 5 minutes for real-time feel)
     cache_key = 'market_indices'
@@ -526,6 +608,9 @@ def get_market_indices():
             return jsonify(json.loads(cached))
     except:
         pass
+    
+    # Add delay to prevent race condition with trending_stocks endpoint
+    time.sleep(2)  # 2 second delay to stagger API calls
     
     # Define major indices with their symbols and metadata
     indices = [
@@ -544,14 +629,20 @@ def get_market_indices():
     
     result = []
     
+    # Extract all symbols for batch fetching
+    all_symbols = [idx['symbol'] for idx in indices]
+    
+    # Batch fetch all historical data in one API call
+    from app.services.data_provider import batch_fetcher
+    batch_data = batch_fetcher.batch_fetch_history(all_symbols, period='5d', interval='1d')
+    
     for index_info in indices:
         try:
             symbol = index_info['symbol']
             used_symbol = symbol
             
-            # Fetch historical data using yfinance
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period='5d')
+            # Get data from batch fetch results
+            hist = batch_data.get(symbol, pd.DataFrame())
             
             # Check if data is available
             if hist.empty or len(hist) < 2:
@@ -646,10 +737,9 @@ def get_market_indices():
 @api_bp.route('/trending', methods=['GET'])
 def get_trending_stocks():
     """Get trending stocks from various markets by volume"""
-    import yfinance as yf
     from app import r
     
-    # Check cache first (cache for 30 minutes)
+    # Check cache first (cache for 60 minutes to reduce API calls)
     cache_key = 'trending_stocks'
     try:
         cached = r.get(cache_key)
@@ -682,22 +772,43 @@ def get_trending_stocks():
         '0175.HK', '1398.HK', '0388.HK', '0005.HK'   # 吉利汽车、工商银行、港交所、汇丰控股
     ]
     
-    def fetch_stock_data(symbol, market):
-        """Fetch stock data with volume"""
+    # Combine all symbols for batch fetching
+    all_symbols = us_symbols + cn_symbols + hk_symbols
+    
+    # Market mapping
+    symbol_market = {}
+    for symbol in us_symbols:
+        symbol_market[symbol] = 'US'
+    for symbol in cn_symbols:
+        symbol_market[symbol] = 'CN'
+    for symbol in hk_symbols:
+        symbol_market[symbol] = 'HK'
+    
+    # Batch fetch all historical data in one API call
+    from app.services.data_provider import batch_fetcher
+    batch_data = batch_fetcher.batch_fetch_history(all_symbols, period='5d', interval='1d')
+    
+    def process_stock_data(symbol, market, hist):
+        """Process stock data from batch fetch results"""
         try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period='5d')
-            
             if hist.empty or len(hist) < 2:
                 return None
             
             # Get current price and change
             current_price = hist['Close'].iloc[-1]
             prev_close = hist['Close'].iloc[-2]
-            change_pct = ((current_price - prev_close) / prev_close) * 100
+            
+            if pd.isna(current_price) or pd.isna(prev_close) or prev_close == 0:
+                change_pct = 0.0
+            else:
+                change_pct = ((current_price - prev_close) / prev_close) * 100
+                if pd.isna(change_pct) or math.isinf(change_pct):
+                    change_pct = 0.0
             
             # Get volume (use latest day)
-            volume = hist['Volume'].iloc[-1]
+            volume = hist['Volume'].iloc[-1] if 'Volume' in hist.columns else 0
+            if pd.isna(volume):
+                volume = 0
             
             # Skip if volume is too low or zero
             if volume < 100000:
@@ -705,17 +816,10 @@ def get_trending_stocks():
             
             volume_str = f"{volume/1e6:.1f}M" if volume >= 1e6 else f"{volume/1e3:.1f}K"
             
-            # Get stock name from info (with fallback)
-            try:
-                info = ticker.info
-                name = info.get('shortName') or info.get('longName') or symbol
-                # Clean up name (remove suffixes)
-                if '(' in name:
-                    name = name.split('(')[0].strip()
-                if len(name) > 20:
-                    name = name[:20]
-            except:
-                name = symbol
+            # Get stock name from local list (avoiding info API calls)
+            from app.services.data_provider import POPULAR_STOCKS
+            stock_info = next((s for s in POPULAR_STOCKS if s['symbol'] == symbol), None)
+            name = stock_info['name'] if stock_info else symbol
             
             # Format price based on market
             if market == 'US':
@@ -751,25 +855,15 @@ def get_trending_stocks():
             }
             
         except Exception as e:
-            print(f"Error fetching {symbol}: {e}")
+            print(f"Error processing {symbol}: {e}")
             return None
     
-    # Fetch data from all markets
-    print("Fetching US market trending stocks...")
-    for symbol in us_symbols:
-        data = fetch_stock_data(symbol, 'US')
-        if data:
-            trending_stocks.append(data)
-    
-    print("Fetching CN market trending stocks...")
-    for symbol in cn_symbols:
-        data = fetch_stock_data(symbol, 'CN')
-        if data:
-            trending_stocks.append(data)
-    
-    print("Fetching HK market trending stocks...")
-    for symbol in hk_symbols:
-        data = fetch_stock_data(symbol, 'HK')
+    # Process data from all markets
+    print("Processing trending stocks...")
+    for symbol in all_symbols:
+        market = symbol_market[symbol]
+        hist = batch_data.get(symbol, pd.DataFrame())
+        data = process_stock_data(symbol, market, hist)
         if data:
             trending_stocks.append(data)
     
@@ -808,9 +902,9 @@ def get_trending_stocks():
     
     print(f"Returning {len(result)} trending stocks")
     
-    # Cache for 30 minutes (shorter than before for more freshness)
+    # Cache for 60 minutes
     try:
-        r.setex(cache_key, 1800, json.dumps(result))
+        r.setex(cache_key, 3600, json.dumps(result))
     except:
         pass
     
@@ -834,87 +928,67 @@ def get_market_news():
         pass
     
     news_items = []
-    # Major market indices and popular stocks for news
-    news_symbols = ['^GSPC', '^DJI', '^IXIC', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META']
     
-    for symbol in news_symbols:
-        try:
-            ticker = yf.Ticker(symbol)
-            ticker_news = ticker.news
-            
-            if ticker_news and len(ticker_news) > 0:
-                for item in ticker_news[:2]:  # Top 2 news per symbol
-                    # Extract content from nested structure
-                    content = item.get('content', {})
-                    
-                    # Parse timestamp from pubDate
-                    pub_date_str = content.get('pubDate', '')
+    # Get news from different sources using yfinance
+    try:
+        # Fetch news for major indices to represent global market news
+        # S&P 500, Nasdaq, Dow Jones, Gold, Oil
+        tickers = ["^GSPC", "^IXIC", "^DJI", "GC=F", "CL=F"]
+        
+        for symbol in tickers:
+            try:
+                ticker = yf.Ticker(symbol)
+                news = ticker.news
+                
+                for item in news:
                     try:
-                        # Parse ISO format: 2025-12-24T18:05:42Z
-                        published_time = datetime.fromisoformat(pub_date_str.replace('Z', '+00:00'))
-                    except:
-                        published_time = datetime.now()
-                    
-                    time_ago = get_time_ago(published_time)
-                    
-                    # Determine news type based on title keywords
-                    title = content.get('title', '')
-                    news_type = 'news'
-                    icon = '📰'
-                    
-                    if any(word in title.lower() for word in ['earnings', 'revenue', 'profit', 'quarter', '财报', '业绩']):
-                        news_type = 'earnings'
-                        icon = '📊'
-                    elif any(word in title.lower() for word in ['upgrade', 'downgrade', 'target', 'rating', 'analyst', '评级', '目标价']):
-                        news_type = 'rating'
-                        icon = '🎯'
-                    elif any(word in title.lower() for word in ['merger', 'acquisition', 'deal', 'buy', '并购', '收购']):
-                        news_type = 'deal'
-                        icon = '🤝'
-                    elif any(word in title.lower() for word in ['dividend', 'payout', '分红', '派息']):
-                        news_type = 'dividend'
-                        icon = '💰'
-                    elif any(word in title.lower() for word in ['surge', 'rally', 'soar', 'jump', '暴涨', '大涨']):
-                        news_type = 'bullish'
-                        icon = '🚀'
-                    elif any(word in title.lower() for word in ['drop', 'fall', 'plunge', 'sink', '暴跌', '下挫']):
-                        news_type = 'bearish'
-                        icon = '📉'
-                    
-                    # Extract related symbols from title
-                    related = [symbol.replace('^', '')]
-                    
-                    # Get thumbnail URL
-                    thumbnail_url = ''
-                    thumbnail = content.get('thumbnail', {})
-                    if thumbnail and 'resolutions' in thumbnail and thumbnail['resolutions']:
-                        thumbnail_url = thumbnail['resolutions'][0].get('url', '')
-                    
-                    # Get canonical URL
-                    canonical_url = content.get('canonicalUrl', {}).get('url', '')
-                    
-                    news_items.append({
-                        'id': item.get('id', ''),
-                        'title': title,
-                        'publisher': content.get('provider', {}).get('displayName', 'Unknown'),
-                        'link': canonical_url,
-                        'published': published_time.isoformat(),
-                        'time_ago': time_ago,
-                        'type': news_type,
-                        'icon': icon,
-                        'related_symbols': related,
-                        'thumbnail': thumbnail_url
-                    })
-        except Exception as e:
-            print(f"Error fetching news for {symbol}: {e}")
-            continue
-    
-    # Remove duplicates by UUID or link
+                        # Parse timestamp
+                        published_time = datetime.fromtimestamp(item.get('providerPublishTime', 0))
+                        time_ago = get_time_ago(published_time)
+                        
+                        title = item.get('title', '')
+                        
+                        # Determine news type based on title keywords
+                        news_type = 'news'
+                        icon = '📰'
+                        
+                        title_lower = title.lower()
+                        if any(word in title_lower for word in ['earnings', 'revenue', 'profit', 'report']):
+                            news_type = 'earnings'
+                            icon = '📊'
+                        elif any(word in title_lower for word in ['surge', 'plunge', 'jump', 'drop', 'rally', 'crash']):
+                            news_type = 'market'
+                            icon = '📈'
+                        elif any(word in title_lower for word in ['fed', 'rate', 'policy', 'central bank']):
+                            news_type = 'policy'
+                            icon = '🏛️'
+                        
+                        news_items.append({
+                            'title': title,
+                            'source': item.get('publisher', 'Unknown'),
+                            'time_ago': time_ago,
+                            'published': published_time.isoformat(),
+                            'url': item.get('link', '#'),
+                            'type': news_type,
+                            'icon': icon,
+                            'id': item.get('uuid')
+                        })
+                    except Exception as e:
+                        print(f"Error processing news item: {e}")
+                        continue
+            except Exception as e:
+                print(f"Error fetching news for {symbol}: {e}")
+                continue
+
+    except Exception as e:
+        print(f"Error fetching market news: {e}")
+
+    # Remove duplicates by URL or ID
     seen_ids = set()
     unique_news = []
     for item in news_items:
-        # Use UUID if available, otherwise use link as identifier
-        identifier = item['id'] if item['id'] else item['link']
+        # Use ID or URL as identifier
+        identifier = item.get('id') or item.get('url', '')
         if identifier and identifier not in seen_ids:
             seen_ids.add(identifier)
             unique_news.append(item)
@@ -930,7 +1004,6 @@ def get_market_news():
         pass
     
     return jsonify(result)
-
 def get_time_ago(dt):
     """Calculate time ago string"""
     now = datetime.utcnow()
@@ -1213,4 +1286,476 @@ def recommend_async():
     return jsonify({
         'success': True,
         'task_id': task_id
+    })
+
+# ========== 虚拟持仓管理 API ==========
+
+@api_bp.route('/portfolios', methods=['GET'])
+def get_portfolios():
+    """获取用户的所有持仓"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    portfolios = Portfolio.query.filter_by(user_id=user.id).all()
+    
+    # 引入 batch_fetcher
+    from app.services.data_provider import batch_fetcher
+    
+    # 为每个持仓添加实时价格和盈亏信息
+    portfolios_with_price = []
+    for p in portfolios:
+        portfolio_dict = p.to_dict()
+        
+        # 获取汇率 (统一逻辑)
+        exchange_rate = 1.0
+        currency = p.currency.upper() if p.currency else 'USD'
+        
+        if currency != 'USD':
+            try:
+                exchange_rate = batch_fetcher.get_cached_exchange_rate(currency, 'USD')
+            except Exception as e:
+                print(f"Failed to get exchange rate for {currency}: {e}")
+        
+        portfolio_dict['exchange_rate'] = exchange_rate
+        portfolio_dict['currency'] = currency
+        
+        # 现金资产不需要获取实时价格
+        if p.asset_type == 'CASH':
+            portfolio_dict['current_price'] = 1.0
+            portfolio_dict['current_value'] = p.total_quantity
+            portfolio_dict['profit_loss'] = 0.0
+            portfolio_dict['profit_loss_percent'] = 0.0
+            
+            # 计算美元价值
+            portfolio_dict['value_in_usd'] = p.total_quantity * exchange_rate
+        else:
+            # 获取实时价格
+            try:
+                # 使用带缓存的方法
+                current_price = batch_fetcher.get_cached_current_price(p.symbol)
+                
+                if current_price:
+                    portfolio_dict['current_price'] = float(current_price)
+                    current_value = current_price * p.total_quantity
+                    portfolio_dict['current_value'] = current_value
+                    portfolio_dict['profit_loss'] = current_value - p.total_cost
+                    portfolio_dict['profit_loss_percent'] = ((current_value - p.total_cost) / p.total_cost * 100) if p.total_cost > 0 else 0
+                    # 计算美元价值 (当前价值 * 汇率)
+                    portfolio_dict['value_in_usd'] = current_value * exchange_rate
+                else:
+                    # 如果获取不到实时价格，使用成本价
+                    portfolio_dict['current_price'] = p.avg_cost
+                    portfolio_dict['current_value'] = p.total_cost
+                    portfolio_dict['profit_loss'] = 0.0
+                    portfolio_dict['profit_loss_percent'] = 0.0
+                    portfolio_dict['value_in_usd'] = p.total_cost * exchange_rate
+            except Exception as e:
+                print(f"Failed to get price for {p.symbol}: {e}")
+                # 出错时使用成本价
+                portfolio_dict['current_price'] = p.avg_cost
+                portfolio_dict['current_value'] = p.total_cost
+                portfolio_dict['profit_loss'] = 0.0
+                portfolio_dict['profit_loss_percent'] = 0.0
+                portfolio_dict['value_in_usd'] = p.total_cost * exchange_rate
+        
+        portfolios_with_price.append(portfolio_dict)
+    
+    # 获取 USD 到 CNY 的汇率
+    usd_to_cny = 1.0
+    try:
+        usd_to_cny = batch_fetcher.get_cached_exchange_rate('USD', 'CNY')
+    except Exception as e:
+        print(f"Failed to get USD to CNY rate: {e}")
+
+    return jsonify({
+        'portfolios': portfolios_with_price,
+        'rates': {
+            'USD_CNY': usd_to_cny
+        }
+    })
+
+@api_bp.route('/portfolios/<int:portfolio_id>', methods=['GET'])
+def get_portfolio(portfolio_id):
+    """获取单个持仓详情（包含交易记录）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    portfolio = Portfolio.query.filter_by(id=portfolio_id, user_id=user.id).first()
+    if not portfolio:
+        return jsonify({'error': '持仓不存在'}), 404
+    
+    portfolio_dict = portfolio.to_dict()
+    portfolio_dict['transactions'] = [t.to_dict() for t in portfolio.transactions]
+    
+    return jsonify(portfolio_dict)
+
+@api_bp.route('/portfolios', methods=['POST'])
+def create_portfolio():
+    """创建新持仓（首次买入）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    data = request.json
+    symbol = data.get('symbol')
+    asset_type = data.get('asset_type', 'STOCK')
+    currency = data.get('currency', 'USD')
+    
+    if not symbol:
+        return jsonify({'error': '标的代码不能为空'}), 400
+    
+    # 检查是否已存在
+    existing = Portfolio.query.filter_by(
+        user_id=user.id,
+        symbol=symbol,
+        asset_type=asset_type,
+        currency=currency
+    ).first()
+    
+    if existing:
+        return jsonify({'error': '该持仓已存在'}), 400
+    
+    # 创建持仓
+    portfolio = Portfolio(
+        user_id=user.id,
+        symbol=symbol,
+        asset_type=asset_type,
+        currency=currency,
+        total_quantity=0,
+        avg_cost=0,
+        total_cost=0
+    )
+    
+    db.session.add(portfolio)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'portfolio': portfolio.to_dict()
+    })
+
+@api_bp.route('/portfolios/<int:portfolio_id>', methods=['DELETE'])
+def delete_portfolio(portfolio_id):
+    """删除持仓（会级联删除所有交易记录）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    portfolio = Portfolio.query.filter_by(id=portfolio_id, user_id=user.id).first()
+    if not portfolio:
+        return jsonify({'error': '持仓不存在'}), 404
+    
+    db.session.delete(portfolio)
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+# ========== 交易记录管理 API ==========
+
+@api_bp.route('/transactions', methods=['POST'])
+def create_transaction():
+    """添加交易记录"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    data = request.json
+    symbol = data.get('symbol')
+    asset_type = data.get('asset_type', 'STOCK')
+    transaction_type = data.get('transaction_type')  # BUY or SELL
+    trade_date_str = data.get('trade_date')
+    price = data.get('price')
+    quantity = data.get('quantity')
+    total_amount = data.get('total_amount')
+    notes = data.get('notes', '')
+    source = data.get('source', 'manual')
+    currency = data.get('currency', 'USD')
+    
+    # 验证必填字段
+    if not all([symbol, transaction_type, trade_date_str, price]):
+        return jsonify({'error': '缺少必填字段'}), 400
+        
+    if quantity is None and total_amount is None:
+        return jsonify({'error': '必须提供数量或总金额'}), 400
+    
+    if transaction_type not in ['BUY', 'SELL']:
+        return jsonify({'error': '交易类型必须是 BUY 或 SELL'}), 400
+    
+    try:
+        price = float(price)
+        if quantity is not None:
+            quantity = float(quantity)
+        elif total_amount is not None:
+            total_amount = float(total_amount)
+            if price <= 0:
+                return jsonify({'error': '价格必须大于0'}), 400
+            quantity = total_amount / price
+            
+        trade_date = datetime.strptime(trade_date_str, '%Y-%m-%d').date()
+    except ValueError as e:
+        return jsonify({'error': f'数据格式错误: {str(e)}'}), 400
+    
+    # 查找或创建持仓
+    portfolio = Portfolio.query.filter_by(
+        user_id=user.id,
+        symbol=symbol,
+        asset_type=asset_type,
+        currency=currency
+    ).first()
+    
+    if not portfolio:
+        # 如果是卖出操作但没有持仓，报错
+        if transaction_type == 'SELL':
+            return jsonify({'error': '没有该标的的持仓，无法卖出'}), 400
+        
+        # 创建新持仓
+        portfolio = Portfolio(
+            user_id=user.id,
+            symbol=symbol,
+            asset_type=asset_type,
+            currency=currency,
+            total_quantity=0,
+            avg_cost=0,
+            total_cost=0
+        )
+        db.session.add(portfolio)
+        db.session.flush()
+    
+    # 计算交易金额
+    amount = price * quantity
+    
+    # 更新持仓
+    if transaction_type == 'BUY':
+        # 买入：扣除现金
+        if asset_type != 'CASH':  # 非现金资产才需要扣除现金
+            success, message = update_cash_balance(
+                user_id=user.id,
+                currency=currency,
+                amount=amount,
+                transaction_type='SELL',  # 扣除现金用SELL
+                trade_date=trade_date,
+                notes=f'买入 {symbol} {quantity} @ {price}'
+            )
+            if not success:
+                db.session.rollback()
+                return jsonify({'error': message}), 400
+        
+        new_total_cost = portfolio.total_cost + amount
+        new_total_quantity = portfolio.total_quantity + quantity
+        portfolio.avg_cost = new_total_cost / new_total_quantity if new_total_quantity > 0 else 0
+        portfolio.total_cost = new_total_cost
+        portfolio.total_quantity = new_total_quantity
+    else:  # SELL
+        if portfolio.total_quantity < quantity:
+            return jsonify({'error': f'持仓数量不足，当前持仓: {portfolio.total_quantity}'}), 400
+        
+        # 卖出：增加现金
+        if asset_type != 'CASH':  # 非现金资产才需要增加现金
+            success, message = update_cash_balance(
+                user_id=user.id,
+                currency=currency,
+                amount=amount,
+                transaction_type='BUY',  # 增加现金用BUY
+                trade_date=trade_date,
+                notes=f'卖出 {symbol} {quantity} @ {price}'
+            )
+            if not success:
+                db.session.rollback()
+                return jsonify({'error': message}), 400
+        
+        # 按平均成本计算卖出成本
+        sell_cost = portfolio.avg_cost * quantity
+        portfolio.total_cost -= sell_cost
+        portfolio.total_quantity -= quantity
+        
+        # 如果全部卖出，重置平均成本
+        if portfolio.total_quantity == 0:
+            portfolio.avg_cost = 0
+            portfolio.total_cost = 0
+    
+    # 创建交易记录
+    transaction = Transaction(
+        portfolio_id=portfolio.id,
+        user_id=user.id,
+        transaction_type=transaction_type,
+        trade_date=trade_date,
+        price=price,
+        quantity=quantity,
+        amount=amount,
+        notes=notes,
+        source=source
+    )
+    
+    db.session.add(transaction)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'transaction': transaction.to_dict(),
+        'portfolio': portfolio.to_dict()
+    })
+
+@api_bp.route('/transactions/<int:transaction_id>', methods=['PUT'])
+def update_transaction(transaction_id):
+    """修改交易记录"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    transaction = Transaction.query.filter_by(id=transaction_id, user_id=user.id).first()
+    if not transaction:
+        return jsonify({'error': '交易记录不存在'}), 404
+    
+    # 禁止修改自动生成的交易记录（如现金变动记录）
+    if transaction.source == 'auto':
+        return jsonify({'error': '不能修改自动生成的交易记录'}), 403
+    
+    data = request.json
+    portfolio = Portfolio.query.get(transaction.portfolio_id)
+    
+    # 先回滚原交易对持仓的影响
+    if transaction.transaction_type == 'BUY':
+        portfolio.total_cost -= transaction.amount
+        portfolio.total_quantity -= transaction.quantity
+    else:  # SELL
+        sell_cost = portfolio.avg_cost * transaction.quantity
+        portfolio.total_cost += sell_cost
+        portfolio.total_quantity += transaction.quantity
+    
+    # 更新交易记录
+    if 'trade_date' in data:
+        try:
+            transaction.trade_date = datetime.strptime(data['trade_date'], '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': '日期格式错误'}), 400
+    
+    new_price = transaction.price
+    if 'price' in data:
+        try:
+            new_price = float(data['price'])
+            transaction.price = new_price
+        except ValueError:
+            return jsonify({'error': '价格格式错误'}), 400
+    
+    if 'quantity' in data:
+        try:
+            transaction.quantity = float(data['quantity'])
+        except ValueError:
+            return jsonify({'error': '数量格式错误'}), 400
+    elif 'total_amount' in data:
+        try:
+            total_amount = float(data['total_amount'])
+            if new_price <= 0:
+                return jsonify({'error': '价格必须大于0'}), 400
+            transaction.quantity = total_amount / new_price
+        except ValueError:
+            return jsonify({'error': '总金额格式错误'}), 400
+    
+    if 'notes' in data:
+        transaction.notes = data['notes']
+    
+    # 重新计算金额
+    transaction.amount = transaction.price * transaction.quantity
+    
+    # 应用新交易对持仓的影响
+    if transaction.transaction_type == 'BUY':
+        portfolio.total_cost += transaction.amount
+        portfolio.total_quantity += transaction.quantity
+    else:  # SELL
+        if portfolio.total_quantity < transaction.quantity:
+            db.session.rollback()
+            return jsonify({'error': '修改后持仓数量不足'}), 400
+        sell_cost = portfolio.avg_cost * transaction.quantity
+        portfolio.total_cost -= sell_cost
+        portfolio.total_quantity -= transaction.quantity
+    
+    # 重新计算平均成本
+    if portfolio.total_quantity > 0:
+        portfolio.avg_cost = portfolio.total_cost / portfolio.total_quantity
+    else:
+        portfolio.avg_cost = 0
+        portfolio.total_cost = 0
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'transaction': transaction.to_dict(),
+        'portfolio': portfolio.to_dict()
+    })
+
+@api_bp.route('/transactions/<int:transaction_id>', methods=['DELETE'])
+def delete_transaction(transaction_id):
+    """删除交易记录"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    transaction = Transaction.query.filter_by(id=transaction_id, user_id=user.id).first()
+    if not transaction:
+        return jsonify({'error': '交易记录不存在'}), 404
+    
+    # 禁止删除自动生成的交易记录（如现金变动记录）
+    if transaction.source == 'auto':
+        return jsonify({'error': '不能删除自动生成的交易记录'}), 403
+    
+    portfolio = Portfolio.query.get(transaction.portfolio_id)
+    
+    # 回滚交易对持仓的影响
+    if transaction.transaction_type == 'BUY':
+        portfolio.total_cost -= transaction.amount
+        portfolio.total_quantity -= transaction.quantity
+    else:  # SELL
+        sell_cost = portfolio.avg_cost * transaction.quantity
+        portfolio.total_cost += sell_cost
+        portfolio.total_quantity += transaction.quantity
+    
+    # 重新计算平均成本
+    if portfolio.total_quantity > 0:
+        portfolio.avg_cost = portfolio.total_cost / portfolio.total_quantity
+    else:
+        portfolio.avg_cost = 0
+        portfolio.total_cost = 0
+    
+    db.session.delete(transaction)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'portfolio': portfolio.to_dict()
+    })
+
+@api_bp.route('/portfolios/<symbol>/transactions', methods=['GET'])
+def get_portfolio_transactions(symbol):
+    """获取指定标的的所有交易记录"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    asset_type = request.args.get('asset_type', 'STOCK')
+    currency = request.args.get('currency')
+    
+    query_params = {
+        'user_id': user.id,
+        'symbol': symbol,
+        'asset_type': asset_type
+    }
+    if currency:
+        query_params['currency'] = currency
+    
+    portfolio = Portfolio.query.filter_by(**query_params).first()
+    
+    if not portfolio:
+        return jsonify({'transactions': []})
+    
+    transactions = Transaction.query.filter_by(
+        portfolio_id=portfolio.id,
+        user_id=user.id
+    ).order_by(Transaction.trade_date.desc()).all()
+    
+    return jsonify({
+        'transactions': [t.to_dict() for t in transactions],
+        'portfolio': portfolio.to_dict()
     })

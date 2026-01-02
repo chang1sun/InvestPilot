@@ -111,16 +111,15 @@ class AIAnalyzer:
             position_context = f"""
     **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
     - The system IS CURRENTLY HOLDING this asset.
+    - Quantity: {current_position.get('quantity', 'Unknown')}
+    - Avg Cost: {current_position.get('avg_cost', 'Unknown')}
     - Last Buy Date: {current_position['date']}
     - Last Buy Price: {current_position['price']}
-    - Original Reason: {current_position.get('reason', 'N/A')}
     
     **MANDATORY INSTRUCTION FOR EXISTING POSITION**:
-    1. You MUST acknowledge this existing BUY at the start of your history analysis.
-    2. Do NOT recommend a new BUY until this position is closed (SOLD).
-    3. Your primary task for the latest data points is to decide: **HOLD** or **SELL**.
-    4. If the position is still valid (trend intact), output the last trade as "HOLDING".
-    5. If a sell signal occurred AFTER the buy date, output the SELL trade.
+    1. You MUST acknowledge this existing position.
+    2. Your primary task is to decide: **HOLD** or **SELL** (or **BUY MORE**).
+    3. If you recommend SELLING, specify the price and quantity (percentage).
     """
         else:
             position_context = """
@@ -187,7 +186,13 @@ Analyze the historical data for this {asset_type} ({symbol}) to identify high-pr
             "reason": "Brief technical rationale for BUY (e.g. MA Golden Cross).",
             "sell_reason": "Brief technical rationale for SELL (e.g. Trend exhaustion, Stop loss)."
         }}
-    ]
+    ],
+    "current_action": {{
+        "action": "BUY" | "SELL" | "HOLD" | "WAIT",
+        "price": 123.45,
+        "quantity_percent": 50,
+        "reason": "Brief reason for the action."
+    }}
 }}
 Return ONLY the JSON.
 Data:
@@ -226,6 +231,19 @@ Data:
             result = json.loads(text)
             
             signals = []
+            # 处理 current_action
+            current_action = result.get('current_action')
+            if current_action:
+                action_type = current_action.get('action')
+                if action_type in ['BUY', 'SELL']:
+                    signals.append({
+                        "type": action_type,
+                        "date": kline_data[-1]['date'], # 使用最新日期
+                        "price": current_action.get('price'),
+                        "reason": current_action.get('reason'),
+                        "quantity_percent": current_action.get('quantity_percent')
+                    })
+
             for trade in result.get('trades', []):
                 signals.append({
                     "type": "BUY",
@@ -653,6 +671,183 @@ Data:
                 "rating": "Unknown",
                 "action": "Error analyzing position.",
                 "analysis": str(e)
+            }
+
+    def analyze_full_portfolio(self, portfolios_data, model_name="gemini-3-flash-preview", language="zh"):
+        """
+        Analyze the entire portfolio and provide comprehensive investment advice.
+        Acts as an investment master to evaluate the overall portfolio composition.
+        """
+        # Get model adapter
+        adapter = self._get_adapter(model_name)
+        if not adapter or not adapter.is_available():
+            return {"error": "API Key Unavailable"}
+        
+        config = get_model_config(model_name)
+        supports_search = config.get('supports_search', False)
+        
+        # Calculate portfolio statistics
+        total_value = 0
+        total_cost = 0
+        positions = []
+        
+        for portfolio in portfolios_data:
+            symbol = portfolio.get('symbol', 'N/A')
+            asset_type = portfolio.get('asset_type', 'STOCK')
+            quantity = portfolio.get('total_quantity', 0)  # Use total_quantity from Portfolio model
+            avg_price = portfolio.get('avg_cost', 0)  # Use avg_cost from Portfolio model
+            
+            # Calculate current value based on asset type
+            # For CASH, current value = quantity (no price needed)
+            # For other assets, current value = quantity * avg_price (using cost as proxy for current value)
+            if asset_type == 'CASH':
+                current_value = quantity
+            else:
+                current_value = quantity * avg_price
+            
+            position_cost = portfolio.get('total_cost', quantity * avg_price)
+            total_cost += position_cost
+            total_value += current_value
+            
+            positions.append({
+                'symbol': symbol,
+                'asset_type': asset_type,
+                'quantity': quantity,
+                'avg_price': avg_price,
+                'current_value': current_value,
+                'cost': position_cost,
+                'pnl': current_value - position_cost,
+                'pnl_pct': ((current_value - position_cost) / position_cost * 100) if position_cost > 0 else 0
+            })
+        
+        total_pnl = total_value - total_cost
+        total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
+        
+        # Build portfolio summary
+        portfolio_summary = f"""
+**Portfolio Overview:**
+- Total Positions: {len(positions)}
+- Total Cost: ${total_cost:,.2f}
+- Current Value: ${total_value:,.2f}
+- Total P&L: ${total_pnl:,.2f} ({total_pnl_pct:+.2f}%)
+
+**Position Details:**
+"""
+        for pos in positions:
+            weight = (pos['current_value']/total_value*100) if total_value > 0 else 0
+            portfolio_summary += f"""
+- {pos['symbol']} ({pos['asset_type']}):
+  * Quantity: {pos['quantity']}
+  * Avg Price: ${pos['avg_price']:.2f}
+  * Current Value: ${pos['current_value']:,.2f}
+  * P&L: ${pos['pnl']:,.2f} ({pos['pnl_pct']:+.2f}%)
+  * Weight: {weight:.1f}%
+"""
+        
+        lang_instruction = "请用中文（简体）回答。" if language == 'zh' else "Respond in English."
+        
+        search_instruction = ""
+        if supports_search:
+            search_instruction = "1. **使用Google搜索或网络搜索**获取这些资产的最新市场信息、新闻和价格。"
+        else:
+            search_instruction = "1. 基于你的知识，分析这些资产的当前市场状况。"
+        
+        prompt = f"""
+你是一位经验丰富的投资大师，拥有数十年的投资经验和深厚的市场洞察力。现在，一位客户向你展示了他的完整投资组合，请你作为专业的投资顾问，对整个持仓进行全面的分析和评价。
+
+{portfolio_summary}
+
+**分析要求：**
+{search_instruction}
+2. 从以下维度进行全面评估：
+   - **资产配置合理性**：评估不同资产类型的配置比例是否合理，是否过于集中或分散
+   - **风险评估**：分析整体持仓的风险水平，包括市场风险、集中度风险、流动性风险等
+   - **收益表现**：评价当前的盈亏状况，分析哪些持仓表现良好，哪些需要关注
+   - **市场环境适应性**：结合当前宏观经济环境和市场趋势，评估持仓的适应性
+   - **优化建议**：提供具体的调整建议，包括增持、减持或平仓的标的
+
+3. 给出整体评级：
+   - "优秀"：配置合理，风险可控，收益良好
+   - "良好"：整体不错，但有改进空间
+   - "一般"：存在明显问题，需要调整
+   - "较差"：配置不合理，风险较高
+   - "危险"：严重问题，需要立即调整
+
+4. **语言要求**：{lang_instruction}
+
+**输出格式（JSON）：**
+{{
+    "overall_rating": "良好",
+    "total_score": 75,
+    "risk_level": "中等",
+    "asset_allocation_analysis": "资产配置分析...",
+    "performance_analysis": "收益表现分析...",
+    "risk_analysis": "风险评估...",
+    "market_outlook": "市场展望...",
+    "recommendations": [
+        {{
+            "symbol": "标的代码",
+            "action": "增持/减持/持有/平仓",
+            "reason": "具体原因"
+        }}
+    ],
+    "summary": "总体评价和核心建议..."
+}}
+"""
+        
+        try:
+            # Start timing
+            start_time = time.time()
+            print(f"\n{'='*60}")
+            print(f"[LLM DEBUG] Starting full portfolio analysis")
+            print(f"  Model: {model_name}")
+            print(f"  Provider: {config.get('provider', 'unknown')}")
+            print(f"  Language: {language}")
+            print(f"  Total positions: {len(positions)}")
+            print(f"  Total value: ${total_value:,.2f}")
+            print(f"  Total P&L: ${total_pnl:,.2f} ({total_pnl_pct:+.2f}%)")
+            print(f"  Supports search: {supports_search}")
+            
+            # Use unified adapter interface
+            text, usage = adapter.generate(prompt, use_search=supports_search)
+            
+            # End timing
+            elapsed_time = time.time() - start_time
+            
+            if not text:
+                raise ValueError(f"Empty response from {model_name}")
+
+            # Robust JSON extraction
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if json_match:
+                text = json_match.group(0)
+            else:
+                text = text.replace('```json', '').replace('```', '').strip()
+
+            result = json.loads(text)
+            
+            # Print success log
+            print(f"[LLM DEBUG] ✅ Full portfolio analysis completed successfully")
+            print(f"  Total time: {elapsed_time:.2f}s")
+            print(f"  Overall rating: {result.get('overall_rating', 'N/A')}")
+            print(f"  Risk level: {result.get('risk_level', 'N/A')}")
+            print(f"  Response length: {len(text)} chars")
+            if usage:
+                print(f"  Token usage: input={usage.get('input_tokens', 'N/A')}, output={usage.get('output_tokens', 'N/A')}")
+            print(f"{'='*60}\n")
+            
+            return result
+        except Exception as e:
+            elapsed_time = time.time() - start_time if 'start_time' in locals() else 0
+            print(f"[LLM DEBUG] ❌ Full portfolio analysis failed")
+            print(f"  Total time: {elapsed_time:.2f}s")
+            print(f"  Error: {str(e)}")
+            print(f"{'='*60}\n")
+            return {
+                "overall_rating": "Unknown",
+                "total_score": 0,
+                "risk_level": "Unknown",
+                "summary": f"分析失败: {str(e)}"
             }
 
     def translate_text(self, text, target_language="en", model_name="gemini-3-flash-preview"):

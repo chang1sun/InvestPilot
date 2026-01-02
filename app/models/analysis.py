@@ -141,3 +141,88 @@ class Task(db.Model):
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None
         }
+
+class Portfolio(db.Model):
+    """用户虚拟持仓模型"""
+    __tablename__ = 'portfolios'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    symbol = db.Column(db.String(32), nullable=False, index=True)  # 标的代码
+    asset_type = db.Column(db.String(20), nullable=False, default='STOCK')  # STOCK, CRYPTO, GOLD, CASH
+    currency = db.Column(db.String(10), nullable=False, default='USD')  # USD, HKD, CNY
+    
+    # 持仓信息
+    total_quantity = db.Column(db.Float, nullable=False, default=0)  # 总持仓数量
+    avg_cost = db.Column(db.Float, nullable=False, default=0)  # 平均成本
+    total_cost = db.Column(db.Float, nullable=False, default=0)  # 总成本
+    
+    # 时间戳
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联
+    user = db.relationship('User', backref='portfolios')
+    transactions = db.relationship('Transaction', backref='portfolio', cascade='all, delete-orphan', order_by='Transaction.trade_date.desc()')
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'symbol', 'asset_type', 'currency', name='unique_user_symbol_asset_currency'),
+    )
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'symbol': self.symbol,
+            'asset_type': self.asset_type,
+            'currency': self.currency,
+            'total_quantity': self.total_quantity,
+            'avg_cost': self.avg_cost,
+            'total_cost': self.total_cost,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+
+class Transaction(db.Model):
+    """交易记录模型"""
+    __tablename__ = 'transactions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    portfolio_id = db.Column(db.Integer, db.ForeignKey('portfolios.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    
+    # 交易信息
+    transaction_type = db.Column(db.String(10), nullable=False)  # BUY, SELL
+    trade_date = db.Column(db.Date, nullable=False, index=True)  # 交易日期
+    price = db.Column(db.Float, nullable=False)  # 交易价格
+    quantity = db.Column(db.Float, nullable=False)  # 交易数量
+    amount = db.Column(db.Float, nullable=False)  # 交易金额（price * quantity）
+    
+    # 备注
+    notes = db.Column(db.Text, nullable=True)
+    
+    # 来源（手动添加或AI建议）
+    source = db.Column(db.String(20), default='manual')  # manual, ai_suggestion
+    
+    # 时间戳
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联
+    user = db.relationship('User', backref='transactions')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'portfolio_id': self.portfolio_id,
+            'user_id': self.user_id,
+            'transaction_type': self.transaction_type,
+            'trade_date': self.trade_date.strftime('%Y-%m-%d'),
+            'price': self.price,
+            'quantity': self.quantity,
+            'amount': self.amount,
+            'notes': self.notes,
+            'source': self.source,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }

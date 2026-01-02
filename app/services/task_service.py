@@ -58,7 +58,7 @@ class TaskService:
                     return
                 
                 if task_type == 'kline_analysis':
-                    result = self._execute_kline_analysis(task_params, stop_flag)
+                    result = self._execute_kline_analysis(task_params, stop_flag, task.user_id)
                 elif task_type == 'portfolio_diagnosis':
                     result = self._execute_portfolio_diagnosis(task_params, stop_flag)
                 elif task_type == 'stock_recommendation':
@@ -117,9 +117,9 @@ class TaskService:
                 self._running_tasks.pop(task_id, None)
                 self._task_stop_flags.pop(task_id, None)
     
-    def _execute_kline_analysis(self, params, stop_flag):
-        """执行K线分析任务（支持增量/全量分析）"""
-        from app.models.analysis import StockTradeSignal, AnalysisLog
+    def _execute_kline_analysis(self, params, stop_flag, user_id=None):
+        """执行K线分析任务（基于真实持仓）"""
+        from app.models.analysis import Portfolio, Transaction, AnalysisLog
         from datetime import datetime
         
         symbol = params.get('symbol')
@@ -138,317 +138,166 @@ class TaskService:
         # 检查停止标志
         if stop_flag.is_set():
             return None
+            
+        # 获取用户真实持仓和交易记录
+        real_portfolio = None
+        real_transactions = []
+        if user_id:
+            real_portfolio = Portfolio.query.filter_by(user_id=user_id, symbol=symbol).first()
+            if real_portfolio:
+                real_transactions = Transaction.query.filter_by(portfolio_id=real_portfolio.id).order_by(Transaction.trade_date.asc()).all()
         
-        # 确定市场数据范围
-        market_dates = [d['date'] for d in kline_data]
-        if not market_dates:
-            raise ValueError(f"Empty market data for {symbol}")
-        
-        latest_market_date_str = market_dates[-1]
-        latest_market_date = datetime.strptime(latest_market_date_str, '%Y-%m-%d').date()
-        
-        # 检查MySQL是否已有当天的分析记录（缓存）
-        existing_log = AnalysisLog.query.filter_by(
-            symbol=symbol,
-            market_date=latest_market_date,
-            model_name=model_name,
-            language=language
-        ).first()
-        
-        if existing_log and existing_log.analysis_result:
-            print(f"[{symbol}] Using cached analysis from MySQL for {latest_market_date_str}")
-            try:
-                cached_data = json.loads(existing_log.analysis_result)
-                return cached_data
-            except json.JSONDecodeError as e:
-                print(f"JSON decode error for existing log: {e}, re-analyzing...")
-                db.session.delete(existing_log)
-                db.session.commit()
-        
-        # 获取分析状态（从StockTradeSignal表）
-        latest_signal = StockTradeSignal.query.filter_by(
-            symbol=symbol,
-            model_name=model_name
-        ).order_by(StockTradeSignal.date.desc()).first()
-        latest_analyzed_date = latest_signal.date if latest_signal else None
-        
-        # 获取当前持仓状态
-        signals = StockTradeSignal.query.filter_by(
-            symbol=symbol,
-            model_name=model_name
-        ).order_by(StockTradeSignal.date.asc()).all()
+        # 构建 current_position_state 给 AI
         current_position_state = None
-        for s in signals:
-            if s.signal_type == 'BUY':
-                if current_position_state is None:
-                    current_position_state = {
-                        'date': s.date.strftime('%Y-%m-%d'),
-                        'price': s.price,
-                        'reason': s.reason
-                    }
-            elif s.signal_type == 'SELL':
-                if current_position_state:
-                    current_position_state = None
-        
-        # 检查停止标志
-        if stop_flag.is_set():
-            return None
-        
-        # 增量/全量逻辑
-        new_signals = []
-        should_cache = True
-        
-        if model_name == "local-strategy":
-            # 本地策略：直接分析，不保存历史
-            analysis_result = self.ai_analyzer.analyze(
-                symbol,
-                kline_data,
-                model_name=model_name,
-                language=language,
-                current_position=current_position_state
-            )
-            return {
-                'symbol': symbol,
-                'kline_data': kline_data,
-                'analysis': analysis_result,
-                'source': 'local'
-            }
-        
-        # AI模型：增量/全量逻辑
-        if not latest_analyzed_date:
-            # Case A: 没有历史 -> 全量分析
-            print(f"[{symbol}] No history found. Running full initialization...")
-            full_analysis = self.ai_analyzer.analyze(
-                symbol,
-                kline_data,
-                model_name=model_name,
-                language=language,
-                current_position=current_position_state
-            )
+        if real_portfolio and real_portfolio.total_quantity > 0:
+            # 查找最后一次买入
+            last_buy = None
+            for t in real_transactions:
+                if t.transaction_type == 'BUY':
+                    last_buy = t
             
-            if full_analysis.get('source') == 'ai_model':
-                # 保存所有信号到DB
-                for sig in full_analysis.get('signals', []):
-                    try:
-                        sig_date = datetime.strptime(sig['date'], '%Y-%m-%d').date()
-                        exists = StockTradeSignal.query.filter_by(
-                            symbol=symbol,
-                            date=sig_date,
-                            model_name=model_name
-                        ).first()
-                        if not exists:
-                            new_signal = StockTradeSignal(
-                                symbol=symbol,
-                                date=sig_date,
-                                price=sig['price'],
-                                signal_type=sig['type'],
-                                reason=sig.get('reason', ''),
-                                source='ai',
-                                model_name=model_name
-                            )
-                            db.session.add(new_signal)
-                    except Exception as e:
-                        print(f"Error saving signal: {e}")
-                try:
-                    db.session.commit()
-                    print(f"[{symbol}] Full history saved.")
-                except Exception as e:
-                    db.session.rollback()
-                    print(f"DB Commit Error: {e}")
+            if last_buy:
+                current_position_state = {
+                    'date': last_buy.trade_date.strftime('%Y-%m-%d'),
+                    'price': float(last_buy.price),
+                    'reason': 'User Real Position',
+                    'quantity': float(real_portfolio.total_quantity),
+                    'avg_cost': float(real_portfolio.avg_cost)
+                }
             else:
-                should_cache = False
-                print(f"[{symbol}] AI analysis failed, local strategy used. Will not cache.")
-        else:
-            # Case B: 有历史 -> 增量分析（仅保存新信号）
-            print(f"[{symbol}] Found history up to {latest_analyzed_date}. Market date: {latest_market_date}")
-            
-            if latest_market_date > latest_analyzed_date:
-                print(f"[{symbol}] Incremental update needed.")
-                fresh_analysis = self.ai_analyzer.analyze(
-                    symbol,
-                    kline_data,
-                    model_name=model_name,
-                    language=language,
-                    current_position=current_position_state
-                )
-                
-                if fresh_analysis.get('source') == 'ai_model':
-                    # 只保存新信号（日期 > latest_analyzed_date）
-                    for sig in fresh_analysis.get('signals', []):
-                        sig_date = datetime.strptime(sig['date'], '%Y-%m-%d').date()
-                        if sig_date > latest_analyzed_date:
-                            try:
-                                new_signal = StockTradeSignal(
-                                    symbol=symbol,
-                                    date=sig_date,
-                                    price=sig['price'],
-                                    signal_type=sig['type'],
-                                    reason=sig.get('reason', ''),
-                                    source='ai',
-                                    model_name=model_name
-                                )
-                                db.session.add(new_signal)
-                                print(f"[{symbol}] New signal added for {model_name}: {sig_date} {sig['type']}")
-                            except Exception as e:
-                                print(f"Error adding signal: {e}")
-                    try:
-                        db.session.commit()
-                    except Exception as e:
-                        db.session.rollback()
-                else:
-                    should_cache = False
-                    print(f"[{symbol}] AI analysis failed during incremental update, local strategy used. Will not cache.")
+                current_position_state = {
+                    'date': real_portfolio.created_at.strftime('%Y-%m-%d'),
+                    'price': float(real_portfolio.avg_cost),
+                    'reason': 'User Real Position',
+                    'quantity': float(real_portfolio.total_quantity),
+                    'avg_cost': float(real_portfolio.avg_cost)
+                }
         
-        # 检查停止标志
-        if stop_flag.is_set():
-            return None
+        # 调用 AI 分析
+        analysis_result = self.ai_analyzer.analyze(
+            symbol,
+            kline_data,
+            model_name=model_name,
+            language=language,
+            current_position=current_position_state
+        )
         
-        # 从DB重新构建最终结果（确保历史一致性）
-        db_signals = StockTradeSignal.query.filter_by(
-            symbol=symbol,
-            model_name=model_name
-        ).order_by(StockTradeSignal.date.asc()).all()
-        
-        # 重建trades和signals
+        # 构建返回给前端的数据
         reconstructed_trades = []
-        current_position = None
         ui_signals = []
         
-        for s in db_signals:
-            date_str = s.date.strftime('%Y-%m-%d')
+        # 配对交易逻辑
+        buy_queue = []
+        
+        for t in real_transactions:
+            date_str = t.trade_date.strftime('%Y-%m-%d')
             ui_signals.append({
-                "type": s.signal_type,
+                "type": t.transaction_type,
                 "date": date_str,
-                "price": s.price,
-                "reason": s.reason
+                "price": float(t.price),
+                "reason": t.notes or 'Manual Trade'
             })
             
-            if s.signal_type == 'BUY':
-                if current_position is None:
-                    current_position = {
-                        'buy_date': date_str,
-                        'buy_price': s.price,
-                        'buy_reason': s.reason
-                    }
-            elif s.signal_type == 'SELL':
-                if current_position:
-                    buy_price = current_position['buy_price']
-                    sell_price = s.price
+            if t.transaction_type == 'BUY':
+                buy_queue.append({
+                    'date': date_str,
+                    'price': float(t.price),
+                    'quantity': float(t.quantity),
+                    'reason': t.notes or 'Manual Buy'
+                })
+            elif t.transaction_type == 'SELL':
+                sell_qty = float(t.quantity)
+                while sell_qty > 0 and buy_queue:
+                    buy_record = buy_queue[0]
+                    matched_qty = min(sell_qty, buy_record['quantity'])
+                    
+                    buy_price = buy_record['price']
+                    sell_price = float(t.price)
                     ret_pct = ((sell_price - buy_price) / buy_price) * 100
                     
-                    d1 = datetime.strptime(current_position['buy_date'], '%Y-%m-%d')
-                    d2 = s.date
+                    d1 = datetime.strptime(buy_record['date'], '%Y-%m-%d')
+                    d2 = t.trade_date
                     days = (datetime.combine(d2, datetime.min.time()) - d1).days
                     
                     reconstructed_trades.append({
-                        "buy_date": current_position['buy_date'],
-                        "buy_price": round(buy_price, 2),
+                        "buy_date": buy_record['date'],
+                        "buy_price": buy_price,
                         "sell_date": date_str,
-                        "sell_price": round(sell_price, 2),
+                        "sell_price": sell_price,
                         "status": "CLOSED",
                         "holding_period": f"{days} days",
                         "return_rate": f"{ret_pct:+.2f}%",
-                        "reason": s.reason
+                        "reason": buy_record['reason'],
+                        "sell_reason": t.notes or 'Manual Sell'
                     })
-                    current_position = None
+                    
+                    sell_qty -= matched_qty
+                    buy_record['quantity'] -= matched_qty
+                    
+                    if buy_record['quantity'] <= 0.000001:
+                        buy_queue.pop(0)
         
         # 处理持仓中
-        if current_position:
-            latest_close = kline_data[-1]['close']
-            latest_date_str = kline_data[-1]['date']
-            buy_price = current_position['buy_price']
+        latest_close = kline_data[-1]['close']
+        latest_date_str = kline_data[-1]['date']
+        
+        for b in buy_queue:
+            buy_price = b['price']
             curr_ret = ((latest_close - buy_price) / buy_price) * 100
             
-            d1 = datetime.strptime(current_position['buy_date'], '%Y-%m-%d')
+            d1 = datetime.strptime(b['date'], '%Y-%m-%d')
             d2 = datetime.strptime(latest_date_str, '%Y-%m-%d')
             days = (d2 - d1).days
             
             reconstructed_trades.append({
-                "buy_date": current_position['buy_date'],
-                "buy_price": round(buy_price, 2),
+                "buy_date": b['date'],
+                "buy_price": b['price'],
                 "sell_date": None,
                 "sell_price": None,
                 "status": "HOLDING",
                 "holding_period": f"{days} days",
                 "return_rate": f"{curr_ret:+.2f}% (Open)",
-                "reason": current_position['buy_reason']
+                "reason": b['reason']
             })
-        
+            
         reconstructed_trades.sort(key=lambda x: x['buy_date'], reverse=True)
         
-        # 获取摘要
-        summary_text = f"Model-specific History Loaded ({model_name}). "
-        if 'fresh_analysis' in locals():
-            summary_text = fresh_analysis.get('analysis_summary', summary_text)
-        elif 'full_analysis' in locals():
-            summary_text = full_analysis.get('analysis_summary', summary_text)
-        else:
-            last_log = AnalysisLog.query.filter_by(
-                symbol=symbol,
-                model_name=model_name
-            ).order_by(AnalysisLog.created_at.desc()).first()
-            if last_log and last_log.analysis_result:
-                try:
-                    summary_text = json.loads(last_log.analysis_result).get('analysis_summary', summary_text)
-                except:
-                    pass
-        
         final_result = {
-            "analysis_summary": summary_text,
+            "analysis_summary": analysis_result.get('analysis_summary', ''),
             "trades": reconstructed_trades,
             "signals": ui_signals,
-            "source": "ai_model_history"
+            "source": "user_real_data",
+            "ai_suggestion": analysis_result.get('signals', [])
         }
         
-        final_response = {
+        return {
             'symbol': symbol,
             'kline_data': kline_data,
             'analysis': final_result,
-            'source': 'ai_database'
+            'source': 'user_real_data'
         }
-        
-        # 保存到AnalysisLog缓存
-        if should_cache:
-            try:
-                existing = AnalysisLog.query.filter_by(
-                    symbol=symbol,
-                    market_date=latest_market_date,
-                    model_name=model_name,
-                    language=language
-                ).first()
-                
-                if not existing:
-                    new_log = AnalysisLog(
-                        symbol=symbol,
-                        market_date=latest_market_date,
-                        model_name=model_name,
-                        language=language,
-                        analysis_result=json.dumps(final_response)
-                    )
-                    db.session.add(new_log)
-                    db.session.commit()
-                    print(f"[{symbol}] Analysis result saved to MySQL for {latest_market_date_str}")
-                else:
-                    existing.analysis_result = json.dumps(final_response)
-                    existing.created_at = datetime.utcnow()
-                    db.session.commit()
-                    print(f"[{symbol}] Analysis result updated in MySQL for {latest_market_date_str}")
-            except Exception as e:
-                db.session.rollback()
-                print(f"MySQL Save Error: {e}")
-        
-        return final_response
     
     def _execute_portfolio_diagnosis(self, params, stop_flag):
         """执行持仓诊断任务"""
         if stop_flag.is_set():
             return None
         
-        result = self.ai_analyzer.analyze_portfolio_item(
-            params,
-            model_name=params.get('model', 'gemini-3-flash-preview'),
-            language=params.get('language', 'zh')
-        )
+        # Check if this is a full portfolio analysis or single item
+        portfolios = params.get('portfolios')
+        if portfolios and isinstance(portfolios, list):
+            # Full portfolio analysis
+            result = self.ai_analyzer.analyze_full_portfolio(
+                portfolios,
+                model_name=params.get('model', 'gemini-3-flash-preview'),
+                language=params.get('language', 'zh')
+            )
+        else:
+            # Single item analysis (backward compatibility)
+            result = self.ai_analyzer.analyze_portfolio_item(
+                params,
+                model_name=params.get('model', 'gemini-3-flash-preview'),
+                language=params.get('language', 'zh')
+            )
         
         return result
     
@@ -509,4 +358,3 @@ class TaskService:
 
 # 全局任务服务实例
 task_service = TaskService()
-
