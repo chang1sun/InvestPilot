@@ -123,6 +123,7 @@ class TaskService:
         from datetime import datetime
         
         symbol = params.get('symbol')
+        is_cn_fund = params.get('is_cn_fund', False)  # ✅ 新增：是否为中国基金
         model_name = params.get('model', 'gemini-3-flash-preview')
         language = params.get('language', 'zh')
         
@@ -131,7 +132,7 @@ class TaskService:
             return None
         
         # 获取K线数据
-        kline_data = DataProvider.get_kline_data(symbol)
+        kline_data = DataProvider.get_kline_data(symbol, is_cn_fund=is_cn_fund)
         if not kline_data:
             raise ValueError(f"Could not fetch data for symbol {symbol}")
         
@@ -309,6 +310,7 @@ class TaskService:
         criteria = {
             'market': params.get('market', 'Any'),
             'asset_type': params.get('asset_type', 'STOCK'),
+            'include_etf': params.get('include_etf', 'false'),
             'capital': params.get('capital', 'Any'),
             'risk': params.get('risk', 'Any'),
             'frequency': params.get('frequency', 'Any')

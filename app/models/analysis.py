@@ -65,6 +65,12 @@ class StockTradeSignal(db.Model):
     source = db.Column(db.String(20), default='ai') # 'ai', 'local'
     model_name = db.Column(db.String(50), nullable=False, index=True)  # 模型名称，用于区分不同模型的结果
     asset_type = db.Column(db.String(20), default='STOCK', index=True)  # 'STOCK', 'CRYPTO', 'COMMODITY', 'BOND'
+    
+    # 采纳状态
+    adopted = db.Column(db.Boolean, default=False, index=True)  # 是否被用户采纳
+    related_transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'), nullable=True, index=True)  # 关联的交易ID
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)  # 关联的用户ID（用于区分不同用户的采纳）
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     __table_args__ = (
@@ -73,10 +79,13 @@ class StockTradeSignal(db.Model):
 
     def to_dict(self):
         return {
+            'id': self.id,
             'date': self.date.strftime('%Y-%m-%d'),
             'price': self.price,
             'type': self.signal_type,
-            'reason': self.reason
+            'reason': self.reason,
+            'adopted': self.adopted,
+            'related_transaction_id': self.related_transaction_id
         }
 
 class User(db.Model):
@@ -98,6 +107,88 @@ class User(db.Model):
             'session_id': self.session_id,
             'created_at': self.created_at.isoformat(),
             'last_login': self.last_login.isoformat()
+        }
+
+class Account(db.Model):
+    """用户账户模型 - 记录资金流水和收益统计"""
+    __tablename__ = 'accounts'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    currency = db.Column(db.String(10), nullable=False, default='USD')  # 账户币种
+    
+    # 资金流水统计
+    total_deposit = db.Column(db.Float, nullable=False, default=0)  # 累计入金
+    total_withdrawal = db.Column(db.Float, nullable=False, default=0)  # 累计出金
+    
+    # 收益统计（按币种）
+    realized_profit_loss = db.Column(db.Float, nullable=False, default=0)  # 已实现盈亏
+    
+    # 时间戳
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联
+    user = db.relationship('User', backref='accounts')
+    cash_flows = db.relationship('CashFlow', backref='account', cascade='all, delete-orphan', order_by='CashFlow.flow_date.desc()')
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'currency', name='unique_user_currency'),
+    )
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'currency': self.currency,
+            'total_deposit': self.total_deposit,
+            'total_withdrawal': self.total_withdrawal,
+            'net_deposit': self.total_deposit - self.total_withdrawal,
+            'realized_profit_loss': self.realized_profit_loss,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+
+class CashFlow(db.Model):
+    """资金流水模型 - 记录每笔入金/出金"""
+    __tablename__ = 'cash_flows'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    
+    # 流水信息
+    flow_type = db.Column(db.String(20), nullable=False, index=True)  # DEPOSIT(入金), WITHDRAWAL(出金)
+    flow_date = db.Column(db.Date, nullable=False, index=True)  # 流水日期
+    amount = db.Column(db.Float, nullable=False)  # 金额（正数）
+    currency = db.Column(db.String(10), nullable=False, default='USD')
+    
+    # 备注
+    notes = db.Column(db.Text, nullable=True)
+    
+    # 来源
+    source = db.Column(db.String(20), default='manual')  # manual, auto
+    
+    # 时间戳
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 关联
+    user = db.relationship('User', backref='cash_flows')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'user_id': self.user_id,
+            'flow_type': self.flow_type,
+            'flow_date': self.flow_date.strftime('%Y-%m-%d'),
+            'amount': self.amount,
+            'currency': self.currency,
+            'notes': self.notes,
+            'source': self.source,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
         }
 
 class Task(db.Model):
@@ -198,6 +289,10 @@ class Transaction(db.Model):
     quantity = db.Column(db.Float, nullable=False)  # 交易数量
     amount = db.Column(db.Float, nullable=False)  # 交易金额（price * quantity）
     
+    # 成本和收益（仅卖出时有值）
+    cost_basis = db.Column(db.Float, nullable=True, default=0)  # 卖出时的成本基础（平均成本 * 数量）
+    realized_profit_loss = db.Column(db.Float, nullable=True, default=0)  # 已实现盈亏（卖出金额 - 成本基础）
+    
     # 备注
     notes = db.Column(db.Text, nullable=True)
     
@@ -221,6 +316,8 @@ class Transaction(db.Model):
             'price': self.price,
             'quantity': self.quantity,
             'amount': self.amount,
+            'cost_basis': self.cost_basis,
+            'realized_profit_loss': self.realized_profit_loss,
             'notes': self.notes,
             'source': self.source,
             'created_at': self.created_at.isoformat(),

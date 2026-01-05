@@ -100,6 +100,8 @@ python tools/init_db.py
 - `recommendation_cache` - 选股推荐缓存
 - `portfolios` - 虚拟持仓
 - `transactions` - 交易记录
+- `accounts` - 账户信息
+- `cash_flows` - 资金流水
 
 
 #### 7. 启动应用

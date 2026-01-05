@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, session
 from app.services.data_provider import DataProvider
 from app.services.ai_analyzer import AIAnalyzer
-from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task, Portfolio, Transaction
+from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task, Portfolio, Transaction, Account, CashFlow
 from app.services.model_config import get_models_for_frontend
 from app.services.task_service import task_service
 from app import db
@@ -129,6 +129,7 @@ def recommend():
     criteria = {
         'market': data.get('market', 'Any'),
         'asset_type': data.get('asset_type', 'STOCK'),
+        'include_etf': data.get('include_etf', 'false'),
         'capital': data.get('capital', 'Any'),
         'risk': data.get('risk', 'Any'),
         'frequency': data.get('frequency', 'Any')
@@ -223,10 +224,11 @@ def translate():
 @api_bp.route('/search', methods=['GET'])
 def search():
     query = request.args.get('q', '')
+    search_type = request.args.get('type', 'ALL')
     if not query:
         return jsonify([])
     
-    results = DataProvider.search_symbol(query)
+    results = DataProvider.search_symbol(query, search_type=search_type)
     return jsonify(results)
 
 @api_bp.route('/current-price', methods=['GET'])
@@ -234,11 +236,13 @@ def get_current_price():
     from app.services.data_provider import batch_fetcher
     
     symbol = request.args.get('symbol', '')
+    asset_type = request.args.get('asset_type')
+    currency = request.args.get('currency')  # ✅ 新增：获取货币参数
     if not symbol:
         return jsonify({'error': 'Symbol is required'}), 400
     
     # Use cached version to reduce API calls
-    price = batch_fetcher.get_cached_current_price(symbol)
+    price = batch_fetcher.get_cached_current_price(symbol, asset_type=asset_type, currency=currency)
     if price is None:
         return jsonify({'error': 'Could not fetch current price'}), 404
     
@@ -251,6 +255,7 @@ def analyze():
     data = request.json
     symbol = data.get('symbol')
     asset_type = data.get('asset_type', 'STOCK')
+    is_cn_fund = data.get('is_cn_fund', False)  # ✅ 新增：是否为中国基金
     model_name = data.get('model', 'gemini-3-flash-preview') # Default to 2.5 Flash
     language = data.get('language', 'zh')
     
@@ -258,7 +263,7 @@ def analyze():
         return jsonify({'error': 'Symbol is required'}), 400
         
     # 1. Get K-line Data (Use cached version to reduce API calls)
-    kline_data = batch_fetcher.get_cached_kline_data(symbol, period="3y", interval="1d")
+    kline_data = batch_fetcher.get_cached_kline_data(symbol, period="3y", interval="1d", is_cn_fund=is_cn_fund)
     if not kline_data:
         return jsonify({'error': 'Could not fetch data for symbol'}), 404
     
@@ -439,18 +444,38 @@ def analyze():
     # 3. Construct Final Response from DB
     # Now we read the "Model-specific History" from DB to ensure consistency for each model
     
+    # Get current user for checking adopted signals
+    user = get_user_from_request()
+    user_id = user.id if user else None
+    
     db_signals = StockTradeSignal.query.filter_by(
         symbol=symbol,
         model_name=model_name,
         asset_type=asset_type
     ).order_by(StockTradeSignal.date.asc()).all()
     
+    # Get user's real transactions for this symbol
+    user_transactions = []
+    if user_id:
+        portfolio = Portfolio.query.filter_by(
+            user_id=user_id,
+            symbol=symbol,
+            asset_type=asset_type
+        ).first()
+        if portfolio:
+            user_transactions = Transaction.query.filter_by(
+                portfolio_id=portfolio.id,
+                user_id=user_id
+            ).order_by(Transaction.trade_date.asc()).all()
+    
     # Reconstruct 'trades' (pair of Buy/Sell) from signals for the UI
     reconstructed_trades = []
     current_position = None # {date, price, reason}
     
     ui_signals = []
+    user_trade_signals = []  # User's real transactions for chart display
     
+    # Process AI signals
     for s in db_signals:
         date_str = s.date.strftime('%Y-%m-%d')
         
@@ -459,7 +484,9 @@ def analyze():
             "type": s.signal_type,
             "date": date_str,
             "price": s.price,
-            "reason": s.reason
+            "reason": s.reason,
+            "adopted": s.adopted,
+            "signal_id": s.id
         })
         
         # Logic to pair trades
@@ -521,6 +548,18 @@ def analyze():
     # Sort desc for UI
     reconstructed_trades.sort(key=lambda x: x['buy_date'], reverse=True)
     
+    # Process user's real transactions for chart display
+    for trans in user_transactions:
+        user_trade_signals.append({
+            "type": trans.transaction_type,
+            "date": trans.trade_date.strftime('%Y-%m-%d'),
+            "price": trans.price,
+            "quantity": trans.quantity,
+            "notes": trans.notes,
+            "source": trans.source,
+            "transaction_id": trans.id
+        })
+    
     # Construct final analysis result
     # We might need a summary. We can fetch the latest summary from AnalysisLog or just use a generic one.
     # Or we can generate a quick summary if needed. 
@@ -547,6 +586,7 @@ def analyze():
         "analysis_summary": summary_text,
         "trades": reconstructed_trades,
         "signals": ui_signals,
+        "user_transactions": user_trade_signals,  # User's real transactions
         "source": "ai_model_history"
     }
 
@@ -1189,6 +1229,7 @@ def analyze_async():
     data = request.json
     symbol = data.get('symbol')
     asset_type = data.get('asset_type', 'STOCK')
+    is_cn_fund = data.get('is_cn_fund', False)  # ✅ 新增：是否为中国基金
     model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
@@ -1225,6 +1266,7 @@ def analyze_async():
     task_id = task_service.create_task(user.id, 'kline_analysis', {
         'symbol': symbol,
         'asset_type': asset_type,
+        'is_cn_fund': is_cn_fund,  # ✅ 新增：传递中国基金标志
         'model': model_name,
         'language': language
     })
@@ -1271,6 +1313,7 @@ def recommend_async():
     criteria = {
         'market': data.get('market', 'Any'),
         'asset_type': data.get('asset_type', 'STOCK'),
+        'include_etf': data.get('include_etf', 'false'),
         'capital': data.get('capital', 'Any'),
         'risk': data.get('risk', 'Any'),
         'frequency': data.get('frequency', 'Any')
@@ -1292,7 +1335,70 @@ def recommend_async():
 
 @api_bp.route('/portfolios', methods=['GET'])
 def get_portfolios():
-    """获取用户的所有持仓"""
+    """获取用户的所有持仓（快速返回基础数据，不含实时价格和名称）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    portfolios = Portfolio.query.filter_by(user_id=user.id).all()
+    
+    # 引入 batch_fetcher
+    from app.services.data_provider import batch_fetcher
+    
+    # 只返回基础数据，不获取实时价格和名称
+    portfolios_data = []
+    for p in portfolios:
+        portfolio_dict = p.to_dict()
+        
+        # 使用 symbol 作为默认名称
+        portfolio_dict['name'] = p.symbol
+        
+        # 获取汇率
+        exchange_rate = 1.0
+        currency = p.currency.upper() if p.currency else 'USD'
+        
+        if currency != 'USD':
+            try:
+                exchange_rate = batch_fetcher.get_cached_exchange_rate(currency, 'USD')
+            except Exception as e:
+                print(f"Failed to get exchange rate for {currency}: {e}")
+        
+        portfolio_dict['exchange_rate'] = exchange_rate
+        portfolio_dict['currency'] = currency
+        
+        # 使用成本价作为当前价格（快速返回）
+        if p.asset_type == 'CASH':
+            portfolio_dict['current_price'] = 1.0
+            portfolio_dict['current_value'] = p.total_quantity
+            portfolio_dict['profit_loss'] = 0.0
+            portfolio_dict['profit_loss_percent'] = 0.0
+            portfolio_dict['value_in_usd'] = p.total_quantity * exchange_rate
+        else:
+            portfolio_dict['current_price'] = p.avg_cost
+            portfolio_dict['current_value'] = p.total_cost
+            portfolio_dict['profit_loss'] = 0.0
+            portfolio_dict['profit_loss_percent'] = 0.0
+            portfolio_dict['value_in_usd'] = p.total_cost * exchange_rate
+        
+        portfolios_data.append(portfolio_dict)
+    
+    # 获取 USD 到 CNY 的汇率
+    usd_to_cny = 1.0
+    try:
+        usd_to_cny = batch_fetcher.get_cached_exchange_rate('USD', 'CNY')
+    except Exception as e:
+        print(f"Failed to get USD to CNY rate: {e}")
+
+    return jsonify({
+        'portfolios': portfolios_data,
+        'rates': {
+            'USD_CNY': usd_to_cny
+        }
+    })
+
+@api_bp.route('/portfolios/refresh', methods=['GET'])
+def refresh_portfolios():
+    """异步刷新持仓数据（获取最新价格和标的名称）"""
     user = get_user_from_request()
     if not user:
         return jsonify({'error': '未登录'}), 401
@@ -1307,7 +1413,19 @@ def get_portfolios():
     for p in portfolios:
         portfolio_dict = p.to_dict()
         
-        # 获取汇率 (统一逻辑)
+        # ✅ 获取标的全名
+        try:
+            name = DataProvider.get_symbol_name(
+                p.symbol, 
+                asset_type=p.asset_type,
+                currency=p.currency
+            )
+            portfolio_dict['name'] = name if name else p.symbol
+        except Exception as e:
+            print(f"Failed to get name for {p.symbol}: {e}")
+            portfolio_dict['name'] = p.symbol
+        
+        # 获取汇率
         exchange_rate = 1.0
         currency = p.currency.upper() if p.currency else 'USD'
         
@@ -1326,14 +1444,15 @@ def get_portfolios():
             portfolio_dict['current_value'] = p.total_quantity
             portfolio_dict['profit_loss'] = 0.0
             portfolio_dict['profit_loss_percent'] = 0.0
-            
-            # 计算美元价值
             portfolio_dict['value_in_usd'] = p.total_quantity * exchange_rate
         else:
             # 获取实时价格
             try:
-                # 使用带缓存的方法
-                current_price = batch_fetcher.get_cached_current_price(p.symbol)
+                current_price = batch_fetcher.get_cached_current_price(
+                    p.symbol, 
+                    asset_type=p.asset_type,
+                    currency=currency
+                )
                 
                 if current_price:
                     portfolio_dict['current_price'] = float(current_price)
@@ -1341,10 +1460,8 @@ def get_portfolios():
                     portfolio_dict['current_value'] = current_value
                     portfolio_dict['profit_loss'] = current_value - p.total_cost
                     portfolio_dict['profit_loss_percent'] = ((current_value - p.total_cost) / p.total_cost * 100) if p.total_cost > 0 else 0
-                    # 计算美元价值 (当前价值 * 汇率)
                     portfolio_dict['value_in_usd'] = current_value * exchange_rate
                 else:
-                    # 如果获取不到实时价格，使用成本价
                     portfolio_dict['current_price'] = p.avg_cost
                     portfolio_dict['current_value'] = p.total_cost
                     portfolio_dict['profit_loss'] = 0.0
@@ -1352,7 +1469,6 @@ def get_portfolios():
                     portfolio_dict['value_in_usd'] = p.total_cost * exchange_rate
             except Exception as e:
                 print(f"Failed to get price for {p.symbol}: {e}")
-                # 出错时使用成本价
                 portfolio_dict['current_price'] = p.avg_cost
                 portfolio_dict['current_value'] = p.total_cost
                 portfolio_dict['profit_loss'] = 0.0
@@ -1551,6 +1667,12 @@ def create_transaction():
         if portfolio.total_quantity < quantity:
             return jsonify({'error': f'持仓数量不足，当前持仓: {portfolio.total_quantity}'}), 400
         
+        # 按平均成本计算卖出成本
+        sell_cost = portfolio.avg_cost * quantity
+        
+        # 计算已实现收益
+        realized_pnl = amount - sell_cost
+        
         # 卖出：增加现金
         if asset_type != 'CASH':  # 非现金资产才需要增加现金
             success, message = update_cash_balance(
@@ -1564,9 +1686,12 @@ def create_transaction():
             if not success:
                 db.session.rollback()
                 return jsonify({'error': message}), 400
+            
+            # 更新账户的已实现收益
+            account = Account.query.filter_by(user_id=user.id, currency=currency).first()
+            if account:
+                account.realized_profit_loss += realized_pnl
         
-        # 按平均成本计算卖出成本
-        sell_cost = portfolio.avg_cost * quantity
         portfolio.total_cost -= sell_cost
         portfolio.total_quantity -= quantity
         
@@ -1584,6 +1709,8 @@ def create_transaction():
         price=price,
         quantity=quantity,
         amount=amount,
+        cost_basis=sell_cost if transaction_type == 'SELL' else 0,
+        realized_profit_loss=realized_pnl if transaction_type == 'SELL' else 0,
         notes=notes,
         source=source
     )
@@ -1759,3 +1886,389 @@ def get_portfolio_transactions(symbol):
         'transactions': [t.to_dict() for t in transactions],
         'portfolio': portfolio.to_dict()
     })
+
+# ==================== Account & Cash Flow APIs ====================
+
+@api_bp.route('/accounts', methods=['GET'])
+def get_accounts():
+    """获取用户账户信息"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    accounts = Account.query.filter_by(user_id=user.id).all()
+    return jsonify({
+        'accounts': [a.to_dict() for a in accounts]
+    })
+
+@api_bp.route('/accounts/<currency>', methods=['GET'])
+def get_account_by_currency(currency):
+    """获取指定币种的账户信息"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    account = Account.query.filter_by(user_id=user.id, currency=currency).first()
+    if not account:
+        # 自动创建账户
+        account = Account(
+            user_id=user.id,
+            currency=currency,
+            total_deposit=0,
+            total_withdrawal=0,
+            realized_profit_loss=0
+        )
+        db.session.add(account)
+        db.session.commit()
+    
+    return jsonify(account.to_dict())
+
+@api_bp.route('/cash-flows', methods=['POST'])
+def create_cash_flow():
+    """创建资金流水（入金/出金）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    data = request.json
+    flow_type = data.get('flow_type')  # DEPOSIT or WITHDRAWAL
+    flow_date_str = data.get('flow_date')
+    amount = data.get('amount')
+    currency = data.get('currency', 'USD')
+    notes = data.get('notes', '')
+    
+    # 验证必填字段
+    if not all([flow_type, flow_date_str, amount]):
+        return jsonify({'error': '缺少必填字段'}), 400
+    
+    if flow_type not in ['DEPOSIT', 'WITHDRAWAL']:
+        return jsonify({'error': '流水类型必须是 DEPOSIT 或 WITHDRAWAL'}), 400
+    
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            return jsonify({'error': '金额必须大于0'}), 400
+        flow_date = datetime.strptime(flow_date_str, '%Y-%m-%d').date()
+    except ValueError as e:
+        return jsonify({'error': f'数据格式错误: {str(e)}'}), 400
+    
+    # 查找或创建账户
+    account = Account.query.filter_by(user_id=user.id, currency=currency).first()
+    if not account:
+        account = Account(
+            user_id=user.id,
+            currency=currency,
+            total_deposit=0,
+            total_withdrawal=0,
+            realized_profit_loss=0
+        )
+        db.session.add(account)
+        db.session.flush()
+    
+    # 检查出金时余额是否足够
+    if flow_type == 'WITHDRAWAL':
+        # 计算当前总资产
+        portfolios = Portfolio.query.filter_by(user_id=user.id, currency=currency).all()
+        total_assets = sum(p.total_quantity if p.asset_type == 'CASH' else p.total_cost for p in portfolios)
+        
+        if total_assets < amount:
+            return jsonify({'error': f'资产不足，当前总资产: {total_assets:.2f}'}), 400
+    
+    # 更新账户统计
+    if flow_type == 'DEPOSIT':
+        account.total_deposit += amount
+        # 入金时增加现金
+        success, message = update_cash_balance(
+            user_id=user.id,
+            currency=currency,
+            amount=amount,
+            transaction_type='BUY',
+            trade_date=flow_date,
+            notes=notes or '入金'
+        )
+        if not success:
+            db.session.rollback()
+            return jsonify({'error': message}), 400
+    else:  # WITHDRAWAL
+        account.total_withdrawal += amount
+        # 出金时扣除现金
+        success, message = update_cash_balance(
+            user_id=user.id,
+            currency=currency,
+            amount=amount,
+            transaction_type='SELL',
+            trade_date=flow_date,
+            notes=notes or '出金'
+        )
+        if not success:
+            db.session.rollback()
+            return jsonify({'error': message}), 400
+    
+    # 创建资金流水记录
+    cash_flow = CashFlow(
+        account_id=account.id,
+        user_id=user.id,
+        flow_type=flow_type,
+        flow_date=flow_date,
+        amount=amount,
+        currency=currency,
+        notes=notes,
+        source='manual'
+    )
+    
+    db.session.add(cash_flow)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'cash_flow': cash_flow.to_dict(),
+        'account': account.to_dict()
+    })
+
+@api_bp.route('/cash-flows', methods=['GET'])
+def get_cash_flows():
+    """获取资金流水列表"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    currency = request.args.get('currency')
+    
+    query = CashFlow.query.filter_by(user_id=user.id)
+    if currency:
+        query = query.filter_by(currency=currency)
+    
+    cash_flows = query.order_by(CashFlow.flow_date.desc()).all()
+    
+    return jsonify({
+        'cash_flows': [cf.to_dict() for cf in cash_flows]
+    })
+
+@api_bp.route('/cash-flows/<int:cash_flow_id>', methods=['DELETE'])
+def delete_cash_flow(cash_flow_id):
+    """删除资金流水"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    cash_flow = CashFlow.query.filter_by(id=cash_flow_id, user_id=user.id).first()
+    if not cash_flow:
+        return jsonify({'error': '资金流水不存在'}), 404
+    
+    # 禁止删除自动生成的流水
+    if cash_flow.source == 'auto':
+        return jsonify({'error': '不能删除自动生成的资金流水'}), 403
+    
+    # 回滚账户统计
+    account = Account.query.get(cash_flow.account_id)
+    if cash_flow.flow_type == 'DEPOSIT':
+        account.total_deposit -= cash_flow.amount
+        # 回滚现金
+        update_cash_balance(
+            user_id=user.id,
+            currency=cash_flow.currency,
+            amount=cash_flow.amount,
+            transaction_type='SELL',
+            trade_date=cash_flow.flow_date,
+            notes=f'删除入金记录: {cash_flow.notes}'
+        )
+    else:
+        account.total_withdrawal -= cash_flow.amount
+        # 回滚现金
+        update_cash_balance(
+            user_id=user.id,
+            currency=cash_flow.currency,
+            amount=cash_flow.amount,
+            transaction_type='BUY',
+            trade_date=cash_flow.flow_date,
+            notes=f'删除出金记录: {cash_flow.notes}'
+        )
+    
+    db.session.delete(cash_flow)
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+@api_bp.route('/portfolio-stats', methods=['GET'])
+def get_portfolio_stats():
+    """获取投资组合统计信息（包含已实现和未实现收益）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    currency = request.args.get('currency', 'USD')
+    
+    # 获取账户信息
+    account = Account.query.filter_by(user_id=user.id, currency=currency).first()
+    if not account:
+        try:
+            account = Account(
+                user_id=user.id,
+                currency=currency,
+                total_deposit=0,
+                total_withdrawal=0,
+                realized_profit_loss=0
+            )
+            db.session.add(account)
+            db.session.commit()
+        except Exception as e:
+            # 如果创建失败（可能是并发创建导致唯一约束冲突），重新查询
+            db.session.rollback()
+            account = Account.query.filter_by(user_id=user.id, currency=currency).first()
+            if not account:
+                # 如果仍然不存在，返回错误
+                return jsonify({'error': f'无法创建或获取账户: {str(e)}'}), 500
+    
+    # 获取所有持仓
+    portfolios = Portfolio.query.filter_by(user_id=user.id, currency=currency).all()
+    
+    # 引入 batch_fetcher 用于获取实时价格
+    from app.services.data_provider import batch_fetcher
+    
+    # 计算统计数据
+    total_market_value = 0  # 总市值（包括现金）
+    total_cost = 0  # 总成本（不包括现金）
+    cash_balance = 0  # 现金余额
+    
+    # 收集价格获取失败的错误信息
+    price_errors = []
+    
+    for p in portfolios:
+        if p.asset_type == 'CASH':
+            cash_balance += p.total_quantity
+            total_market_value += p.total_quantity
+        else:
+            total_cost += p.total_cost
+            try:
+                current_price = batch_fetcher.get_cached_current_price(
+                    p.symbol,
+                    asset_type=p.asset_type,
+                    currency=currency
+                )
+                
+                if current_price:
+                    # 使用实时价格计算市值
+                    current_market_value = float(current_price) * p.total_quantity
+                    total_market_value += current_market_value
+                else:
+                    # 获取价格失败，记录错误
+                    error_msg = f"无法获取 {p.symbol} 的实时价格"
+                    price_errors.append(error_msg)
+                    print(f"⚠️ {error_msg}")
+            except Exception as e:
+                # 获取价格出错，记录错误
+                error_msg = f"获取 {p.symbol} 实时价格时出错: {str(e)}"
+                price_errors.append(error_msg)
+                print(f"⚠️ {error_msg}")
+    
+    # 如果有价格获取失败，返回错误
+    if price_errors:
+        return jsonify({
+            'error': '部分持仓无法获取实时价格',
+            'details': price_errors,
+            'failed_count': len(price_errors),
+            'total_portfolios': len([p for p in portfolios if p.asset_type != 'CASH'])
+        }), 500
+    
+    # 计算收益
+    net_deposit = account.total_deposit - account.total_withdrawal  # 净入金
+    unrealized_pnl = total_market_value - cash_balance - total_cost  # 未实现盈亏（非现金资产的市值 - 成本）
+    realized_pnl = account.realized_profit_loss  # 已实现盈亏
+    total_pnl = realized_pnl + unrealized_pnl  # 总盈亏 = 已实现 + 未实现
+    
+    # 计算总收益率：基于总市值和投资成本，确保未实现收益也被计入
+    # 投资成本 = 净入金（如果有记录）或总成本+现金余额（如果没有入金记录）
+    # 总收益率 = (当前总市值 - 投资成本) / 投资成本 * 100 = 总盈亏 / 投资成本 * 100
+    investment_cost = net_deposit if net_deposit > 0 else (total_cost + cash_balance)
+    
+    if investment_cost > 0:
+        total_return_rate = (total_pnl / investment_cost * 100)
+    else:
+        # 如果投资成本为0，说明没有投资，总收益率为0
+        total_return_rate = 0
+    
+    return jsonify({
+        'currency': currency,
+        'net_deposit': net_deposit,  # 净入金
+        'total_market_value': total_market_value,  # 总市值
+        'cash_balance': cash_balance,  # 现金余额
+        'total_cost': total_cost,  # 总成本（不含现金）
+        'realized_pnl': realized_pnl,  # 已实现盈亏
+        'unrealized_pnl': unrealized_pnl,  # 未实现盈亏
+        'total_pnl': total_pnl,  # 总盈亏
+        'total_return_rate': total_return_rate,  # 总收益率
+        'account': account.to_dict()
+    })
+
+# ==================== AI Signal Adoption APIs ====================
+
+@api_bp.route('/ai-signals/<int:signal_id>/adopt', methods=['POST'])
+def adopt_ai_signal(signal_id):
+    """标记AI建议为已采纳，并关联到用户交易"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    data = request.json
+    transaction_id = data.get('transaction_id')
+    
+    if not transaction_id:
+        return jsonify({'error': '缺少交易ID'}), 400
+    
+    # 验证信号存在
+    signal = StockTradeSignal.query.get(signal_id)
+    if not signal:
+        return jsonify({'error': '信号不存在'}), 404
+    
+    # 验证交易存在且属于当前用户
+    transaction = Transaction.query.filter_by(
+        id=transaction_id,
+        user_id=user.id
+    ).first()
+    if not transaction:
+        return jsonify({'error': '交易不存在或无权限'}), 404
+    
+    # 更新信号状态
+    signal.adopted = True
+    signal.related_transaction_id = transaction_id
+    signal.user_id = user.id
+    
+    try:
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'signal': signal.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/ai-signals/<int:signal_id>/unadopt', methods=['POST'])
+def unadopt_ai_signal(signal_id):
+    """取消标记AI建议为已采纳"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    # 验证信号存在且属于当前用户
+    signal = StockTradeSignal.query.filter_by(
+        id=signal_id,
+        user_id=user.id
+    ).first()
+    if not signal:
+        return jsonify({'error': '信号不存在或无权限'}), 404
+    
+    # 更新信号状态
+    signal.adopted = False
+    signal.related_transaction_id = None
+    signal.user_id = None
+    
+    try:
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'signal': signal.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500

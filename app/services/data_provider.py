@@ -1,4 +1,5 @@
 import yfinance as yf
+import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 import json
@@ -150,12 +151,151 @@ POPULAR_STOCKS = [
 ]
 
 class DataProvider:
+    _cn_fund_list_cache = None
+    _cn_fund_list_cache_time = None
+
     @staticmethod
-    def search_symbol(query):
+    def search_cn_fund(query):
+        """
+        Search for Chinese funds using akshare.
+        """
+        try:
+            # Check cache (valid for 24 hours)
+            now = time.time()
+            if (DataProvider._cn_fund_list_cache is None or 
+                DataProvider._cn_fund_list_cache_time is None or 
+                now - DataProvider._cn_fund_list_cache_time > 86400):
+                
+                print("Fetching CN fund list from akshare...")
+                # ak.fund_name_em() returns: 基金代码, 拼音缩写, 基金简称, 基金类型, 拼音全称
+                df = ak.fund_name_em()
+                DataProvider._cn_fund_list_cache = df
+                DataProvider._cn_fund_list_cache_time = now
+            
+            df = DataProvider._cn_fund_list_cache
+            
+            if df is None or df.empty:
+                return []
+            
+            query_upper = query.upper()
+            
+            # Filter by code, name, or pinyin
+            mask = (
+                df['基金代码'].str.contains(query_upper) | 
+                df['基金简称'].str.contains(query_upper) | 
+                df['拼音缩写'].str.contains(query_upper)
+            )
+            
+            results_df = df[mask].head(20) # Limit to 20 results
+            
+            results = []
+            for _, row in results_df.iterrows():
+                results.append({
+                    "symbol": row['基金代码'],
+                    "name": row['基金简称'],
+                    "type": "FUND_CN",
+                    "market": "CN"
+                })
+                
+            return results
+            
+        except Exception as e:
+            print(f"Error searching CN fund: {e}")
+            return []
+
+    @staticmethod
+    def get_cn_fund_price(symbol):
+        """
+        Get current price (net value) for a Chinese fund.
+        """
+        try:
+            # Get fund info (net value history)
+            # indicator="单位净值走势" returns columns: 净值日期, 单位净值, 日增长率, ...
+            df = ak.fund_open_fund_info_em(symbol=symbol, indicator="单位净值走势", period="1月")
+            
+            if df is None or df.empty:
+                return None
+                
+            # Get latest row
+            latest = df.iloc[-1]
+            # Assume '单位净值' is the price
+            price = float(latest['单位净值'])
+            return price
+            
+        except Exception as e:
+            print(f"Error getting CN fund price for {symbol}: {e}")
+            return None
+    
+    @staticmethod
+    def get_cn_fund_kline_data(symbol, period="3y"):
+        """
+        Get K-line data (net value history) for a Chinese fund using akshare.
+        
+        Args:
+            symbol: Fund code (e.g., '015283')
+            period: Time period - '1y', '3y', '5y', or 'all'
+        
+        Returns:
+            List of dicts with date, open, high, low, close, volume
+        """
+        try:
+            # Map period to akshare period parameter
+            period_map = {
+                '1y': '1年',
+                '3y': '3年',
+                '5y': '5年',
+                'all': '全部'
+            }
+            ak_period = period_map.get(period, '3年')
+            
+            print(f"📊 Fetching CN fund K-line data for {symbol} (period={ak_period})")
+            
+            # Get fund net value history
+            # indicator="单位净值走势" returns: 净值日期, 单位净值, 日增长率
+            df = ak.fund_open_fund_info_em(symbol=symbol, indicator="单位净值走势", period=ak_period)
+            
+            if df is None or df.empty:
+                print(f"Warning: Empty data for CN fund {symbol}")
+                return None
+            
+            # Format data for frontend (funds don't have OHLC, so we use net value for all)
+            data = []
+            for _, row in df.iterrows():
+                try:
+                    date_str = pd.to_datetime(row['净值日期']).strftime('%Y-%m-%d')
+                    net_value = float(row['单位净值'])
+                    
+                    # For funds, we use net value as close price
+                    # Set open=high=low=close since funds only have one price per day
+                    data.append({
+                        "date": date_str,
+                        "open": round(net_value, 4),
+                        "high": round(net_value, 4),
+                        "low": round(net_value, 4),
+                        "close": round(net_value, 4),
+                        "volume": 0  # Funds don't have volume data
+                    })
+                except Exception as e:
+                    print(f"Error parsing row for {symbol}: {e}")
+                    continue
+            
+            print(f"✅ Fetched {len(data)} data points for CN fund {symbol}")
+            return data
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error fetching CN fund data for {symbol}: {error_msg}")
+            return None
+
+    @staticmethod
+    def search_symbol(query, search_type='ALL'):
         """
         Search for a stock symbol. 
         Tries Yahoo Finance API first, then falls back to local static list.
         """
+        if search_type == 'CN_FUND':
+            return DataProvider.search_cn_fund(query)
+
         results = []
         query_upper = query.upper()
         
@@ -262,11 +402,73 @@ class DataProvider:
         return results
 
     @staticmethod
-    def get_kline_data(symbol, period="3y", interval="1d"):
+    def get_symbol_name(symbol, asset_type='STOCK', currency='USD'):
         """
-        Get K-line data for a symbol using yfinance.
-        Supports A-shares, HK stocks, and US stocks.
+        Get the full name of a symbol.
+        
+        Args:
+            symbol: Ticker symbol
+            asset_type: Asset type (STOCK, FUND_CN, CRYPTO, etc.)
+            currency: Currency (USD, CNY, HKD, etc.)
+        
+        Returns:
+            String name or None if not found
         """
+        try:
+            # For Chinese funds
+            if asset_type == 'FUND' and currency == 'CNY':
+                asset_type = 'FUND_CN'
+            
+            if asset_type == 'FUND_CN':
+                # Search in cached fund list
+                if DataProvider._cn_fund_list_cache is not None:
+                    df = DataProvider._cn_fund_list_cache
+                    match = df[df['基金代码'] == symbol]
+                    if not match.empty:
+                        return match.iloc[0]['基金简称']
+                # If not in cache, try to fetch
+                results = DataProvider.search_cn_fund(symbol)
+                if results:
+                    return results[0]['name']
+                return None
+            
+            # For stocks and other assets, use yfinance
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            
+            # Try different name fields
+            if 'longName' in info and info['longName']:
+                return info['longName']
+            elif 'shortName' in info and info['shortName']:
+                return info['shortName']
+            elif 'name' in info and info['name']:
+                return info['name']
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error getting name for {symbol}: {e}")
+            return None
+
+    @staticmethod
+    def get_kline_data(symbol, period="3y", interval="1d", is_cn_fund=False):
+        """
+        Get K-line data for a symbol.
+        
+        Args:
+            symbol: Ticker symbol
+            period: Time period (e.g., '3y', '1y')
+            interval: Data interval (e.g., '1d')
+            is_cn_fund: If True, use akshare for Chinese fund data; otherwise use yfinance
+        
+        Returns:
+            List of dicts with OHLCV data
+        """
+        # If it's a Chinese fund, use akshare
+        if is_cn_fund:
+            return DataProvider.get_cn_fund_kline_data(symbol, period)
+        
+        # Otherwise, use yfinance for stocks
         try:
             # Fetch data using yfinance
             # auto_adjust=True ensures we get split/dividend adjusted prices
@@ -604,7 +806,8 @@ class BatchFetcher:
         self,
         symbol: str,
         period: str = "3y",
-        interval: str = "1d"
+        interval: str = "1d",
+        is_cn_fund: bool = False
     ) -> Optional[List[Dict]]:
         """
         Get K-line data with caching support.
@@ -613,11 +816,12 @@ class BatchFetcher:
             symbol: Ticker symbol
             period: Time period (e.g., '5d', '1mo', '3y')
             interval: Data interval (e.g., '1d', '1h', '5m')
+            is_cn_fund: If True, use akshare for Chinese fund data
             
         Returns:
             List of dicts with OHLCV data
         """
-        cache_key = f"kline_{symbol}_{period}_{interval}"
+        cache_key = f"kline_{symbol}_{period}_{interval}_{'cnfund' if is_cn_fund else 'stock'}"
         
         # Try cache first (5 minutes for short periods, 1 hour for longer periods)
         ttl = 300 if period in ['1d', '5d', '1wk'] else 3600
@@ -629,8 +833,8 @@ class BatchFetcher:
         self._rate_limiter.acquire()
         
         # Fetch data
-        print(f"📊 Fetching K-line data for {symbol} (period={period}, interval={interval})")
-        result = DataProvider.get_kline_data(symbol, period, interval)
+        print(f"📊 Fetching K-line data for {symbol} (period={period}, interval={interval}, is_cn_fund={is_cn_fund})")
+        result = DataProvider.get_kline_data(symbol, period, interval, is_cn_fund=is_cn_fund)
         
         # Update cache
         if result:
@@ -642,12 +846,14 @@ class BatchFetcher:
         return result
     
     @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
-    def get_cached_current_price(self, symbol: str) -> Optional[float]:
+    def get_cached_current_price(self, symbol: str, asset_type: str = None, currency: str = None) -> Optional[float]:
         """
         Get current price with caching support.
         
         Args:
             symbol: Ticker symbol
+            asset_type: Asset type (optional, e.g., 'FUND', 'STOCK')
+            currency: Currency code (optional, e.g., 'CNY', 'USD')
             
         Returns:
             Current price or None
@@ -663,8 +869,15 @@ class BatchFetcher:
         self._rate_limiter.acquire()
         
         # Fetch data
-        print(f"💰 Fetching current price for {symbol}")
-        result = DataProvider.get_current_price(symbol)
+        print(f"💰 Fetching current price for {symbol} (type={asset_type}, currency={currency})")
+        
+        # Determine if it's a Chinese fund: FUND type + CNY currency OR FUND_CN type
+        is_cn_fund = (asset_type == 'FUND' and currency == 'CNY') or asset_type == 'FUND_CN'
+        
+        if is_cn_fund:
+            result = DataProvider.get_cn_fund_price(symbol)
+        else:
+            result = DataProvider.get_current_price(symbol)
         
         # Update cache
         if result is not None:

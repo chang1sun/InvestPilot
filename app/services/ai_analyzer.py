@@ -64,6 +64,9 @@ class AIAnalyzer:
         :param current_position: Optional dict { 'date': 'YYYY-MM-DD', 'price': float, 'reason': str } indicating last BUY signal.
         :param asset_type: STOCK, CRYPTO, COMMODITY, BOND
         """
+        if not kline_data:
+            return {"error": "No K-line data provided", "signals": [], "trades": []}
+
         # 1. Preprocess data: Add indicators to help the LLM (also used for local strategy)
         enriched_data = calculate_indicators(kline_data)
         
@@ -80,8 +83,11 @@ class AIAnalyzer:
             return TechnicalStrategy.analyze(enriched_data, error_msg=reason, language=language)
         
         # 2. Prepare Prompt for LLM
+        # Limit data to recent history to focus attention and save tokens (last 100 candles for swing trading)
+        recent_data = enriched_data[-100:] if len(enriched_data) > 100 else enriched_data
+        
         csv_data = "Date,Open,High,Low,Close,Volume,MA5,MA20,RSI\n"
-        for d in enriched_data:
+        for d in recent_data:
             csv_data += f"{d['date']},{d['open']},{d['high']},{d['low']},{d['close']},{d['volume']},{d['MA5']:.2f},{d['MA20']:.2f},{d['RSI']:.2f}\n"
 
         # Language specific instruction
@@ -108,13 +114,16 @@ class AIAnalyzer:
         # Build Position Context
         position_context = ""
         if current_position:
+            qty_info = f"- Quantity: {current_position.get('quantity')}" if current_position.get('quantity') else ""
+            cost_info = f"- Avg Cost: {current_position.get('avg_cost')}" if current_position.get('avg_cost') else ""
+            
             position_context = f"""
     **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
     - The system IS CURRENTLY HOLDING this asset.
-    - Quantity: {current_position.get('quantity', 'Unknown')}
-    - Avg Cost: {current_position.get('avg_cost', 'Unknown')}
-    - Last Buy Date: {current_position['date']}
-    - Last Buy Price: {current_position['price']}
+    {qty_info}
+    {cost_info}
+    - Last Buy Date: {current_position.get('date', 'Unknown')}
+    - Last Buy Price: {current_position.get('price', 'Unknown')}
     
     **MANDATORY INSTRUCTION FOR EXISTING POSITION**:
     1. You MUST acknowledge this existing position.
@@ -122,10 +131,20 @@ class AIAnalyzer:
     3. If you recommend SELLING, specify the price and quantity (percentage).
     """
         else:
-            position_context = """
-    **CURRENT SYSTEM STATE**:
-    - The system currently has NO open position (Cash).
-    - Your task is to identify potential NEW BUY signals or remain in Cash (Wait).
+            position_context = f"""
+    **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
+    - The system currently has NO open position (100% Cash).
+    - You are actively looking for HIGH-PROBABILITY BUY opportunities.
+    
+    **MANDATORY INSTRUCTION FOR EMPTY POSITION**:
+    1. Your PRIMARY task is to identify NEW BUY signals based on the data.
+    2. Be PROACTIVE: If technical indicators show a clear trend reversal, breakout, or oversold bounce with volume confirmation, you SHOULD recommend a BUY.
+    3. Only recommend WAIT if:
+       - The trend is clearly bearish with no reversal signs.
+       - The {asset_name} is in a consolidation phase with no clear direction.
+       - Risk/reward is unfavorable (e.g., near resistance with weak momentum).
+    4. When recommending BUY, specify the entry price and suggested position size (quantity_percent: 30-100).
+    5. Remember: The goal is to CAPTURE TRENDS, not to avoid all risk. Calculated risk-taking is part of swing trading.
     """
 
         prompt = f"""
@@ -150,8 +169,16 @@ Analyze the historical data for this {asset_type} ({symbol}) to identify high-pr
 
 **STRATEGY GUIDELINES: SWING TRADING**
 1. **Timeframe**: Aim for multi-week trends (2 weeks to 1 month). Avoid daily noise.
-2. **Entry**: Buy on confirmed trend reversals or strong breakouts supported by Volume or Macro catalysts.
-3. **Exit**: Sell on technical breakdown or clear trend exhaustion.
+2. **Entry Philosophy**: 
+   - When EMPTY: Be OPPORTUNISTIC. Look for clear technical setups (trend reversals, breakouts, oversold bounces).
+   - When HOLDING: Be DISCIPLINED. Protect profits and cut losses based on technical breakdown.
+3. **Risk Management**: 
+   - For BUY signals: Suggest position size (30-100% of available capital based on conviction).
+   - For SELL signals: Specify exit percentage (25-100% based on severity).
+4. **Conviction Levels**:
+   - HIGH (100% position): Strong trend + volume + macro tailwind.
+   - MEDIUM (50-70%): Good setup but some uncertainty.
+   - LOW (30-40%): Speculative or early-stage signal.
 
 {position_context}
 
@@ -165,9 +192,16 @@ Analyze the historical data for this {asset_type} ({symbol}) to identify high-pr
 3. **Holistic Reasoning**: In your "reason" and "analysis_summary", you MUST weave in macro/sector logic where appropriate (e.g., "Tech sector correction," "Oversold bounce amidst positive sector news").
 4. **Trade Identification**:
    - List specific TRADES based on historical data.
-   - **RESPECT CURRENT STATE**: If "CURRENT SYSTEM STATE" indicates a HOLDING position, your analysis for the latest dates must focus on whether to HOLD or SELL. Do not suggest a new BUY until the existing one is closed.
+   - **RESPECT CURRENT STATE**: 
+     * If HOLDING: Focus on whether to HOLD, SELL, or BUY MORE.
+     * If EMPTY: Evaluate if current market conditions warrant a NEW BUY. Be proactive but not reckless.
    - If the last action is a BUY and no Sell signal has occurred, mark status as "HOLDING".
-5. **Latest Data Handling**: If the latest data point is today (incomplete candle), use it as the current price for decision making.
+5. **Current Action (MANDATORY)**:
+   - You MUST provide a "current_action" based on the LATEST data point.
+   - For EMPTY positions: Choose between "BUY" (with conviction level via quantity_percent) or "WAIT" (with clear reason why not buying).
+   - For HOLDING positions: Choose between "HOLD", "SELL", or "BUY MORE".
+   - **CRITICAL**: If you see a valid technical setup (e.g., MA crossover, RSI reversal from oversold, breakout with volume), you SHOULD recommend BUY. Don't be overly cautious.
+6. **Latest Data Handling**: If the latest data point is today (incomplete candle), use it as the current price for decision making.
 
 **LANGUAGE**: {lang_instruction}
 
@@ -183,8 +217,8 @@ Analyze the historical data for this {asset_type} ({symbol}) to identify high-pr
             "status": "CLOSED", 
             "holding_period": "15 days",
             "return_rate": "+18.0%",
-            "reason": "Brief technical rationale for BUY (e.g. MA Golden Cross).",
-            "sell_reason": "Brief technical rationale for SELL (e.g. Trend exhaustion, Stop loss)."
+            "reason": "Brief rationale for BUY",
+            "sell_reason": "Brief rationale for SELL"
         }}
     ],
     "current_action": {{
@@ -231,35 +265,26 @@ Data:
             result = json.loads(text)
             
             signals = []
-            # 处理 current_action
+            # 处理 current_action - 只有 BUY/SELL 才添加到 signals（在 K 线图上显示）
+            # WAIT/HOLD 不添加到 signals，而是保留在 current_action 中供摘要显示
             current_action = result.get('current_action')
             if current_action:
                 action_type = current_action.get('action')
-                if action_type in ['BUY', 'SELL']:
-                    signals.append({
+                if action_type in ['BUY', 'SELL']:  # 只有 BUY/SELL 才在 K 线图上显示
+                    signal_data = {
                         "type": action_type,
                         "date": kline_data[-1]['date'], # 使用最新日期
-                        "price": current_action.get('price'),
+                        "price": current_action.get('price') or kline_data[-1].get('close'),
                         "reason": current_action.get('reason'),
-                        "quantity_percent": current_action.get('quantity_percent')
-                    })
+                        "is_current": True  # 标记为当前建议
+                    }
+                    if current_action.get('quantity_percent'):
+                        signal_data['quantity_percent'] = current_action.get('quantity_percent')
+                    signals.append(signal_data)
 
-            for trade in result.get('trades', []):
-                signals.append({
-                    "type": "BUY",
-                    "date": trade['buy_date'],
-                    "price": trade['buy_price'],
-                    "reason": trade['reason']
-                })
-                if trade['status'] == 'CLOSED' and trade['sell_date']:
-                    # 使用 AI 给出的原因，如果有 sell_reason 则优先使用，否则使用 reason
-                    sell_reason = trade.get('sell_reason') or trade.get('reason', 'Close position')
-                    signals.append({
-                        "type": "SELL",
-                        "date": trade['sell_date'],
-                        "price": trade['sell_price'],
-                        "reason": sell_reason
-                    })
+            # 注意：AI 输出的 trades 只是对历史数据的回顾分析，不是实际建议
+            # 因此不添加到 signals 中（不在 K 线图上显示）
+            # 真实的用户交易记录由前端从 user_transactions 读取并显示为"真买"/"真卖"
             
             result['signals'] = signals
             result['source'] = 'ai_model'
@@ -344,6 +369,7 @@ Data:
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
         
         asset_type = criteria.get('asset_type', 'STOCK')
+        include_etf = criteria.get('include_etf', 'false') == 'true'
         
         # Asset Type Instruction
         asset_instruction = ""
@@ -371,13 +397,29 @@ Data:
         - Consider duration risk, credit quality, and yield curve positioning.
         - DO NOT recommend stocks or other asset types.
         """
-        else:
+        elif asset_type == 'FUND_CN':
             asset_instruction = """
+        **ASSET FOCUS: CHINESE FUNDS (中国基金)**
+        - Recommend Chinese mutual funds or ETFs (e.g., 015283, 159941, 510300).
+        - Focus on fund performance, management quality, and investment themes.
+        - Consider fund type (equity, bond, hybrid), expense ratio, and historical returns.
+        - Provide 6-digit fund codes (e.g., 015283 for 恒生科技ETF联接).
+        - DO NOT recommend individual stocks, crypto, or other asset types.
+        """
+        else:
+            # Stock-specific instruction with ETF toggle
+            etf_instruction = ""
+            if include_etf:
+                etf_instruction = "\n        - You MAY include ETFs (Exchange-Traded Funds) alongside individual stocks.\n        - ETFs should be relevant to current market themes or sector opportunities."
+            else:
+                etf_instruction = "\n        - Focus ONLY on individual stocks. DO NOT recommend ETFs.\n        - Recommend specific company stocks, not index funds or ETFs."
+            
+            asset_instruction = f"""
         **ASSET FOCUS: STOCKS (EQUITIES)**
         - Recommend stocks from various sectors and market caps.
         - Focus on earnings growth, valuation, and sector trends.
         - Consider fundamental metrics like P/E, revenue growth, and profitability.
-        - DO NOT recommend crypto, commodities, or bonds.
+        - DO NOT recommend crypto, commodities, or bonds.{etf_instruction}
         """
 
         # 处理市场选择
@@ -405,13 +447,15 @@ Data:
         """
         
         # Get current date for prompt
-        current_date = datetime.now().strftime('%Y-%m-%d')
-        current_date_full = datetime.now().strftime('%Y年%m月%d日') if language == 'zh' else datetime.now().strftime('%B %d, %Y')
+        now = datetime.now()
+        current_date = now.strftime('%Y-%m-%d')
+        current_date_full = now.strftime('%Y年%m月%d日') if language == 'zh' else now.strftime('%B %d, %Y')
+        outdated_year = now.year - 2
         
         search_instruction = f"""
         1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation, and breaking news affecting asset prices as of {current_date} (TODAY).
-        2. **CRITICAL**: For every recommended asset, you MUST use Search to find its **current real-time price** (or latest close as of {current_date}). Do NOT guess prices. Do NOT use prices from 2024 or earlier.
-        3. **DATE VERIFICATION**: When searching for market data, ensure you are getting information from {current_date} or the most recent trading day. Reject any data that appears to be from 2024 or earlier."""
+        2. **CRITICAL**: For every recommended asset, you MUST use Search to find its **current real-time price** (or latest close as of {current_date}). Do NOT guess prices. Do NOT use prices from {outdated_year} or earlier.
+        3. **DATE VERIFICATION**: When searching for market data, ensure you are getting information from {current_date} or the most recent trading day. Reject any data that appears to be from {outdated_year} or earlier."""
         prompt = f"""
         You are a professional financial advisor and quantitative analyst.
         
@@ -421,7 +465,7 @@ Data:
         
         📅 CURRENT DATE: {current_date} ({current_date_full})
         ⚠️  IMPORTANT: Today is {current_date}. You MUST provide recommendations based on the LATEST market data as of {current_date}. 
-        ⚠️  DO NOT use outdated data from 2024 or earlier. All prices, news, and market information MUST be current as of {current_date}.
+        ⚠️  DO NOT use outdated data from {outdated_year} or earlier. All prices, news, and market information MUST be current as of {current_date}.
         
         ASSET TYPE REQUIREMENT: {asset_type}
         
@@ -450,23 +494,33 @@ Data:
         
         Instructions:
         {search_instruction}
-        3. Select 10 {asset_type} assets that currently show strong technical setups or fundamental catalysts.
+        3. Analyze 10 {asset_type} assets based on current market conditions.
         4. **VERIFY EACH RECOMMENDATION**: Before adding any asset to your list, confirm it is a {asset_type}.
-        5. Assign a recommendation strength: "High Confidence" (⭐⭐⭐), "Medium" (⭐⭐), or "Speculative" (⭐).
+        5. **RATING SYSTEM** - Assign a recommendation level based on current market conditions:
+           - ⭐⭐⭐ (High Confidence): Strong buy signal, favorable conditions
+           - ⭐⭐ (Medium): Moderate opportunity, some risks
+           - ⭐ (Speculative): High risk, speculative play
+           - ⚠️ (Caution): Neutral/Wait, unclear direction
+           - 🔻 (Avoid): Negative outlook, recommend avoiding or selling
+           
+           **IMPORTANT**: You MUST provide exactly 10 assets, but they don't all need to be positive recommendations.
+           If market conditions are poor (bear market, black swan events, political instability), you SHOULD include
+           negative ratings (⚠️ or 🔻) to warn users about risks. This is MORE valuable than forcing positive ratings.
+        
         6. **LANGUAGE**: {lang_instruction}
         
         ⚠️  FINAL REMINDER: Your recommendations MUST be 100% {asset_type} assets. No exceptions.
         
         Output Format (JSON):
         {{
-            "market_overview": "Brief summary of current {asset_type} market sentiment.",
+            "market_overview": "Brief summary of current {asset_type} market sentiment and overall conditions.",
             "recommendations": [
                 {{
                     "symbol": "Ticker (e.g. {self._get_example_symbol(asset_type)})",
                     "name": "Asset Name",
                     "price": "Current Price (Approx)",
-                    "level": "⭐⭐⭐",
-                    "reason": "Detailed reason citing recent news or technical breakout."
+                    "level": "⭐⭐⭐ or ⭐⭐ or ⭐ or ⚠️ or 🔻",
+                    "reason": "Detailed reason citing recent news, technical analysis, or risk factors. For negative ratings, explain why to avoid."
                 }}
             ]
         }}
@@ -539,8 +593,9 @@ Data:
         supports_search = config.get('supports_search', False)
             
         symbol = holding_data.get('symbol')
-        avg_price = holding_data.get('avg_price')
-        percentage = holding_data.get('percentage')
+        avg_price = holding_data.get('avg_price', 'Unknown')
+        percentage_val = holding_data.get('percentage')
+        percentage_str = f"{percentage_val}%" if percentage_val is not None else "Unknown"
         asset_type = holding_data.get('asset_type', 'STOCK')
         
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
@@ -596,7 +651,7 @@ Data:
         - Symbol: {symbol}
         - Asset Type: {asset_type}
         - Average Buy Price: {avg_price}
-        - Portfolio Weight: {percentage}%
+        - Portfolio Weight: {percentage_str}
         
         {asset_guidance}
         
@@ -694,30 +749,38 @@ Data:
         for portfolio in portfolios_data:
             symbol = portfolio.get('symbol', 'N/A')
             asset_type = portfolio.get('asset_type', 'STOCK')
-            quantity = portfolio.get('total_quantity', 0)  # Use total_quantity from Portfolio model
-            avg_price = portfolio.get('avg_cost', 0)  # Use avg_cost from Portfolio model
+            quantity = portfolio.get('total_quantity', 0)
+            avg_price = portfolio.get('avg_cost', 0)
+            currency = portfolio.get('currency', 'USD')
+            exchange_rate = portfolio.get('exchange_rate', 1.0)
             
-            # Calculate current value based on asset type
-            # For CASH, current value = quantity (no price needed)
-            # For other assets, current value = quantity * avg_price (using cost as proxy for current value)
-            if asset_type == 'CASH':
-                current_value = quantity
-            else:
-                current_value = quantity * avg_price
+            # CRITICAL: Use value_in_usd for accurate cross-currency portfolio analysis
+            # This ensures correct weight calculation for assets in different currencies
+            current_value_usd = portfolio.get('value_in_usd')
+            if current_value_usd is None:
+                # Fallback: calculate from current_value or quantity * avg_price
+                current_value_usd = portfolio.get('current_value', quantity * avg_price)
             
-            position_cost = portfolio.get('total_cost', quantity * avg_price)
-            total_cost += position_cost
-            total_value += current_value
+            # CRITICAL FIX: Convert total_cost to USD using exchange_rate
+            # Frontend provides total_cost in original currency (CNY/USD/HKD)
+            # We MUST convert it to USD to match value_in_usd currency
+            position_cost_original = portfolio.get('total_cost', quantity * avg_price)
+            position_cost_usd = position_cost_original * exchange_rate
+            
+            total_cost += position_cost_usd
+            total_value += current_value_usd
             
             positions.append({
                 'symbol': symbol,
                 'asset_type': asset_type,
+                'currency': currency,
                 'quantity': quantity,
                 'avg_price': avg_price,
-                'current_value': current_value,
-                'cost': position_cost,
-                'pnl': current_value - position_cost,
-                'pnl_pct': ((current_value - position_cost) / position_cost * 100) if position_cost > 0 else 0
+                'current_value': current_value_usd,
+                'cost': position_cost_usd,  # Cost in USD
+                'cost_original': position_cost_original,  # Cost in original currency
+                'pnl': current_value_usd - position_cost_usd,
+                'pnl_pct': ((current_value_usd - position_cost_usd) / position_cost_usd * 100) if position_cost_usd > 0 else 0
             })
         
         total_pnl = total_value - total_cost
@@ -735,63 +798,88 @@ Data:
 """
         for pos in positions:
             weight = (pos['current_value']/total_value*100) if total_value > 0 else 0
+            currency_info = f" ({pos['currency']})" if pos['currency'] != 'USD' else ""
+            
+            # Show cost in both original currency and USD for clarity
+            if pos['currency'] != 'USD':
+                cost_display = f"{pos['cost_original']:,.2f} {pos['currency']} (≈ ${pos['cost']:,.2f} USD)"
+            else:
+                cost_display = f"${pos['cost']:,.2f}"
+            
             portfolio_summary += f"""
-- {pos['symbol']} ({pos['asset_type']}):
+- {pos['symbol']} ({pos['asset_type']}{currency_info}):
   * Quantity: {pos['quantity']}
-  * Avg Price: ${pos['avg_price']:.2f}
-  * Current Value: ${pos['current_value']:,.2f}
+  * Avg Price: {pos['avg_price']:.2f} {pos['currency']}
+  * Total Cost: {cost_display}
+  * Current Value (USD): ${pos['current_value']:,.2f}
   * P&L: ${pos['pnl']:,.2f} ({pos['pnl_pct']:+.2f}%)
   * Weight: {weight:.1f}%
 """
         
-        lang_instruction = "请用中文（简体）回答。" if language == 'zh' else "Respond in English."
+        lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
         
         search_instruction = ""
         if supports_search:
-            search_instruction = "1. **使用Google搜索或网络搜索**获取这些资产的最新市场信息、新闻和价格。"
+            search_instruction = """1. **MANDATORY: Use Google Search or Web Search** to:
+   - **Verify the REAL NAME and description of each asset** (especially for fund codes like 015283, 159941, etc.)
+   - Get the latest market information, news, and current prices
+   - Understand the actual investment focus of each fund/asset (e.g., tech, energy, healthcare)
+   - **DO NOT guess or assume asset names based on codes alone**"""
         else:
-            search_instruction = "1. 基于你的知识，分析这些资产的当前市场状况。"
+            search_instruction = "1. Based on your knowledge, analyze the current market status of these assets. Note: Asset names may not be accurate without search capability."
         
         prompt = f"""
-你是一位经验丰富的投资大师，拥有数十年的投资经验和深厚的市场洞察力。现在，一位客户向你展示了他的完整投资组合，请你作为专业的投资顾问，对整个持仓进行全面的分析和评价。
+You are an experienced investment master with decades of experience and deep market insight. A client has shown you their complete investment portfolio. Please act as a professional investment advisor to conduct a comprehensive analysis and evaluation of the entire holding.
 
 {portfolio_summary}
 
-**分析要求：**
+**Analysis Requirements:**
 {search_instruction}
-2. 从以下维度进行全面评估：
-   - **资产配置合理性**：评估不同资产类型的配置比例是否合理，是否过于集中或分散
-   - **风险评估**：分析整体持仓的风险水平，包括市场风险、集中度风险、流动性风险等
-   - **收益表现**：评价当前的盈亏状况，分析哪些持仓表现良好，哪些需要关注
-   - **市场环境适应性**：结合当前宏观经济环境和市场趋势，评估持仓的适应性
-   - **优化建议**：提供具体的调整建议，包括增持、减持或平仓的标的
 
-3. 给出整体评级：
-   - "优秀"：配置合理，风险可控，收益良好
-   - "良好"：整体不错，但有改进空间
-   - "一般"：存在明显问题，需要调整
-   - "较差"：配置不合理，风险较高
-   - "危险"：严重问题，需要立即调整
+2. **CRITICAL - Asset Identification**:
+   - For each position, especially fund codes (e.g., 015283, 159941), you MUST search to find its REAL NAME and investment focus
+   - DO NOT make assumptions about what a fund invests in based on the code number
+   - Verify the actual sector/theme (e.g., "恒生科技ETF" not "光伏基金")
 
-4. **语言要求**：{lang_instruction}
+3. **Portfolio Weight Accuracy**:
+   - The "Weight" percentages shown are calculated in USD equivalent values
+   - Different currencies have been converted to USD for accurate comparison
+   - Use these weights as-is; they already account for exchange rates
 
-**输出格式（JSON）：**
+4. Evaluate comprehensively from the following dimensions:
+   - **Asset Allocation**: Evaluate if the allocation across different asset types is reasonable, or if it's too concentrated/diversified.
+   - **Risk Assessment**: Analyze the overall risk level, including market risk, concentration risk, liquidity risk, etc.
+   - **Performance**: Evaluate current P&L, identifying which positions are performing well and which need attention.
+   - **Market Adaptability**: Assess the portfolio's adaptability in the context of the current macro environment and market trends.
+   - **Optimization Suggestions**: Provide specific adjustment suggestions, including Buy More, Sell, Hold, or Close positions.
+
+5. Provide an Overall Rating:
+   - "Excellent": Reasonable allocation, controlled risk, good returns.
+   - "Good": Overall good, but room for improvement.
+   - "Fair": Obvious issues, needs adjustment.
+   - "Poor": Unreasonable allocation, high risk.
+   - "Critical": Serious issues, needs immediate adjustment.
+
+6. **Language Requirement**: {lang_instruction}
+
+**Output Format (JSON):**
 {{
-    "overall_rating": "良好",
+    "overall_rating": "Good",
     "total_score": 75,
-    "risk_level": "中等",
-    "asset_allocation_analysis": "资产配置分析...",
-    "performance_analysis": "收益表现分析...",
-    "risk_analysis": "风险评估...",
-    "market_outlook": "市场展望...",
+    "risk_level": "Medium",
+    "asset_allocation_analysis": "Analysis of asset allocation...",
+    "performance_analysis": "Analysis of performance...",
+    "risk_analysis": "Risk assessment...",
+    "market_outlook": "Market outlook...",
     "recommendations": [
         {{
-            "symbol": "标的代码",
-            "action": "增持/减持/持有/平仓",
-            "reason": "具体原因"
+            "symbol": "Symbol (e.g., 015283)",
+            "asset_name": "REAL asset name found via search (e.g., 恒生科技ETF联接)",
+            "action": "Buy More/Sell/Hold/Close",
+            "reason": "Specific reason based on actual asset information"
         }}
     ],
-    "summary": "总体评价和核心建议..."
+    "summary": "Overall evaluation and core suggestions..."
 }}
 """
         

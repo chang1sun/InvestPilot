@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app import create_app, db
-from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task, Portfolio, Transaction
+from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Account, CashFlow, Task, Portfolio, Transaction
 
 def init_database():
     """初始化数据库表（幂等性：如果表已存在则跳过）"""
@@ -23,7 +23,7 @@ def init_database():
         inspector = inspect(db.engine)
         existing_tables = inspector.get_table_names()
         
-        required_tables = ['users', 'tasks', 'analysis_logs', 'stock_trade_signals', 'recommendation_cache', 'portfolios', 'transactions']
+        required_tables = ['users', 'accounts', 'cash_flows', 'tasks', 'analysis_logs', 'stock_trade_signals', 'recommendation_cache', 'portfolios', 'transactions']
         missing_tables = [t for t in required_tables if t not in existing_tables]
         
         if missing_tables:
@@ -39,6 +39,8 @@ def init_database():
         print("- stock_trade_signals")
         print("- recommendation_cache")
         print("- users")
+        print("- accounts")
+        print("- cash_flows")
         print("- tasks")
         print("- portfolios")
         print("- transactions")
@@ -49,6 +51,8 @@ def init_database():
             signal_count = StockTradeSignal.query.count()
             cache_count = RecommendationCache.query.count()
             user_count = User.query.count()
+            account_count = Account.query.count()
+            cash_flow_count = CashFlow.query.count()
             task_count = Task.query.count()
             portfolio_count = Portfolio.query.count()
             transaction_count = Transaction.query.count()
@@ -58,6 +62,8 @@ def init_database():
             print(f"- Trade signals: {signal_count}")
             print(f"- Recommendation cache: {cache_count}")
             print(f"- Users: {user_count}")
+            print(f"- Accounts: {account_count}")
+            print(f"- Cash flows: {cash_flow_count}")
             print(f"- Tasks: {task_count}")
             print(f"- Portfolios: {portfolio_count}")
             print(f"- Transactions: {transaction_count}")
