@@ -4,6 +4,7 @@ from app.services.ai_analyzer import AIAnalyzer
 from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task, Portfolio, Transaction, Account, CashFlow
 from app.services.model_config import get_models_for_frontend
 from app.services.task_service import task_service
+from app.services.email_validator import email_validator
 from app import db
 import json
 import hashlib
@@ -1065,13 +1066,14 @@ def get_time_ago(dt):
 
 # ========== 用户认证相关 API ==========
 
-@api_bp.route('/auth/login', methods=['POST'])
-def login():
-    """用户登录/注册"""
+@api_bp.route('/auth/register', methods=['POST'])
+def register():
+    """用户注册"""
     data = request.json
     nickname = data.get('nickname', '').strip()
     email = data.get('email', '').strip()
-    session_id = data.get('session_id')  # 用于自动登录
+    password = data.get('password', '').strip()
+    email_confirmed = data.get('email_confirmed', False)  # 用户是否已确认邮箱
     
     # 验证输入
     if not nickname or len(nickname) < 1:
@@ -1080,10 +1082,60 @@ def login():
     if not email:
         return jsonify({'error': '邮箱不能为空'}), 400
     
-    # 邮箱格式验证（正则）
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    if not re.match(email_pattern, email):
-        return jsonify({'error': '邮箱格式不正确'}), 400
+    if not password or len(password) < 6:
+        return jsonify({'error': '密码长度至少为6位'}), 400
+    
+    # 邮箱验证（使用 Rapid Email Verifier API）
+    validation_result = email_validator.validate_email(email)
+    if not validation_result['valid']:
+        return jsonify({'error': validation_result['reason']}), 400
+    
+    # 检查是否需要二次确认（PROBABLY_VALID 状态）
+    details = validation_result.get('details', {})
+    status = details.get('status', '')
+    typo_suggestion = details.get('typoSuggestion', '')
+    score = details.get('score', 100)
+    
+    # 如果是 PROBABLY_VALID 状态且用户未确认，要求用户确认
+    if status == 'PROBABLY_VALID' and not email_confirmed:
+        return jsonify({
+            'success': False,
+            'need_confirmation': True,
+            'email': email,
+            'typo_suggestion': typo_suggestion,
+            'score': score,
+            'message': '检测到邮箱可能存在拼写错误，请确认是否继续使用此邮箱'
+        }), 200
+    
+    # 检查邮箱是否已存在
+    existing_user = User.query.filter_by(email=email).first()
+    if existing_user:
+        return jsonify({'error': '该邮箱已被注册'}), 400
+    
+    # 创建新用户
+    user = User(
+        nickname=nickname,
+        email=email
+    )
+    user.set_password(password)
+    user.generate_session_id()
+    
+    db.session.add(user)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'user': user.to_dict(),
+        'message': '注册成功'
+    })
+
+@api_bp.route('/auth/login', methods=['POST'])
+def login():
+    """用户登录"""
+    data = request.json
+    email = data.get('email', '').strip()
+    password = data.get('password', '').strip()
+    session_id = data.get('session_id')  # 用于自动登录
     
     # 自动登录：如果有session_id，尝试查找用户
     if session_id:
@@ -1094,37 +1146,54 @@ def login():
             return jsonify({
                 'success': True,
                 'user': user.to_dict(),
-                'is_new_user': False
+                'message': '自动登录成功'
             })
     
-    # 新用户注册或重新登录
-    # 检查邮箱是否已存在
-    user = User.query.filter_by(email=email).first()
-    if user:
-        # 更新昵称和登录时间
-        user.nickname = nickname
-        user.last_login = datetime.utcnow()
-        db.session.commit()
-        return jsonify({
-            'success': True,
-            'user': user.to_dict(),
-            'is_new_user': False
-        })
+    # 验证输入
+    if not email:
+        return jsonify({'error': '邮箱不能为空'}), 400
     
-    # 创建新用户
-    new_session_id = str(uuid.uuid4())
-    user = User(
-        nickname=nickname,
-        email=email,
-        session_id=new_session_id
-    )
-    db.session.add(user)
+    if not password:
+        return jsonify({'error': '密码不能为空'}), 400
+    
+    # 查找用户
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'error': '邮箱或密码错误'}), 401
+    
+    # 验证密码
+    if not user.check_password(password):
+        return jsonify({'error': '邮箱或密码错误'}), 401
+    
+    # 生成新的会话ID
+    user.generate_session_id()
+    user.last_login = datetime.utcnow()
     db.session.commit()
     
     return jsonify({
         'success': True,
         'user': user.to_dict(),
-        'is_new_user': True
+        'message': '登录成功'
+    })
+
+@api_bp.route('/auth/logout', methods=['POST'])
+def logout():
+    """用户注销"""
+    data = request.json
+    session_id = data.get('session_id')
+    
+    if not session_id:
+        return jsonify({'error': '未登录'}), 401
+    
+    user = User.query.filter_by(session_id=session_id).first()
+    if user:
+        # 清除会话ID
+        user.session_id = None
+        db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': '注销成功'
     })
 
 @api_bp.route('/auth/check', methods=['GET'])
@@ -1445,6 +1514,7 @@ def refresh_portfolios():
             portfolio_dict['profit_loss'] = 0.0
             portfolio_dict['profit_loss_percent'] = 0.0
             portfolio_dict['value_in_usd'] = p.total_quantity * exchange_rate
+            portfolio_dict['daily_change_percent'] = 0.0
         else:
             # 获取实时价格
             try:
@@ -1467,6 +1537,19 @@ def refresh_portfolios():
                     portfolio_dict['profit_loss'] = 0.0
                     portfolio_dict['profit_loss_percent'] = 0.0
                     portfolio_dict['value_in_usd'] = p.total_cost * exchange_rate
+                
+                # 获取今日涨跌幅
+                try:
+                    daily_change = batch_fetcher.get_cached_daily_change(
+                        p.symbol,
+                        asset_type=p.asset_type,
+                        currency=currency
+                    )
+                    portfolio_dict['daily_change_percent'] = daily_change if daily_change is not None else 0.0
+                except Exception as e:
+                    print(f"Failed to get daily change for {p.symbol}: {e}")
+                    portfolio_dict['daily_change_percent'] = 0.0
+                    
             except Exception as e:
                 print(f"Failed to get price for {p.symbol}: {e}")
                 portfolio_dict['current_price'] = p.avg_cost
@@ -1474,6 +1557,7 @@ def refresh_portfolios():
                 portfolio_dict['profit_loss'] = 0.0
                 portfolio_dict['profit_loss_percent'] = 0.0
                 portfolio_dict['value_in_usd'] = p.total_cost * exchange_rate
+                portfolio_dict['daily_change_percent'] = 0.0
         
         portfolios_with_price.append(portfolio_dict)
     

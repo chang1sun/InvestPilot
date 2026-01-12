@@ -2,6 +2,7 @@ from app import db
 from datetime import datetime
 import uuid
 import json
+import bcrypt
 
 class RecommendationCache(db.Model):
     __tablename__ = 'recommendation_cache'
@@ -89,15 +90,33 @@ class StockTradeSignal(db.Model):
         }
 
 class User(db.Model):
-    """临时用户模型"""
+    """用户模型"""
     __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
     nickname = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(200), nullable=False, index=True)
-    session_id = db.Column(db.String(64), nullable=False, unique=True, index=True)  # 用于自动登录
+    email = db.Column(db.String(200), nullable=False, unique=True, index=True)
+    password_hash = db.Column(db.String(128), nullable=False)  # 密码哈希
+    session_id = db.Column(db.String(64), nullable=True, unique=True, index=True)  # 用于会话管理
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def set_password(self, password):
+        """设置密码（加密存储）"""
+        password_bytes = password.encode('utf-8')
+        salt = bcrypt.gensalt()
+        self.password_hash = bcrypt.hashpw(password_bytes, salt).decode('utf-8')
+    
+    def check_password(self, password):
+        """验证密码"""
+        password_bytes = password.encode('utf-8')
+        password_hash_bytes = self.password_hash.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, password_hash_bytes)
+    
+    def generate_session_id(self):
+        """生成新的会话ID"""
+        self.session_id = str(uuid.uuid4())
+        return self.session_id
     
     def to_dict(self):
         return {

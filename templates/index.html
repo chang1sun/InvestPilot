@@ -170,6 +170,15 @@
             animation: spin 1s linear infinite;
         }
         
+        /* Sticky Column Styles for Portfolio Table */
+        tr:hover td.sticky {
+            background-color: #f9fafb !important;
+        }
+        
+        thead tr th.sticky {
+            background-color: #f9fafb !important;
+        }
+        
         /* Task List Slide Animation */
         .task-list-slide {
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -287,14 +296,25 @@
             </div>
         </div>
 
-        <!-- User Login Modal -->
-        <div v-if="showLoginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showLoginModal = false">
-            <div class="bg-white rounded-xl shadow-xl p-8 max-w-md w-full mx-4 animate-fade-in">
-                <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">
-                    [[ currentLanguage === 'zh' ? '欢迎使用 Invest Pilot' : 'Welcome to Invest Pilot' ]]
-                </h2>
-                <form @submit.prevent="handleLogin">
-                    <div class="mb-4">
+        <!-- User Login/Register Modal -->
+        <div v-if="!currentUser" class="fixed inset-0 backdrop-blur-md bg-white/30 flex items-center justify-center z-50">
+            <div class="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4 animate-fade-in">
+                <!-- Header -->
+                <div class="flex justify-center items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">
+                        [[ isRegisterMode ? (currentLanguage === 'zh' ? '注册账户' : 'Register') : (currentLanguage === 'zh' ? '登录账户' : 'Login') ]]
+                    </h2>
+                </div>
+
+                <!-- Error Message -->
+                <div v-if="authError" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                    [[ authError ]]
+                </div>
+
+                <!-- Login/Register Form -->
+                <form @submit.prevent="handleAuthSubmit">
+                    <!-- Nickname (Register only) -->
+                    <div v-if="isRegisterMode" class="mb-4">
                         <label class="block text-sm font-bold text-gray-700 mb-2">
                             [[ currentLanguage === 'zh' ? '昵称' : 'Nickname' ]]
                         </label>
@@ -306,7 +326,9 @@
                             :placeholder="currentLanguage === 'zh' ? '请输入您的昵称' : 'Enter your nickname'"
                         >
                     </div>
-                    <div class="mb-6">
+
+                    <!-- Email -->
+                    <div class="mb-4">
                         <label class="block text-sm font-bold text-gray-700 mb-2">
                             [[ currentLanguage === 'zh' ? '邮箱' : 'Email' ]]
                         </label>
@@ -318,13 +340,174 @@
                             :placeholder="currentLanguage === 'zh' ? '请输入您的邮箱' : 'Enter your email'"
                         >
                     </div>
+
+                    <!-- Password -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                            [[ currentLanguage === 'zh' ? '密码' : 'Password' ]]
+                        </label>
+                        <div class="relative">
+                            <input 
+                                v-model="loginForm.password"
+                                :type="showPassword ? 'text' : 'password'"
+                                required
+                                :minlength="isRegisterMode ? 6 : 1"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+                                :placeholder="currentLanguage === 'zh' ? (isRegisterMode ? '至少6位密码' : '请输入密码') : (isRegisterMode ? 'At least 6 characters' : 'Enter password')"
+                            >
+                            <button 
+                                type="button"
+                                @click.prevent.stop="showPassword = !showPassword"
+                                class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                            >
+                                <svg v-if="showPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                </svg>
+                                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
                     <button 
                         type="submit"
-                        class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors"
+                        :disabled="authLoading"
+                        class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
-                        [[ currentLanguage === 'zh' ? '开始使用' : 'Get Started' ]]
+                        <span v-if="!authLoading">
+                            [[ isRegisterMode ? (currentLanguage === 'zh' ? '注册' : 'Register') : (currentLanguage === 'zh' ? '登录' : 'Login') ]]
+                        </span>
+                        <span v-else class="flex items-center justify-center gap-2">
+                            <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            [[ currentLanguage === 'zh' ? '处理中...' : 'Processing...' ]]
+                        </span>
                     </button>
                 </form>
+
+                <!-- Toggle Login/Register -->
+                <div class="mt-6 text-center text-sm">
+                    <span class="text-gray-600">
+                        [[ isRegisterMode ? (currentLanguage === 'zh' ? '已有账户？' : 'Already have an account?') : (currentLanguage === 'zh' ? '还没有账户？' : "Don't have an account?") ]]
+                    </span>
+                    <button 
+                        @click="toggleAuthMode"
+                        class="ml-2 text-blue-600 font-bold hover:text-blue-700 transition-colors"
+                    >
+                        [[ isRegisterMode ? (currentLanguage === 'zh' ? '立即登录' : 'Login') : (currentLanguage === 'zh' ? '立即注册' : 'Register') ]]
+                    </button>
+                </div>
+
+                <!-- Privacy Notice -->
+                <div class="mt-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p class="text-xs text-blue-800">
+                        <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                        </svg>
+                        [[ currentLanguage === 'zh' ? '您的密码将被加密存储，我们重视您的隐私和数据安全。' : 'Your password will be encrypted. We value your privacy and data security.' ]]
+                    </p>
+                </div>
+
+                <!-- Login Required Notice -->
+                <div class="mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
+                    <p class="text-sm text-amber-900 text-center font-semibold">
+                        <svg class="w-5 h-5 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        [[ currentLanguage === 'zh' ? '本应用仅限登录后使用' : 'Login required to use this application' ]]
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Confirmation Dialog -->
+        <div v-if="showEmailConfirmDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+            <div class="bg-white rounded-xl shadow-2xl p-8 max-w-lg w-full mx-4 animate-fade-in">
+                <!-- Header -->
+                <div class="flex items-center gap-3 mb-6">
+                    <svg class="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                    <h3 class="text-xl font-bold text-gray-800">
+                        [[ currentLanguage === 'zh' ? '邮箱确认' : 'Email Confirmation' ]]
+                    </h3>
+                </div>
+
+                <!-- Content -->
+                <div class="mb-6 space-y-4">
+                    <p class="text-gray-700">
+                        [[ currentLanguage === 'zh' ? '检测到您输入的邮箱可能存在拼写错误：' : 'We detected a possible typo in your email address:' ]]
+                    </p>
+                    
+                    <!-- Current Email -->
+                    <div class="p-4 bg-red-50 border-2 border-red-200 rounded-lg">
+                        <p class="text-sm text-gray-600 mb-1">
+                            [[ currentLanguage === 'zh' ? '您输入的邮箱：' : 'Your input:' ]]
+                        </p>
+                        <p class="text-lg font-mono font-bold text-red-700">
+                            [[ emailConfirmInfo.email ]]
+                        </p>
+                    </div>
+
+                    <!-- Suggested Email -->
+                    <div v-if="emailConfirmInfo.typo_suggestion" class="p-4 bg-green-50 border-2 border-green-200 rounded-lg">
+                        <p class="text-sm text-gray-600 mb-1">
+                            [[ currentLanguage === 'zh' ? '建议使用：' : 'Suggested:' ]]
+                        </p>
+                        <p class="text-lg font-mono font-bold text-green-700">
+                            [[ emailConfirmInfo.typo_suggestion ]]
+                        </p>
+                    </div>
+
+                    <!-- Score Info -->
+                    <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p class="text-sm text-blue-800">
+                            <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                            </svg>
+                            [[ currentLanguage === 'zh' ? `邮箱可信度评分：${emailConfirmInfo.score}/100` : `Email credibility score: ${emailConfirmInfo.score}/100` ]]
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-col gap-3">
+                    <!-- Use Suggested Email -->
+                    <button 
+                        v-if="emailConfirmInfo.typo_suggestion"
+                        @click="useSuggestedEmail"
+                        class="w-full py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        [[ currentLanguage === 'zh' ? '使用建议的邮箱' : 'Use Suggested Email' ]]
+                    </button>
+
+                    <!-- Continue with Current Email -->
+                    <button 
+                        @click="confirmEmail"
+                        class="w-full py-3 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        [[ currentLanguage === 'zh' ? '继续使用当前邮箱' : 'Continue with Current Email' ]]
+                    </button>
+
+                    <!-- Cancel -->
+                    <button 
+                        @click="cancelEmailConfirm"
+                        class="w-full py-3 bg-gray-200 text-gray-700 rounded-lg font-bold hover:bg-gray-300 transition-colors"
+                    >
+                        [[ currentLanguage === 'zh' ? '取消' : 'Cancel' ]]
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -624,12 +807,33 @@
                         </div>
                         
                         <!-- User Profile / Login -->
-                        <div v-if="currentUser" class="flex items-center gap-2 cursor-pointer" @click="showLoginModal = true">
-                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs">
-                                [[ currentUser.nickname.charAt(0).toUpperCase() ]]
+                        <div v-if="currentUser" class="relative" id="user-menu-container">
+                            <div class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity" @click.stop="showUserMenu = !showUserMenu">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs">
+                                    [[ currentUser.nickname.charAt(0).toUpperCase() ]]
+                                </div>
+                                <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </div>
+                            <!-- User Dropdown Menu -->
+                            <div v-if="showUserMenu" class="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 animate-fade-in" @click.stop>
+                                <div class="px-4 py-3 border-b border-gray-100">
+                                    <p class="text-sm font-bold text-gray-800">[[ currentUser.nickname ]]</p>
+                                    <p class="text-xs text-gray-500 truncate">[[ currentUser.email ]]</p>
+                                </div>
+                                <button 
+                                    @click.stop="handleLogout"
+                                    class="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                                    </svg>
+                                    [[ currentLanguage === 'zh' ? '退出登录' : 'Logout' ]]
+                                </button>
                             </div>
                         </div>
-                        <button v-else @click="showLoginModal = true" class="text-sm font-medium text-blue-600 hover:text-blue-800">
+                        <button v-else @click="openLoginModal" class="text-sm font-medium text-blue-600 hover:text-blue-800">
                             [[ currentLanguage === 'zh' ? '登录' : 'Login' ]]
                         </button>
                     </div>
@@ -1764,7 +1968,7 @@
                                 </svg>
                             </button>
                         </div>
-                        <div class="grid grid-cols-3 gap-4">
+                        <div class="grid grid-cols-4 gap-4">
                             <!-- Total Assets -->
                             <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm relative group">
                                 <div class="flex justify-between items-start">
@@ -1784,6 +1988,15 @@
                                         [[ displayCurrency ]]
                                     </button>
                                 </div>
+                            </div>
+                            <!-- Today's Change -->
+                            <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                                <p class="text-blue-100 text-xs font-medium uppercase tracking-wider mb-1">
+                                    [[ currentLanguage === 'zh' ? '今日涨跌' : 'Today\'s Change' ]]
+                                </p>
+                                <p :class="displayedTotalDailyChange >= 0 ? 'text-green-300' : 'text-red-300'" class="text-2xl font-bold">
+                                    [[ displayedTotalDailyChange >= 0 ? '+' : '-' ]][[ displayCurrency === 'USD' ? '$' : '¥' ]][[ maskAmount(Math.abs(displayedTotalDailyChange)) ]]
+                                </p>
                             </div>
                             <!-- Total Profit/Loss -->
                             <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
@@ -1895,10 +2108,11 @@
                                 [[ currentLanguage === 'zh' ? '股票' : 'Stocks' ]]
                             </h3>
                         </div>
-                        <table class="w-full">
+                        <div class="overflow-x-auto">
+                        <table class="w-full relative">
                             <thead class="bg-gray-50 border-b border-gray-200">
                                 <tr>
-                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th class="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                                         [[ currentLanguage === 'zh' ? '标的' : 'Symbol' ]]
                                     </th>
                                     <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1914,6 +2128,12 @@
                                         [[ currentLanguage === 'zh' ? '现价' : 'Current' ]]
                                     </th>
                                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '今日涨跌' : 'Today' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '涨跌金额' : 'Change $' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         [[ currentLanguage === 'zh' ? '市值' : 'Value' ]]
                                     </th>
                                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1922,7 +2142,7 @@
                                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         [[ currentLanguage === 'zh' ? '占比' : 'Allocation' ]]
                                     </th>
-                                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th class="sticky right-0 z-10 bg-gray-50 px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-l border-gray-200 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                                         [[ currentLanguage === 'zh' ? '操作' : 'Actions' ]]
                                     </th>
                                 </tr>
@@ -1930,7 +2150,7 @@
                             <tbody class="bg-white divide-y divide-gray-200">
                                 <template v-for="p in portfoliosByType.STOCK" :key="p.id">
                                     <tr class="hover:bg-gray-50 cursor-pointer" @click="togglePortfolioExpand(p.id)">
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="sticky left-0 z-10 bg-white px-6 py-4 whitespace-nowrap border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                                             <div class="flex items-center gap-2">
                                                 <svg v-if="expandedPortfolios.includes(p.id)" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
@@ -1971,6 +2191,29 @@
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span v-if="p.daily_change_percent !== null && p.daily_change_percent !== undefined" :class="[
+                                                'text-sm font-semibold',
+                                                p.daily_change_percent > 0 ? 'text-green-600' : p.daily_change_percent < 0 ? 'text-red-600' : 'text-gray-600'
+                                            ]">
+                                                [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ formatNumber(p.daily_change_percent) ]]%
+                                            </span>
+                                            <span v-else class="text-xs text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div v-if="p.daily_change_percent !== null && p.daily_change_percent !== undefined && p.current_price" class="flex flex-col items-end">
+                                                <span :class="[
+                                                    'text-sm font-semibold',
+                                                    p.daily_change_percent > 0 ? 'text-green-600' : p.daily_change_percent < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ maskAmount((p.current_price * p.daily_change_percent / 100 * p.total_quantity) * (p.exchange_rate || 1)) ]] USD
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ maskAmount(p.current_price * p.daily_change_percent / 100 * p.total_quantity) ]] [[ p.currency ]]
+                                                </span>
+                                            </div>
+                                            <span v-else class="text-xs text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
                                             <div class="flex flex-col items-end">
                                                 <span class="text-sm font-semibold text-gray-900">
                                                     $[[ maskAmount(p.value_in_usd || (p.current_value || p.total_cost)) ]]
@@ -2002,7 +2245,7 @@
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
                                             <span class="text-sm text-gray-600">[[ calculateAllocation(p.value_in_usd || (p.current_value || p.total_cost)) ]]%</span>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                                        <td class="sticky right-0 z-10 bg-white px-6 py-4 whitespace-nowrap text-center border-l border-gray-200 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                                             <div class="flex items-center justify-center gap-3">
                                                 <button 
                                                     @click.stop="openAddTransactionModal(p)"
@@ -2021,8 +2264,7 @@
                                     </tr>
                                     <!-- Expanded Transaction Records -->
                                     <tr v-if="expandedPortfolios.includes(p.id)" class="bg-gray-50">
-                                        <td colspan="9" class="px-4 py-3">
-                                            <div class="text-xs text-gray-600 mb-2 font-semibold">
+                                        <td colspan="11" class="px-6 py-4">                                            <div class="text-xs text-gray-600 mb-2 font-semibold">
                                                 [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction History' ]]
                                             </div>
                                             <div v-if="loadingTransactions[p.id]" class="text-center py-4">
@@ -2062,7 +2304,9 @@
                                 </template>
                             </tbody>
                         </table>
+                        </div>
                     </div>
+                </div>
 
                     <!-- CN Fund Holdings -->
                     <div v-if="portfoliosByType.FUND_CN && portfoliosByType.FUND_CN.length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -2071,10 +2315,11 @@
                                 [[ currentLanguage === 'zh' ? '中国基金' : 'CN Funds' ]]
                             </h3>
                         </div>
-                        <table class="w-full">
+                        <div class="overflow-x-auto">
+                        <table class="w-full relative">
                             <thead class="bg-gray-50 border-b border-gray-200">
                                 <tr>
-                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th class="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                                         [[ currentLanguage === 'zh' ? '标的' : 'Symbol' ]]
                                     </th>
                                     <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -2090,6 +2335,12 @@
                                         [[ currentLanguage === 'zh' ? '现价' : 'Current' ]]
                                     </th>
                                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '今日涨跌' : 'Today' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        [[ currentLanguage === 'zh' ? '涨跌金额' : 'Change $' ]]
+                                    </th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         [[ currentLanguage === 'zh' ? '市值' : 'Value' ]]
                                     </th>
                                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -2098,7 +2349,7 @@
                                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         [[ currentLanguage === 'zh' ? '占比' : 'Allocation' ]]
                                     </th>
-                                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th class="sticky right-0 z-10 bg-gray-50 px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-l border-gray-200 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                                         [[ currentLanguage === 'zh' ? '操作' : 'Actions' ]]
                                     </th>
                                 </tr>
@@ -2106,7 +2357,7 @@
                             <tbody class="bg-white divide-y divide-gray-200">
                                 <template v-for="p in portfoliosByType.FUND_CN" :key="p.id">
                                     <tr class="hover:bg-gray-50 cursor-pointer" @click="togglePortfolioExpand(p.id)">
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="sticky left-0 z-10 bg-white px-6 py-4 whitespace-nowrap border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                                             <div class="flex items-center gap-2">
                                                 <svg v-if="expandedPortfolios.includes(p.id)" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
@@ -2147,6 +2398,29 @@
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span v-if="p.daily_change_percent !== null && p.daily_change_percent !== undefined" :class="[
+                                                'text-sm font-semibold',
+                                                p.daily_change_percent > 0 ? 'text-green-600' : p.daily_change_percent < 0 ? 'text-red-600' : 'text-gray-600'
+                                            ]">
+                                                [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ formatNumber(p.daily_change_percent) ]]%
+                                            </span>
+                                            <span v-else class="text-xs text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div v-if="p.daily_change_percent !== null && p.daily_change_percent !== undefined && p.current_price" class="flex flex-col items-end">
+                                                <span :class="[
+                                                    'text-sm font-semibold',
+                                                    p.daily_change_percent > 0 ? 'text-green-600' : p.daily_change_percent < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ maskAmount((p.current_price * p.daily_change_percent / 100 * p.total_quantity) * (p.exchange_rate || 1)) ]] USD
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ maskAmount(p.current_price * p.daily_change_percent / 100 * p.total_quantity) ]] [[ p.currency ]]
+                                                </span>
+                                            </div>
+                                            <span v-else class="text-xs text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
                                             <div class="flex flex-col items-end">
                                                 <span class="text-sm font-semibold text-gray-900">
                                                     $[[ maskAmount(p.value_in_usd || (p.current_value || p.total_cost)) ]]
@@ -2178,7 +2452,7 @@
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
                                             <span class="text-sm text-gray-600">[[ calculateAllocation(p.value_in_usd || (p.current_value || p.total_cost)) ]]%</span>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                                        <td class="sticky right-0 z-10 bg-white px-6 py-4 whitespace-nowrap text-center border-l border-gray-200 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                                             <div class="flex items-center justify-center gap-3">
                                                 <button 
                                                     @click.stop="openAddTransactionModal(p)"
@@ -2197,7 +2471,7 @@
                                     </tr>
                                     <!-- Expanded Transaction Records -->
                                     <tr v-if="expandedPortfolios.includes(p.id)" class="bg-gray-50">
-                                        <td colspan="10" class="px-4 py-3">
+                                        <td colspan="11" class="px-4 py-3">
                                             <div class="text-xs text-gray-600 mb-2 font-semibold">
                                                 [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction History' ]]
                                             </div>
@@ -2323,6 +2597,29 @@
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span v-if="p.daily_change_percent !== null && p.daily_change_percent !== undefined" :class="[
+                                                'text-sm font-semibold',
+                                                p.daily_change_percent > 0 ? 'text-green-600' : p.daily_change_percent < 0 ? 'text-red-600' : 'text-gray-600'
+                                            ]">
+                                                [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ formatNumber(p.daily_change_percent) ]]%
+                                            </span>
+                                            <span v-else class="text-xs text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div v-if="p.daily_change_percent !== null && p.daily_change_percent !== undefined && p.current_price" class="flex flex-col items-end">
+                                                <span :class="[
+                                                    'text-sm font-semibold',
+                                                    p.daily_change_percent > 0 ? 'text-green-600' : p.daily_change_percent < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ maskAmount((p.current_price * p.daily_change_percent / 100 * p.total_quantity) * (p.exchange_rate || 1)) ]] USD
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ maskAmount(p.current_price * p.daily_change_percent / 100 * p.total_quantity) ]] [[ p.currency ]]
+                                                </span>
+                                            </div>
+                                            <span v-else class="text-xs text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
                                             <div class="flex flex-col items-end">
                                                 <span class="text-sm font-semibold text-gray-900">
                                                     $[[ maskAmount(p.value_in_usd || (p.current_value || p.total_cost)) ]]
@@ -2373,7 +2670,7 @@
                                     </tr>
                                     <!-- Expanded Transaction Records -->
                                     <tr v-if="expandedPortfolios.includes(p.id)" class="bg-gray-50">
-                                        <td colspan="9" class="px-4 py-3">
+                                        <td colspan="11" class="px-4 py-3">
                                             <div class="text-xs text-gray-600 mb-2 font-semibold">
                                                 [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction History' ]]
                                             </div>
@@ -2499,6 +2796,29 @@
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <span v-if="p.daily_change_percent !== null && p.daily_change_percent !== undefined" :class="[
+                                                'text-sm font-semibold',
+                                                p.daily_change_percent > 0 ? 'text-green-600' : p.daily_change_percent < 0 ? 'text-red-600' : 'text-gray-600'
+                                            ]">
+                                                [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ formatNumber(p.daily_change_percent) ]]%
+                                            </span>
+                                            <span v-else class="text-xs text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <div v-if="p.daily_change_percent !== null && p.daily_change_percent !== undefined && p.current_price" class="flex flex-col items-end">
+                                                <span :class="[
+                                                    'text-sm font-semibold',
+                                                    p.daily_change_percent > 0 ? 'text-green-600' : p.daily_change_percent < 0 ? 'text-red-600' : 'text-gray-600'
+                                                ]">
+                                                    [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ maskAmount((p.current_price * p.daily_change_percent / 100 * p.total_quantity) * (p.exchange_rate || 1)) ]] USD
+                                                </span>
+                                                <span v-if="p.currency !== 'USD'" class="text-xs text-gray-500">
+                                                    [[ p.daily_change_percent >= 0 ? '+' : '' ]][[ maskAmount(p.current_price * p.daily_change_percent / 100 * p.total_quantity) ]] [[ p.currency ]]
+                                                </span>
+                                            </div>
+                                            <span v-else class="text-xs text-gray-400">-</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
                                             <div class="flex flex-col items-end">
                                                 <span class="text-sm font-semibold text-gray-900">
                                                     $[[ maskAmount(p.value_in_usd || (p.current_value || p.total_cost)) ]]
@@ -2549,7 +2869,7 @@
                                     </tr>
                                     <!-- Expanded Transaction Records -->
                                     <tr v-if="expandedPortfolios.includes(p.id)" class="bg-gray-50">
-                                        <td colspan="9" class="px-4 py-3">
+                                        <td colspan="11" class="px-4 py-3">
                                             <div class="text-xs text-gray-600 mb-2 font-semibold">
                                                 [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction History' ]]
                                             </div>
@@ -3198,7 +3518,8 @@
                     realized_pnl: 0,          // 已实现盈亏
                     unrealized_pnl: 0,        // 未实现盈亏
                     total_pnl: 0,             // 总盈亏
-                    total_return_rate: 0      // 总收益率
+                    total_return_rate: 0,     // 总收益率
+                    total_daily_change: 0     // 今日涨跌总金额
                 });
                 
                 // Cash Flow Management (v2.0)
@@ -3297,11 +3618,34 @@
                     return usdValue;
                 });
                 
+                // Computed: Displayed total daily change (with currency conversion)
+                const displayedTotalDailyChange = computed(() => {
+                    const usdValue = portfolioStats.value.total_daily_change || 0;
+                    if (displayCurrency.value === 'CNY') {
+                        const rate = rates.value?.USD_CNY || 7.2;
+                        return usdValue * rate;
+                    }
+                    return usdValue;
+                });
+                
                 // User Authentication
                 const currentUser = ref(null);
                 const showLoginModal = ref(false);
-                const loginForm = ref({ nickname: '', email: '' });
+                const isRegisterMode = ref(false);
+                const showPassword = ref(false);
+                const authError = ref('');
+                const authLoading = ref(false);
+                const showUserMenu = ref(false);
+                const loginForm = ref({ nickname: '', email: '', password: '' });
                 const sessionId = ref(localStorage.getItem('investPilotSessionId') || null);
+                
+                // Email confirmation dialog
+                const showEmailConfirmDialog = ref(false);
+                const emailConfirmInfo = ref({
+                    email: '',
+                    typo_suggestion: '',
+                    score: 0
+                });
                 
                 // Task Management
                 const tasks = ref([]);
@@ -3641,13 +3985,23 @@
                         });
                         if (res.ok) {
                             const data = await res.json();
-                            console.log('📊 持仓统计数据:', data);
                             portfolioStats.value = data;
                             // 确保总收益率是数字类型
                             if (typeof portfolioStats.value.total_return_rate !== 'number') {
                                 console.warn('⚠️ 总收益率不是数字类型:', portfolioStats.value.total_return_rate);
                                 portfolioStats.value.total_return_rate = parseFloat(portfolioStats.value.total_return_rate) || 0;
                             }
+                            
+                            // 计算今日涨跌总金额
+                            let totalDailyChange = 0;
+                            portfolios.value.forEach(p => {
+                                if (p.daily_change_percent !== null && p.daily_change_percent !== undefined && p.current_price && p.total_quantity) {
+                                    const dailyChangeAmount = p.current_price * p.daily_change_percent / 100 * p.total_quantity;
+                                    const dailyChangeInUSD = dailyChangeAmount * (p.exchange_rate || 1);
+                                    totalDailyChange += dailyChangeInUSD;
+                                }
+                            });
+                            portfolioStats.value.total_daily_change = totalDailyChange;
                         } else {
                             // 处理错误响应
                             const errorData = await res.json().catch(() => ({ error: '获取持仓统计数据失败' }));
@@ -4002,9 +4356,24 @@
                 const loadPortfolioTransactions = async (portfolioId) => {
                     if (!currentUser.value) return;
                     
+                    // Find the portfolio object
+                    const portfolio = portfolios.value.find(p => p.id === portfolioId);
+                    if (!portfolio) {
+                        console.error('Portfolio not found:', portfolioId);
+                        return;
+                    }
+                    
                     loadingTransactions.value[portfolioId] = true;
                     try {
-                        const res = await fetch(`/api/portfolios/${portfolioId}/transactions`, {
+                        // Build query parameters
+                        const params = new URLSearchParams({
+                            asset_type: portfolio.asset_type || 'STOCK'
+                        });
+                        if (portfolio.currency) {
+                            params.append('currency', portfolio.currency);
+                        }
+                        
+                        const res = await fetch(`/api/portfolios/${portfolio.symbol}/transactions?${params.toString()}`, {
                             headers: { 'X-Session-ID': sessionId.value }
                         });
                         if (res.ok) {
@@ -4254,6 +4623,14 @@
                             x: Math.min(taskButtonPosition.value.x, maxX),
                             y: Math.min(taskButtonPosition.value.y, maxY)
                         };
+                    });
+                    
+                    // Close user menu when clicking outside
+                    document.addEventListener('click', (e) => {
+                        const userMenuContainer = document.getElementById('user-menu-container');
+                        if (showUserMenu.value && userMenuContainer && !userMenuContainer.contains(e.target)) {
+                            showUserMenu.value = false;
+                        }
                     });
                     
                     // Check authentication first
@@ -4887,14 +5264,99 @@
                     showLoginModal.value = true;
                 };
                 
-                const handleLogin = async () => {
+                const openLoginModal = () => {
+                    isRegisterMode.value = false;
+                    authError.value = '';
+                    showLoginModal.value = true;
+                };
+                
+                const closeLoginModal = () => {
+                    showLoginModal.value = false;
+                    authError.value = '';
+                    loginForm.value = { nickname: '', email: '', password: '' };
+                };
+                
+                const toggleAuthMode = () => {
+                    isRegisterMode.value = !isRegisterMode.value;
+                    authError.value = '';
+                };
+                
+                const handleAuthSubmit = async () => {
+                    if (isRegisterMode.value) {
+                        await handleRegister();
+                    } else {
+                        await handleLogin();
+                    }
+                };
+                
+                const handleRegister = async (emailConfirmed = false) => {
+                    authError.value = '';
+                    authLoading.value = true;
+                    
                     try {
-                        const res = await fetch('/api/auth/login', {
+                        const res = await fetch('/api/auth/register', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 nickname: loginForm.value.nickname,
                                 email: loginForm.value.email,
+                                password: loginForm.value.password,
+                                email_confirmed: emailConfirmed
+                            })
+                        });
+                        
+                        const data = await res.json();
+                        
+                        // 检查是否需要邮箱确认
+                        if (data.need_confirmation) {
+                            authLoading.value = false;
+                            emailConfirmInfo.value = {
+                                email: data.email,
+                                typo_suggestion: data.typo_suggestion,
+                                score: data.score
+                            };
+                            showEmailConfirmDialog.value = true;
+                            return;
+                        }
+                        
+                        if (data.success) {
+                            currentUser.value = data.user;
+                            sessionId.value = data.user.session_id;
+                            localStorage.setItem('investPilotSessionId', sessionId.value);
+                            showLoginModal.value = false;
+                            loginForm.value = { nickname: '', email: '', password: '' };
+                            
+                            showToast(
+                                currentLanguage.value === 'zh' ? '注册成功！' : 'Registration successful!',
+                                'success',
+                                3000
+                            );
+                            
+                            // Load tasks and start polling
+                            loadTasks();
+                            startTaskPolling();
+                        } else {
+                            authError.value = data.error || (currentLanguage.value === 'zh' ? '注册失败' : 'Registration failed');
+                        }
+                    } catch (err) {
+                        authError.value = currentLanguage.value === 'zh' ? '注册失败: ' + err.message : 'Registration failed: ' + err.message;
+                        console.error(err);
+                    } finally {
+                        authLoading.value = false;
+                    }
+                };
+                
+                const handleLogin = async () => {
+                    authError.value = '';
+                    authLoading.value = true;
+                    
+                    try {
+                        const res = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                email: loginForm.value.email,
+                                password: loginForm.value.password,
                                 session_id: sessionId.value
                             })
                         });
@@ -4905,18 +5367,89 @@
                             sessionId.value = data.user.session_id;
                             localStorage.setItem('investPilotSessionId', sessionId.value);
                             showLoginModal.value = false;
-                            loginForm.value = { nickname: '', email: '' };
+                            loginForm.value = { nickname: '', email: '', password: '' };
+                            
+                            showToast(
+                                currentLanguage.value === 'zh' ? '登录成功！' : 'Login successful!',
+                                'success',
+                                3000
+                            );
                             
                             // Load tasks and start polling
                             loadTasks();
                             startTaskPolling();
                         } else {
-                            alert(data.error || '登录失败');
+                            authError.value = data.error || (currentLanguage.value === 'zh' ? '登录失败' : 'Login failed');
                         }
                     } catch (err) {
-                        alert('登录失败: ' + err);
+                        authError.value = currentLanguage.value === 'zh' ? '登录失败: ' + err.message : 'Login failed: ' + err.message;
                         console.error(err);
+                    } finally {
+                        authLoading.value = false;
                     }
+                };
+                
+                // Email confirmation handlers
+                const confirmEmail = async () => {
+                    showEmailConfirmDialog.value = false;
+                    await handleRegister(true); // 用户确认使用当前邮箱
+                };
+                
+                const useSuggestedEmail = () => {
+                    // 使用建议的邮箱
+                    loginForm.value.email = emailConfirmInfo.value.typo_suggestion;
+                    showEmailConfirmDialog.value = false;
+                    showToast(
+                        currentLanguage.value === 'zh' 
+                            ? '已更新为建议的邮箱地址' 
+                            : 'Email updated to suggested address',
+                        'info',
+                        2000
+                    );
+                };
+                
+                const cancelEmailConfirm = () => {
+                    showEmailConfirmDialog.value = false;
+                    authError.value = '';
+                };
+                
+                const handleLogout = async () => {
+                    showUserMenu.value = false;
+                    
+                    try {
+                        await fetch('/api/auth/logout', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id: sessionId.value })
+                        });
+                    } catch (err) {
+                        console.error('Logout error:', err);
+                    }
+                    
+                    // Clear local state
+                    currentUser.value = null;
+                    sessionId.value = null;
+                    localStorage.removeItem('investPilotSessionId');
+                    
+                    // Stop task polling
+                    if (taskPollInterval) {
+                        clearInterval(taskPollInterval);
+                        taskPollInterval = null;
+                    }
+                    
+                    // Clear tasks
+                    tasks.value = [];
+                    
+                    showToast(
+                        currentLanguage.value === 'zh' ? '已退出登录' : 'Logged out',
+                        'success',
+                        2000
+                    );
+                    
+                    // Show login modal
+                    setTimeout(() => {
+                        showLoginModal.value = true;
+                    }, 500);
                 };
                 
                 // ========== Task Management Functions ==========
@@ -5245,8 +5778,24 @@
                     // User Auth
                     currentUser,
                     showLoginModal,
+                    openLoginModal,
+                    closeLoginModal,
                     loginForm,
                     handleLogin,
+                    handleLogout,
+                    showUserMenu,
+                    authError,
+                    authLoading,
+                    handleAuthSubmit,
+                    isRegisterMode,
+                    toggleAuthMode,
+                    showPassword,
+                    // Email Confirmation
+                    showEmailConfirmDialog,
+                    emailConfirmInfo,
+                    confirmEmail,
+                    useSuggestedEmail,
+                    cancelEmailConfirm,
                     // Task Management
                     tasks,
                     taskListVisible,
@@ -5290,6 +5839,7 @@
                     rates,
                     displayedTotalAssets,
                     displayedTotalProfitLoss,
+                    displayedTotalDailyChange,
                     showAddTransactionModal,
                     selectedPortfolio,
                     searchType,

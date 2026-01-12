@@ -225,6 +225,31 @@ class DataProvider:
         except Exception as e:
             print(f"Error getting CN fund price for {symbol}: {e}")
             return None
+
+    @staticmethod
+    def get_cn_fund_daily_change(symbol):
+        """
+        Get daily change percentage for a Chinese fund.
+        """
+        try:
+            # Get fund info (net value history)
+            # indicator="单位净值走势" returns columns: 净值日期, 单位净值, 日增长率, ...
+            df = ak.fund_open_fund_info_em(symbol=symbol, indicator="单位净值走势", period="1月")
+            
+            if df is None or df.empty:
+                return None
+                
+            # Get latest row
+            latest = df.iloc[-1]
+            # Get daily change rate (日增长率)
+            if '日增长率' in latest:
+                daily_change = float(latest['日增长率'])
+                return daily_change
+            return None
+            
+        except Exception as e:
+            print(f"Error getting CN fund daily change for {symbol}: {e}")
+            return None
     
     @staticmethod
     def get_cn_fund_kline_data(symbol, period="3y"):
@@ -532,6 +557,36 @@ class DataProvider:
                 
         except Exception as e:
             print(f"Error fetching current price for {symbol}: {e}")
+            return None
+    
+    @staticmethod
+    def get_daily_change_percent(symbol):
+        """
+        Get today's price change percentage for a symbol.
+        Returns the percentage change from previous close to current price.
+        """
+        try:
+            # Fetch 5 days of data to ensure we have previous close
+            hist = yf.Ticker(symbol).history(period="5d", auto_adjust=True)
+            
+            if hist is None or hist.empty or len(hist) < 2:
+                print(f"Warning: Insufficient data for daily change calculation for {symbol}")
+                return None
+            
+            # Get current price (latest close) and previous close
+            current_price = float(hist['Close'].iloc[-1])
+            prev_close = float(hist['Close'].iloc[-2])
+            
+            if prev_close == 0:
+                return None
+            
+            # Calculate percentage change
+            change_percent = ((current_price - prev_close) / prev_close) * 100
+            
+            return round(change_percent, 2)
+                
+        except Exception as e:
+            print(f"Error fetching daily change for {symbol}: {e}")
             return None
     
     @staticmethod
@@ -885,6 +940,50 @@ class BatchFetcher:
             print(f"✅ Price cached for {symbol}: {result}")
         else:
             print(f"⚠️ No price data returned for {symbol}")
+        
+        return result
+    
+    @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
+    def get_cached_daily_change(self, symbol: str, asset_type: str = None, currency: str = None) -> Optional[float]:
+        """
+        Get daily change percentage with caching support.
+        
+        Args:
+            symbol: Ticker symbol
+            asset_type: Asset type (optional, e.g., 'FUND', 'STOCK')
+            currency: Currency code (optional, e.g., 'CNY', 'USD')
+            
+        Returns:
+            Daily change percentage or None
+        """
+        cache_key = f"daily_change_{symbol}"
+        
+        # Try cache first (1 minute TTL for real-time data)
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return cached
+        
+        # Acquire rate limit permission
+        self._rate_limiter.acquire()
+        
+        # Fetch data
+        print(f"📈 Fetching daily change for {symbol} (type={asset_type}, currency={currency})")
+        
+        # Chinese funds don't have daily change data easily available
+        is_cn_fund = (asset_type == 'FUND' and currency == 'CNY') or asset_type == 'FUND_CN'
+        
+        if is_cn_fund:
+            # For CN funds, get daily change from akshare
+            result = DataProvider.get_cn_fund_daily_change(symbol)
+        else:
+            result = DataProvider.get_daily_change_percent(symbol)
+        
+        # Update cache
+        if result is not None:
+            self._update_cache(cache_key, result)
+            print(f"✅ Daily change cached for {symbol}: {result}%")
+        else:
+            print(f"⚠️ No daily change data returned for {symbol}")
         
         return result
     

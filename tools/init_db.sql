@@ -16,8 +16,9 @@ SET CHARACTER SET utf8mb4;
 CREATE TABLE IF NOT EXISTS `users` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `nickname` VARCHAR(100) NOT NULL COMMENT 'User nickname',
-  `email` VARCHAR(200) NOT NULL COMMENT 'User email',
-  `session_id` VARCHAR(64) NOT NULL UNIQUE COMMENT 'Session ID for auto-login',
+  `email` VARCHAR(200) NOT NULL UNIQUE COMMENT 'User email',
+  `password_hash` VARCHAR(128) NOT NULL COMMENT 'Password hash (bcrypt)',
+  `session_id` VARCHAR(64) UNIQUE COMMENT 'Session ID for auto-login',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation timestamp',
   `last_login` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Last login timestamp',
   INDEX `idx_email` (`email`),
