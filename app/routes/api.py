@@ -238,7 +238,7 @@ def get_current_price():
     
     symbol = request.args.get('symbol', '')
     asset_type = request.args.get('asset_type')
-    currency = request.args.get('currency')  # ✅ 新增：获取货币参数
+    currency = request.args.get('currency')  #  新增：获取货币参数
     if not symbol:
         return jsonify({'error': 'Symbol is required'}), 400
     
@@ -256,7 +256,7 @@ def analyze():
     data = request.json
     symbol = data.get('symbol')
     asset_type = data.get('asset_type', 'STOCK')
-    is_cn_fund = data.get('is_cn_fund', False)  # ✅ 新增：是否为中国基金
+    is_cn_fund = data.get('is_cn_fund', False)  #  新增：是否为中国基金
     model_name = data.get('model', 'gemini-3-flash-preview') # Default to 2.5 Flash
     language = data.get('language', 'zh')
     
@@ -1298,7 +1298,7 @@ def analyze_async():
     data = request.json
     symbol = data.get('symbol')
     asset_type = data.get('asset_type', 'STOCK')
-    is_cn_fund = data.get('is_cn_fund', False)  # ✅ 新增：是否为中国基金
+    is_cn_fund = data.get('is_cn_fund', False)  #  新增：是否为中国基金
     model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
@@ -1335,7 +1335,7 @@ def analyze_async():
     task_id = task_service.create_task(user.id, 'kline_analysis', {
         'symbol': symbol,
         'asset_type': asset_type,
-        'is_cn_fund': is_cn_fund,  # ✅ 新增：传递中国基金标志
+        'is_cn_fund': is_cn_fund,  #  新增：传递中国基金标志
         'model': model_name,
         'language': language
     })
@@ -1482,7 +1482,7 @@ def refresh_portfolios():
     for p in portfolios:
         portfolio_dict = p.to_dict()
         
-        # ✅ 获取标的全名
+        #  获取标的全名
         try:
             name = DataProvider.get_symbol_name(
                 p.symbol, 

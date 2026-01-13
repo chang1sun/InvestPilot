@@ -258,30 +258,34 @@ class DataProvider:
         
         Args:
             symbol: Fund code (e.g., '015283')
-            period: Time period - '1y', '3y', '5y', or 'all'
+            period: Time period - '1y', '3y', '5y', or 'all' (will filter data after fetching)
         
         Returns:
             List of dicts with date, open, high, low, close, volume
         """
         try:
-            # Map period to akshare period parameter
-            period_map = {
-                '1y': '1年',
-                '3y': '3年',
-                '5y': '5年',
-                'all': '全部'
-            }
-            ak_period = period_map.get(period, '3年')
-            
-            print(f"📊 Fetching CN fund K-line data for {symbol} (period={ak_period})")
+            print(f"📊 Fetching CN fund K-line data for {symbol} (period={period})")
             
             # Get fund net value history
             # indicator="单位净值走势" returns: 净值日期, 单位净值, 日增长率
-            df = ak.fund_open_fund_info_em(symbol=symbol, indicator="单位净值走势", period=ak_period)
+            # Note: akshare returns all available data, we'll filter by period later
+            df = ak.fund_open_fund_info_em(symbol=symbol, indicator="单位净值走势")
             
             if df is None or df.empty:
                 print(f"Warning: Empty data for CN fund {symbol}")
                 return None
+            
+            # Filter data by period
+            if period != 'all':
+                period_days = {
+                    '1y': 365,
+                    '3y': 365 * 3,
+                    '5y': 365 * 5
+                }
+                days = period_days.get(period, 365 * 3)
+                cutoff_date = datetime.now() - timedelta(days=days)
+                df['净值日期'] = pd.to_datetime(df['净值日期'])
+                df = df[df['净值日期'] >= cutoff_date]
             
             # Format data for frontend (funds don't have OHLC, so we use net value for all)
             data = []

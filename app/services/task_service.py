@@ -123,7 +123,7 @@ class TaskService:
         from datetime import datetime
         
         symbol = params.get('symbol')
-        is_cn_fund = params.get('is_cn_fund', False)  # ✅ 新增：是否为中国基金
+        is_cn_fund = params.get('is_cn_fund', False)  #  新增：是否为中国基金
         model_name = params.get('model', 'gemini-3-flash-preview')
         language = params.get('language', 'zh')
         
@@ -185,14 +185,15 @@ class TaskService:
         
         # 构建返回给前端的数据
         reconstructed_trades = []
-        ui_signals = []
+        user_transactions = []  #  用户真实交易（不是 AI 建议）
         
         # 配对交易逻辑
         buy_queue = []
         
         for t in real_transactions:
             date_str = t.trade_date.strftime('%Y-%m-%d')
-            ui_signals.append({
+            #  用户真实交易单独存储，不混入 AI 建议
+            user_transactions.append({
                 "type": t.transaction_type,
                 "date": date_str,
                 "price": float(t.price),
@@ -263,12 +264,33 @@ class TaskService:
             
         reconstructed_trades.sort(key=lambda x: x['buy_date'], reverse=True)
         
+        #  标记哪些 AI 建议被用户采纳了
+        # 逻辑：如果 AI 建议的日期和价格与用户真实交易接近，则认为被采纳
+        ai_signals = analysis_result.get('signals', [])
+        for signal in ai_signals:
+            signal['adopted'] = False  # 默认未采纳
+            
+            # 检查是否有匹配的用户交易
+            for user_trans in user_transactions:
+                # 同类型、同日期（或相近日期）、价格接近
+                if (signal['type'] == user_trans['type'] and 
+                    signal['date'] == user_trans['date']):
+                    # 价格相差在 5% 以内认为是同一笔交易
+                    price_diff = abs(signal['price'] - user_trans['price']) / user_trans['price']
+                    if price_diff < 0.05:
+                        signal['adopted'] = True
+                        break
+        
         final_result = {
             "analysis_summary": analysis_result.get('analysis_summary', ''),
             "trades": reconstructed_trades,
-            "signals": ui_signals,
+            "signals": ai_signals,  #  AI 建议信号（已标记 adopted）
+            "user_transactions": user_transactions,  #  用户真实交易（独立字段）
             "source": "user_real_data",
-            "ai_suggestion": analysis_result.get('signals', [])
+            "ai_suggestion": ai_signals,  # 保持兼容性
+            "current_action": analysis_result.get('current_action'),
+            "is_fallback": analysis_result.get('is_fallback', False),
+            "fallback_reason": analysis_result.get('fallback_reason', '')
         }
         
         return {

@@ -1066,6 +1066,72 @@
                     </div>
                 </div>
 
+                <!-- Current Action Recommendation Card (Prominent Display) -->
+                <div v-if="analysisResult.analysis.current_action" class="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-lg border-2 p-5 animate-fade-in"
+                     :class="{
+                         'border-green-400 shadow-green-100': analysisResult.analysis.current_action.action === 'BUY',
+                         'border-red-400 shadow-red-100': analysisResult.analysis.current_action.action === 'SELL',
+                         'border-orange-400 shadow-orange-100': analysisResult.analysis.current_action.action === 'WAIT',
+                         'border-indigo-400 shadow-indigo-100': analysisResult.analysis.current_action.action === 'HOLD'
+                     }">
+                    <div class="flex items-start gap-4">
+                        <!-- Icon Badge -->
+                        <div class="flex-shrink-0">
+                            <div class="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg"
+                                 :class="{
+                                     'bg-gradient-to-br from-green-400 to-green-600': analysisResult.analysis.current_action.action === 'BUY',
+                                     'bg-gradient-to-br from-red-400 to-red-600': analysisResult.analysis.current_action.action === 'SELL',
+                                     'bg-gradient-to-br from-orange-400 to-orange-600': analysisResult.analysis.current_action.action === 'WAIT',
+                                     'bg-gradient-to-br from-indigo-400 to-indigo-600': analysisResult.analysis.current_action.action === 'HOLD'
+                                 }">
+                                [[ analysisResult.analysis.current_action.action === 'BUY' ? (currentLanguage === 'zh' ? '买' : 'B') :
+                                   analysisResult.analysis.current_action.action === 'SELL' ? (currentLanguage === 'zh' ? '卖' : 'S') :
+                                   analysisResult.analysis.current_action.action === 'WAIT' ? (currentLanguage === 'zh' ? '等' : 'W') :
+                                   (currentLanguage === 'zh' ? '持' : 'H') ]]
+                            </div>
+                        </div>
+                        
+                        <!-- Content -->
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-2">
+                                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                    [[ currentLanguage === 'zh' ? '🎯 AI 操作建议' : '🎯 AI Recommendation' ]]
+                                </h3>
+                            </div>
+                            <div class="text-2xl font-bold mb-2"
+                                 :class="{
+                                     'text-green-600': analysisResult.analysis.current_action.action === 'BUY',
+                                     'text-red-600': analysisResult.analysis.current_action.action === 'SELL',
+                                     'text-orange-600': analysisResult.analysis.current_action.action === 'WAIT',
+                                     'text-indigo-600': analysisResult.analysis.current_action.action === 'HOLD'
+                                 }">
+                                [[ analysisResult.analysis.current_action.action === 'BUY' ? (currentLanguage === 'zh' ? '买入' : 'BUY') :
+                                   analysisResult.analysis.current_action.action === 'SELL' ? (currentLanguage === 'zh' ? '卖出' : 'SELL') :
+                                   analysisResult.analysis.current_action.action === 'WAIT' ? (currentLanguage === 'zh' ? '观望等待' : 'WAIT') :
+                                   (currentLanguage === 'zh' ? '继续持有' : 'HOLD') ]]
+                            </div>
+                            <p class="text-sm text-gray-700 leading-relaxed mb-3">
+                                [[ analysisResult.analysis.current_action.reason ]]
+                            </p>
+                            
+                            <!-- Additional Details for BUY/SELL -->
+                            <div v-if="analysisResult.analysis.current_action.action === 'BUY' || analysisResult.analysis.current_action.action === 'SELL'" 
+                                 class="flex flex-wrap gap-3 text-xs">
+                                <div v-if="analysisResult.analysis.current_action.price" 
+                                     class="bg-white px-3 py-1.5 rounded-lg border border-gray-200 font-semibold">
+                                    <span class="text-gray-500">[[ currentLanguage === 'zh' ? '建议价格' : 'Price' ]]:</span>
+                                    <span class="text-gray-800 ml-1">[[ analysisResult.analysis.current_action.price ]]</span>
+                                </div>
+                                <div v-if="analysisResult.analysis.current_action.quantity_percent" 
+                                     class="bg-white px-3 py-1.5 rounded-lg border border-gray-200 font-semibold">
+                                    <span class="text-gray-500">[[ currentLanguage === 'zh' ? '仓位比例' : 'Position' ]]:</span>
+                                    <span class="text-gray-800 ml-1">[[ analysisResult.analysis.current_action.quantity_percent ]]%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 2. Main Chart Area (Full Width) -->
                 <div class="bg-white rounded-xl shadow-sm p-4 w-full">
                     <div ref="chartRef" class="chart-container" style="height: 550px; width: 100%;"></div>
@@ -1088,123 +1154,96 @@
                         <div class="overflow-y-auto flex-1 pr-2">
                             <p class="text-sm text-gray-700 leading-relaxed font-serif text-justify whitespace-pre-wrap">[[ analysisResult.analysis.analysis_summary ]]</p>
                             
-                            <!-- Current Action Recommendation -->
+                            <!-- Current Action Quick Reference (Simplified - Main display is at top) -->
                             <div v-if="analysisResult.analysis.current_action" class="mt-4 pt-4 border-t border-gray-200">
-                                <div class="flex items-start gap-3">
-                                    <div class="flex-shrink-0 mt-0.5">
-                                        <span 
-                                            class="inline-flex items-center justify-center w-8 h-8 rounded-full text-white font-bold text-xs"
-                                            :class="{
-                                                'bg-green-500': analysisResult.analysis.current_action.action === 'BUY',
-                                                'bg-red-500': analysisResult.analysis.current_action.action === 'SELL',
-                                                'bg-orange-500': analysisResult.analysis.current_action.action === 'WAIT',
-                                                'bg-indigo-500': analysisResult.analysis.current_action.action === 'HOLD'
-                                            }"
-                                        >
-                                            [[ analysisResult.analysis.current_action.action === 'BUY' ? (currentLanguage === 'zh' ? '买' : 'B') :
-                                               analysisResult.analysis.current_action.action === 'SELL' ? (currentLanguage === 'zh' ? '卖' : 'S') :
-                                               analysisResult.analysis.current_action.action === 'WAIT' ? (currentLanguage === 'zh' ? '等' : 'W') :
-                                               (currentLanguage === 'zh' ? '持' : 'H') ]]
-                                        </span>
-                                    </div>
-                                    <div class="flex-1">
-                                        <h4 class="text-sm font-bold text-gray-800 mb-1">
-                                            [[ currentLanguage === 'zh' ? '当前操作建议' : 'Current Recommendation' ]]:
-                                            <span 
-                                                :class="{
-                                                    'text-green-600': analysisResult.analysis.current_action.action === 'BUY',
-                                                    'text-red-600': analysisResult.analysis.current_action.action === 'SELL',
-                                                    'text-orange-600': analysisResult.analysis.current_action.action === 'WAIT',
-                                                    'text-indigo-600': analysisResult.analysis.current_action.action === 'HOLD'
-                                                }"
-                                            >
-                                                [[ analysisResult.analysis.current_action.action === 'BUY' ? (currentLanguage === 'zh' ? '买入' : 'BUY') :
-                                                   analysisResult.analysis.current_action.action === 'SELL' ? (currentLanguage === 'zh' ? '卖出' : 'SELL') :
-                                                   analysisResult.analysis.current_action.action === 'WAIT' ? (currentLanguage === 'zh' ? '观望' : 'WAIT') :
-                                                   (currentLanguage === 'zh' ? '持有' : 'HOLD') ]]
-                                            </span>
-                                        </h4>
-                                        <p class="text-xs text-gray-600 leading-relaxed">
-                                            [[ analysisResult.analysis.current_action.reason ]]
-                                        </p>
-                                        <div v-if="analysisResult.analysis.current_action.action === 'BUY' || analysisResult.analysis.current_action.action === 'SELL'" class="mt-2 text-xs text-gray-500">
-                                            <span v-if="analysisResult.analysis.current_action.price" class="mr-3">
-                                                [[ currentLanguage === 'zh' ? '建议价格' : 'Price' ]]: <strong>[[ analysisResult.analysis.current_action.price ]]</strong>
-                                            </span>
-                                            <span v-if="analysisResult.analysis.current_action.quantity_percent">
-                                                [[ currentLanguage === 'zh' ? '仓位比例' : 'Position' ]]: <strong>[[ analysisResult.analysis.current_action.quantity_percent ]]%</strong>
-                                            </span>
-                                        </div>
-                                    </div>
+                                <div class="text-xs text-gray-500 mb-1">
+                                    [[ currentLanguage === 'zh' ? '💡 操作建议详情见上方卡片' : '💡 See recommendation card above' ]]
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Trades Table (Takes 2/3) -->
+                    <!-- Transaction Records Table (Takes 2/3) -->
                     <div class="bg-white rounded-xl shadow-sm flex flex-col overflow-hidden border border-gray-100 lg:col-span-2 h-full">
                         <div class="px-5 py-4 border-b border-gray-100 bg-gray-50 flex-none">
-                            <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider">[[ currentLanguage === 'zh' ? '交易明细' : 'Trade Log' ]]</h3>
+                            <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider">
+                                [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction Records' ]]
+                                <span class="ml-2 text-xs text-gray-500">([[ allTransactionRecords?.length || 0 ]])</span>
+                            </h3>
                         </div>
                         <div class="overflow-y-auto flex-1 p-0">
-                            <div class="divide-y divide-gray-100">
-                                <div v-for="(trade, index) in analysisResult.analysis.trades" :key="index" class="border-b border-gray-100 last:border-0">
-                                    <!-- Row Content -->
-                                    <div 
-                                        @click="toggleTrade(index)"
-                                        class="px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer"
-                                        :class="{
-                                            'bg-green-50': trade.status === 'CLOSED' && trade.return_rate.includes('+'),
-                                            'bg-red-50': trade.status === 'CLOSED' && trade.return_rate.includes('-'),
-                                            'bg-blue-50': trade.status === 'HOLDING'
-                                        }"
-                                    >
-                                        <div class="flex items-center justify-between">
-                                            <div class="flex items-center gap-4">
-                                                <!-- Expand Icon -->
-                                                <svg class="w-4 h-4 text-gray-400 transition-transform flex-shrink-0" :class="{'rotate-90': expandedTrades[index]}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                                </svg>
-                                                
-                                                <!-- Badge -->
-                                                <span class="px-2 py-1 rounded-md font-bold text-xs whitespace-nowrap" :class="{
-                                                    'bg-green-100 text-green-700': trade.status === 'CLOSED' && trade.return_rate.includes('+'),
-                                                    'bg-red-100 text-red-700': trade.status === 'CLOSED' && trade.return_rate.includes('-'),
-                                                    'bg-blue-100 text-blue-700': trade.status === 'HOLDING'
-                                                }">
-                                                    [[ trade.status === 'HOLDING' ? (currentLanguage === 'zh' ? '持仓' : 'HOLD') : (trade.return_rate.includes('+') ? (currentLanguage === 'zh' ? '止盈' : 'WIN') : (currentLanguage === 'zh' ? '止损' : 'LOSS')) ]]
+                            <!-- Empty State -->
+                            <div v-if="!allTransactionRecords || allTransactionRecords.length === 0" class="flex items-center justify-center h-full text-gray-400 text-sm">
+                                [[ currentLanguage === 'zh' ? '暂无交易记录' : 'No transaction records' ]]
+                            </div>
+                            
+                            <!-- Transaction List -->
+                            <div v-else class="divide-y divide-gray-100">
+                                <div v-for="(record, index) in allTransactionRecords" :key="index" 
+                                     class="px-4 py-3 hover:bg-gray-50 transition-colors"
+                                     :class="{
+                                         'bg-blue-50/30': record.source === 'user',
+                                         'bg-green-50/20': record.source === 'ai' && record.type === 'BUY',
+                                         'bg-red-50/20': record.source === 'ai' && record.type === 'SELL',
+                                         'border-l-4 border-amber-400': record.is_current
+                                     }">
+                                    <div class="flex items-start justify-between gap-4">
+                                        <!-- Left: Type Badge + Info -->
+                                        <div class="flex items-start gap-3 flex-1 min-w-0">
+                                            <!-- Type Badge -->
+                                            <div class="flex-shrink-0">
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-bold text-xs whitespace-nowrap"
+                                                      :class="{
+                                                          'bg-blue-100 text-blue-700': record.source === 'user' && record.type === 'BUY',
+                                                          'bg-orange-100 text-orange-700': record.source === 'user' && record.type === 'SELL',
+                                                          'bg-green-100 text-green-700 border border-green-300': record.source === 'ai' && record.type === 'BUY' && record.adopted,
+                                                          'bg-green-50 text-green-600 border border-green-200': record.source === 'ai' && record.type === 'BUY' && !record.adopted,
+                                                          'bg-red-100 text-red-700 border border-red-300': record.source === 'ai' && record.type === 'SELL' && record.adopted,
+                                                          'bg-red-50 text-red-600 border border-red-200': record.source === 'ai' && record.type === 'SELL' && !record.adopted
+                                                      }">
+                                                    <!-- Icon -->
+                                                    <span v-if="record.source === 'user'">💎</span>
+                                                    <span v-else-if="record.adopted">✓</span>
+                                                    <span v-else>🤖</span>
+                                                    
+                                                    <!-- Label -->
+                                                    <span v-if="record.source === 'user'">
+                                                        [[ record.type === 'BUY' ? (currentLanguage === 'zh' ? '真买' : 'Real Buy') : (currentLanguage === 'zh' ? '真卖' : 'Real Sell') ]]
+                                                    </span>
+                                                    <span v-else>
+                                                        [[ record.type === 'BUY' ? (currentLanguage === 'zh' ? 'AI买' : 'AI Buy') : (currentLanguage === 'zh' ? 'AI卖' : 'AI Sell') ]]
+                                                    </span>
                                                 </span>
                                                 
-                                                <!-- Date info -->
-                                                <div class="text-xs text-gray-600 flex flex-col sm:flex-row sm:gap-2">
-                                                    <span><span class="font-bold">Buy:</span> [[ trade.buy_date ]] @ [[ trade.buy_price ]]</span>
-                                                    <span v-if="trade.sell_date" class="hidden sm:inline text-gray-300">|</span>
-                                                    <span v-if="trade.sell_date"><span class="font-bold">Sell:</span> [[ trade.sell_date ]] @ [[ trade.sell_price ]]</span>
+                                                <!-- Current indicator -->
+                                                <div v-if="record.is_current" class="mt-1 text-xs text-amber-600 font-semibold">
+                                                    [[ currentLanguage === 'zh' ? '当前' : 'Current' ]]
                                                 </div>
                                             </div>
                                             
-                                            <!-- Return -->
-                                            <div class="text-sm font-bold whitespace-nowrap" :class="{
-                                                'text-green-600': trade.return_rate.includes('+'),
-                                                'text-red-600': trade.return_rate.includes('-'),
-                                                'text-blue-600': trade.status === 'HOLDING'
-                                            }">
-                                                [[ trade.return_rate ]]
-                                            </div>
-                                        </div>
-
-                                        <!-- Expanded Details (Inline) -->
-                                        <div v-if="expandedTrades[index]" class="mt-3 pt-3 border-t border-gray-200/50 text-xs text-gray-600">
-                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
-                                                <div>
-                                                    <span class="font-bold text-gray-500 block mb-1">[[ currentLanguage === 'zh' ? '持仓时间' : 'Duration' ]]</span>
-                                                    [[ trade.holding_period ]]
+                                            <!-- Transaction Details -->
+                                            <div class="flex-1 min-w-0">
+                                                <!-- Date & Price -->
+                                                <div class="text-sm font-semibold text-gray-800 mb-1">
+                                                    [[ record.date ]] @ <span class="text-indigo-600">[[ record.price ]]</span>
                                                 </div>
-                                                <div>
-                                                    <div class="font-bold text-gray-500 mb-1">
-                                                        <span>[[ currentLanguage === 'zh' ? '策略逻辑' : 'Reasoning' ]]</span>
-                                                    </div>
-                                                    <p class="leading-relaxed text-gray-700">[[ trade.reason ]]</p>
+                                                
+                                                <!-- Quantity & Amount (for user transactions) -->
+                                                <div v-if="record.source === 'user' && (record.quantity || record.amount)" class="text-xs text-gray-600 mb-1">
+                                                    <span v-if="record.quantity">[[ currentLanguage === 'zh' ? '数量' : 'Qty' ]]: [[ record.quantity ]]</span>
+                                                    <span v-if="record.quantity && record.amount" class="mx-1">|</span>
+                                                    <span v-if="record.amount">[[ currentLanguage === 'zh' ? '金额' : 'Amount' ]]: [[ record.amount ]]</span>
+                                                </div>
+                                                
+                                                <!-- Reason/Notes -->
+                                                <div v-if="record.reason" class="text-xs text-gray-600 leading-relaxed mt-1">
+                                                    <span class="font-semibold text-gray-500">[[ currentLanguage === 'zh' ? '原因' : 'Reason' ]]:</span>
+                                                    <span class="ml-1">[[ record.reason ]]</span>
+                                                </div>
+                                                
+                                                <!-- Adopted indicator -->
+                                                <div v-if="record.source === 'ai' && record.adopted" class="text-xs text-green-600 font-semibold mt-1">
+                                                    ✓ [[ currentLanguage === 'zh' ? '已采纳' : 'Adopted' ]]
                                                 </div>
                                             </div>
                                         </div>
@@ -1947,7 +1986,7 @@
                 <div v-else>
                     <!-- Total Assets Summary -->
                     <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-5 mb-4 shadow-md">
-                        <!-- ✅ 新增：标题栏，包含"眼睛"图标 -->
+                        <!-- 标题栏 -->
                         <div class="flex justify-between items-center mb-3">
                             <h2 class="text-white text-sm font-semibold uppercase tracking-wider">
                                 [[ currentLanguage === 'zh' ? '资产概览' : 'Assets Overview' ]]
@@ -3444,7 +3483,7 @@
                 const selectedAssetType = ref('STOCK');
                 const suggestions = ref([]);
                 const klineSymbolSelected = ref(false); // Track if user selected from suggestions
-                const isCnFund = ref(sessionData.isCnFund || false); // ✅ 新增：是否为中国基金
+                const isCnFund = ref(sessionData.isCnFund || false); // 新增：是否为中国基金
                 const analysisResult = ref(sessionData.analysisResult || null);
                 const chartRef = ref(null);
                 let chartInstance = null;
@@ -3472,8 +3511,8 @@
                 const loadingPortfolios = ref(false);
                 const displayCurrency = ref('USD');
                 const rates = ref({ USD_CNY: 7.2 }); // Default fallback
-                const hideAmounts = ref(localStorage.getItem('investPilotHideAmounts') === 'false' ? false : true); // ✅ 从localStorage读取，默认隐藏
-                const lastRefreshTime = ref(0); // ✅ 记录上次刷新时间（用于限频）
+                const hideAmounts = ref(localStorage.getItem('investPilotHideAmounts') === 'false' ? false : true); // 从localStorage读取，默认隐藏
+                const lastRefreshTime = ref(0); // 记录上次刷新时间（用于限频）
                 const showAddTransactionModal = ref(false);
                 const selectedPortfolio = ref(null);
                 const searchType = ref('ALL');
@@ -4136,14 +4175,14 @@
                     console.log('displayedTotalAssets:', displayedTotalAssets.value);
                 };
 
-                // ✅ 新增：切换金额显示/隐藏
+                // 新增：切换金额显示/隐藏
                 const toggleAmountVisibility = () => {
                     hideAmounts.value = !hideAmounts.value;
                     // 保存状态到localStorage
                     localStorage.setItem('investPilotHideAmounts', hideAmounts.value.toString());
                 };
 
-                // ✅ 新增：遮罩金额显示
+                // 新增：遮罩金额显示
                 const maskAmount = (value) => {
                     if (!hideAmounts.value) {
                         return formatNumber(value);
@@ -4404,6 +4443,9 @@
                 
                 // Trade Expansion State
                 const expandedTrades = ref({});
+                
+                // All transaction records (AI signals + user transactions)
+                const allTransactionRecords = ref([]);
 
                 // --- Computed Properties ---
 
@@ -4840,6 +4882,10 @@
                     const signals = data.analysis.signals || [];
                     const userTransactions = data.analysis.user_transactions || [];
                     
+                    // Debug: Check data
+                    console.log('🔍 Debug - signals:', signals);
+                    console.log('🔍 Debug - userTransactions:', userTransactions);
+                    
                     // Separate AI signals into adopted and unadopted
                     const aiSignalsUnadopted = [];
                     const aiSignalsAdopted = [];
@@ -4863,11 +4909,11 @@
                         let displayValue, displayColor, displaySymbol;
                         if (sig.type === 'BUY') {
                             displayValue = currentLanguage.value === 'zh' ? 'AI买' : 'AI-B';
-                            displayColor = '#10B981';
+                            displayColor = '#34D399';  // 更清新的绿色（原 #10B981）
                             displaySymbol = 'pin';
                         } else if (sig.type === 'SELL') {
                             displayValue = currentLanguage.value === 'zh' ? 'AI卖' : 'AI-S';
-                            displayColor = '#EF4444';
+                            displayColor = '#F87171';  // 更清新的红色（原 #EF4444）
                             displaySymbol = 'pin';
                         } else {
                             // Unknown type, skip
@@ -4879,11 +4925,12 @@
                             coord: [sig.date, sig.price],
                             value: displayValue,
                             symbol: displaySymbol,
-                            symbolSize: sig.is_current ? 60 : 50,  // Larger for current recommendation
+                            symbolSize: sig.is_current ? 35 : 28,  // 更小巧的尺寸（原 60/50 → 35/28）
                             itemStyle: {
                                 color: displayColor,
-                                borderColor: sig.adopted ? '#000' : (sig.is_current ? '#FFD700' : '#fff'),  // Gold border for current
-                                borderWidth: sig.is_current ? 3 : (sig.adopted ? 2 : 1)
+                                borderColor: sig.adopted ? '#374151' : (sig.is_current ? '#F59E0B' : '#E5E7EB'),  // 更柔和的边框色
+                                borderWidth: sig.is_current ? 2 : (sig.adopted ? 1.5 : 1),  // 更细的边框
+                                opacity: 0.85  // 添加透明度，不完全遮挡 K 线
                             },
                             tradeDetails: tradeInfo,
                             signalInfo: sig
@@ -4903,11 +4950,12 @@
                             coord: [trans.date, trans.price],
                             value: trans.type === 'BUY' ? (currentLanguage.value === 'zh' ? '真买' : 'R-B') : (currentLanguage.value === 'zh' ? '真卖' : 'R-S'),
                             symbol: 'diamond',  // Different symbol for real trades
-                            symbolSize: 50,
+                            symbolSize: 28,  // 更小巧的尺寸（原 50 → 28）
                             itemStyle: {
-                                color: trans.type === 'BUY' ? '#3B82F6' : '#F59E0B',
-                                borderColor: '#000',
-                                borderWidth: 2
+                                color: trans.type === 'BUY' ? '#60A5FA' : '#FBBF24',  // 更清新的颜色（浅蓝/浅黄）
+                                borderColor: '#374151',  // 柔和的深灰边框
+                                borderWidth: 1.5,  // 更细的边框
+                                opacity: 0.85  // 添加透明度
                             },
                             transactionInfo: trans
                         });
@@ -4919,6 +4967,50 @@
                         ...aiSignalsAdopted,
                         ...userTradeMarks
                     ];
+                    
+                    // Build complete transaction records list for display
+                    const transactionRecords = [];
+                    
+                    // Add AI signals (BUY/SELL only, skip HOLD/WAIT)
+                    signals.forEach(sig => {
+                        if (sig.type === 'BUY' || sig.type === 'SELL') {
+                            transactionRecords.push({
+                                date: sig.date,
+                                type: sig.type,
+                                price: sig.price,
+                                reason: sig.reason || '',
+                                source: 'ai',
+                                adopted: sig.adopted || false,
+                                is_current: sig.is_current || false
+                            });
+                        }
+                    });
+                    
+                    // Add user real transactions
+                    userTransactions.forEach(trans => {
+                        transactionRecords.push({
+                            date: trans.date,
+                            type: trans.type,
+                            price: trans.price,
+                            reason: trans.notes || '',
+                            source: 'user',
+                            quantity: trans.quantity || null,
+                            amount: trans.amount || null
+                        });
+                    });
+                    
+                    // Sort by date (newest first)
+                    transactionRecords.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    
+                    // Debug: Check final transaction records
+                    console.log('🔍 Debug - transactionRecords:', transactionRecords);
+                    console.log('🔍 Debug - transactionRecords.length:', transactionRecords.length);
+                    
+                    // Store in reactive variable
+                    allTransactionRecords.value = transactionRecords;
+                    
+                    // Debug: Check reactive variable
+                    console.log('🔍 Debug - allTransactionRecords.value:', allTransactionRecords.value);
 
                     const option = {
                         title: { text: `${data.symbol} ${currentLanguage.value === 'zh' ? 'K线趋势分析' : 'Trend'}`, left: 'center' },
@@ -5767,6 +5859,7 @@
                     currentModelStatus,
                     expandedTrades,
                     toggleTrade,
+                    allTransactionRecords,  // Transaction records for display
                     hotStocks,
                     loadingHotStocks,
                     marketIndices,
