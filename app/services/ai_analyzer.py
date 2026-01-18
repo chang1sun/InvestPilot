@@ -57,12 +57,13 @@ class AIAnalyzer:
         }
         return examples.get(asset_type, 'SYMBOL')
 
-    def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None, asset_type="STOCK"):
+    def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None, asset_type="STOCK", portfolio_context=None):
         """
         Analyze K-line data using AI models to find buy/sell points.
         Supports: Gemini, GPT, Claude, Grok, Qwen
         :param current_position: Optional dict { 'date': 'YYYY-MM-DD', 'price': float, 'reason': str } indicating last BUY signal.
         :param asset_type: STOCK, CRYPTO, COMMODITY, BOND
+        :param portfolio_context: Optional dict with user's complete portfolio information
         """
         if not kline_data:
             return {"error": "No K-line data provided", "signals": [], "trades": []}
@@ -111,6 +112,64 @@ class AIAnalyzer:
             macro_focus = "Consider current global macro trends (e.g., Interest Rates, Tech Cycles, Geopolitics) relevant to this stock. Analyze fundamentals like earnings, valuation, and sector rotation."
             asset_name = "stock"
 
+        # Build Portfolio Context (if available)
+        portfolio_info = ""
+        if portfolio_context:
+            total_value = portfolio_context.get('total_value', 0)
+            holdings_count = portfolio_context.get('holdings_count', 0)
+            holdings_summary = portfolio_context.get('holdings_summary', [])
+            current_symbol_detail = portfolio_context.get('current_symbol_detail')
+            
+            if holdings_count > 0:
+                # Build holdings summary (only symbol, percentage, and P&L)
+                holdings_list = []
+                for h in holdings_summary:
+                    holdings_list.append(
+                        f"  - {h['symbol']} ({h['asset_type']}): {h['percentage']:.1f}% of portfolio, "
+                        f"P&L: {h['unrealized_pnl_pct']:+.2f}%"
+                    )
+                
+                portfolio_info = f"""
+**USER'S PORTFOLIO OVERVIEW**:
+- Total Portfolio Value: ${total_value:,.2f}
+- Number of Holdings: {holdings_count}
+- Holdings Distribution:
+{chr(10).join(holdings_list)}
+
+**PORTFOLIO CONTEXT FOR DECISION MAKING**:
+- Consider portfolio diversification when recommending position sizes.
+- If the portfolio is heavily concentrated in one sector/asset, be more cautious about adding similar positions.
+- If analyzing a symbol already held, consider the current allocation percentage.
+"""
+                
+                # Add detailed info for current symbol if held
+                if current_symbol_detail:
+                    transactions_list = []
+                    for t in current_symbol_detail.get('transactions', []):
+                        transactions_list.append(
+                            f"  - {t['date']}: {t['type']} {t['quantity']} @ ${t['price']:.2f}"
+                            + (f" ({t['notes']})" if t.get('notes') else "")
+                        )
+                    
+                    portfolio_info += f"""
+**CURRENT SYMBOL ({symbol}) - DETAILED HOLDING**:
+- Quantity Held: {current_symbol_detail['quantity']}
+- Average Cost: ${current_symbol_detail['avg_cost']:.2f}
+- Current Price: ${current_symbol_detail.get('current_price', 0):.2f}
+- Position Value: ${current_symbol_detail.get('position_value', 0):,.2f}
+- Portfolio Allocation: {current_symbol_detail['percentage']:.1f}%
+- Unrealized P&L: ${current_symbol_detail['unrealized_pnl']:,.2f} ({current_symbol_detail['unrealized_pnl_pct']:+.2f}%)
+
+**TRANSACTION HISTORY FOR {symbol}**:
+{chr(10).join(transactions_list) if transactions_list else '  - No transactions yet'}
+
+**IMPORTANT**: When making recommendations for this symbol:
+1. You already know the user HOLDS this position (not just AI simulation).
+2. Consider the current P&L and allocation percentage.
+3. If recommending SELL, consider tax implications and the user's actual cost basis.
+4. If recommending BUY MORE, ensure it doesn't over-concentrate the portfolio.
+"""
+
         # Build Position Context
         position_context = ""
         if current_position:
@@ -129,11 +188,31 @@ class AIAnalyzer:
     1. You MUST acknowledge this existing position.
     2. Your primary task is to decide: **HOLD** or **SELL** (or **BUY MORE**).
     3. If you recommend SELLING, specify the price and quantity (percentage).
+    4. Consider the user's actual holding details provided in the portfolio context above.
     """
         else:
-            position_context = f"""
+            # Check if user holds this symbol in real portfolio (even if AI doesn't have a position)
+            has_real_holding = portfolio_context and portfolio_context.get('current_symbol_detail') is not None
+            
+            if has_real_holding:
+                position_context = f"""
+    **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
+    - The AI system currently has NO simulated position for this asset.
+    - However, the USER ACTUALLY HOLDS this asset in their real portfolio (see portfolio context above).
+    - You are analyzing whether to recommend BUY MORE, HOLD, or SELL based on current technicals.
+    
+    **MANDATORY INSTRUCTION FOR USER-HELD POSITION**:
+    1. Acknowledge that the user holds this position (even though AI simulation doesn't).
+    2. Your task is to evaluate: Should the user **HOLD**, **SELL** (partial or full), or **BUY MORE**?
+    3. Consider the user's actual cost basis, current P&L, and portfolio allocation.
+    4. Be mindful of portfolio concentration - if this position is already large, be cautious about recommending BUY MORE.
+    5. When recommending actions, reference the user's actual holding details.
+    """
+            else:
+                position_context = f"""
     **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
     - The system currently has NO open position (100% Cash).
+    - The user does NOT hold this asset in their real portfolio.
     - You are actively looking for HIGH-PROBABILITY BUY opportunities.
     
     **MANDATORY INSTRUCTION FOR EMPTY POSITION**:
@@ -144,7 +223,8 @@ class AIAnalyzer:
        - The {asset_name} is in a consolidation phase with no clear direction.
        - Risk/reward is unfavorable (e.g., near resistance with weak momentum).
     4. When recommending BUY, specify the entry price and suggested position size (quantity_percent: 30-100).
-    5. Remember: The goal is to CAPTURE TRENDS, not to avoid all risk. Calculated risk-taking is part of swing trading.
+    5. Consider portfolio diversification: Review the user's current holdings (if any) to avoid over-concentration in similar assets.
+    6. Remember: The goal is to CAPTURE TRENDS, not to avoid all risk. Calculated risk-taking is part of swing trading.
     """
 
         prompt = f"""
@@ -159,7 +239,7 @@ Your goal is to generate alpha by combining **Technical Precision** (Price/Volum
 
 **TASK:**
 Analyze the historical data for this {asset_type} ({symbol}) to identify high-probability Buying and Selling points.
-
+{portfolio_info}
 **ANALYSIS FRAMEWORK:**
 1. **Quantitative (70%)**: Rigorous analysis of Price, Volume, and Trends (MA5, MA20, RSI) provided in the data.
 2. **Macro & Fundamental (30%)**:

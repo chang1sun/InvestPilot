@@ -118,6 +118,113 @@ def get_current_position(symbol, model_name):
                 position = None # Closed
     return position
 
+def get_user_portfolio_context(user_id, current_symbol, asset_type):
+    """
+    Get user's complete portfolio information for AI analysis context.
+    Returns structured portfolio data including:
+    - Total portfolio value
+    - List of holdings with their percentages
+    - Detailed information for the current symbol (if held)
+    """
+    from app.services.data_provider import batch_fetcher
+    
+    if not user_id:
+        return None
+    
+    # Get all user's portfolios
+    portfolios = Portfolio.query.filter_by(user_id=user_id).all()
+    
+    if not portfolios:
+        return None
+    
+    # Calculate total portfolio value
+    total_value = 0
+    holdings = []
+    current_symbol_portfolio = None
+    
+    for portfolio in portfolios:
+        if portfolio.quantity > 0:
+            # Get current price
+            current_price = batch_fetcher.get_cached_current_price(
+                portfolio.symbol, 
+                asset_type=portfolio.asset_type,
+                currency=portfolio.currency
+            )
+            
+            if current_price:
+                position_value = portfolio.quantity * current_price
+                total_value += position_value
+                
+                holding_info = {
+                    'symbol': portfolio.symbol,
+                    'asset_type': portfolio.asset_type,
+                    'quantity': portfolio.quantity,
+                    'avg_cost': portfolio.avg_cost,
+                    'current_price': current_price,
+                    'position_value': position_value,
+                    'unrealized_pnl': (current_price - portfolio.avg_cost) * portfolio.quantity,
+                    'unrealized_pnl_pct': ((current_price - portfolio.avg_cost) / portfolio.avg_cost * 100) if portfolio.avg_cost > 0 else 0
+                }
+                
+                holdings.append(holding_info)
+                
+                # Check if this is the current symbol being analyzed
+                if portfolio.symbol == current_symbol and portfolio.asset_type == asset_type:
+                    current_symbol_portfolio = portfolio
+    
+    # Calculate percentages
+    for holding in holdings:
+        holding['percentage'] = (holding['position_value'] / total_value * 100) if total_value > 0 else 0
+    
+    # Sort by position value (descending)
+    holdings.sort(key=lambda x: x['position_value'], reverse=True)
+    
+    # Build context structure
+    context = {
+        'total_value': total_value,
+        'holdings_count': len(holdings),
+        'holdings_summary': [
+            {
+                'symbol': h['symbol'],
+                'asset_type': h['asset_type'],
+                'percentage': h['percentage'],
+                'unrealized_pnl_pct': h['unrealized_pnl_pct']
+            }
+            for h in holdings
+        ]
+    }
+    
+    # Add detailed info for current symbol if held
+    if current_symbol_portfolio:
+        # Get transaction history for this symbol
+        transactions = Transaction.query.filter_by(
+            portfolio_id=current_symbol_portfolio.id,
+            user_id=user_id
+        ).order_by(Transaction.trade_date.asc()).all()
+        
+        context['current_symbol_detail'] = {
+            'symbol': current_symbol,
+            'quantity': current_symbol_portfolio.quantity,
+            'avg_cost': current_symbol_portfolio.avg_cost,
+            'current_price': next((h['current_price'] for h in holdings if h['symbol'] == current_symbol), None),
+            'position_value': next((h['position_value'] for h in holdings if h['symbol'] == current_symbol), None),
+            'percentage': next((h['percentage'] for h in holdings if h['symbol'] == current_symbol), 0),
+            'unrealized_pnl': next((h['unrealized_pnl'] for h in holdings if h['symbol'] == current_symbol), 0),
+            'unrealized_pnl_pct': next((h['unrealized_pnl_pct'] for h in holdings if h['symbol'] == current_symbol), 0),
+            'transactions': [
+                {
+                    'date': t.trade_date.strftime('%Y-%m-%d'),
+                    'type': t.transaction_type,
+                    'price': t.price,
+                    'quantity': t.quantity,
+                    'notes': t.notes
+                }
+                for t in transactions
+            ]
+        }
+    
+    return context
+
 @api_bp.route('/recommend', methods=['POST'])
 def recommend():
     """
@@ -302,6 +409,11 @@ def analyze():
     latest_analyzed_date = get_analysis_status(symbol, model_name)
     current_position_state = get_current_position(symbol, model_name)
     
+    # Get user information and portfolio context
+    user = User.query.filter_by(username='default_user').first()
+    user_id = user.id if user else None
+    portfolio_context = get_user_portfolio_context(user_id, symbol, asset_type) if user_id else None
+    
     analysis_result = {
         "analysis_summary": "AI Analysis based on historical data.",
         "trades": [],
@@ -319,7 +431,13 @@ def analyze():
     # Let's enforce this logic for AI models. Local strategy is deterministic anyway.
     
     if model_name == "local-strategy":
-        analysis_result = ai_analyzer.analyze(symbol, kline_data, model_name=model_name, language=language)
+        analysis_result = ai_analyzer.analyze(
+            symbol, 
+            kline_data, 
+            model_name=model_name, 
+            language=language,
+            portfolio_context=portfolio_context
+        )
         return jsonify({
             'symbol': symbol,
             'kline_data': kline_data,
@@ -342,7 +460,8 @@ def analyze():
             kline_data, 
             model_name=model_name, 
             language=language,
-            current_position=current_position_state
+            current_position=current_position_state,
+            portfolio_context=portfolio_context
         )
         
         if full_analysis.get('source') == 'ai_model':
@@ -409,7 +528,8 @@ def analyze():
                 kline_data, 
                 model_name=model_name, 
                 language=language,
-                current_position=current_position_state
+                current_position=current_position_state,
+                portfolio_context=portfolio_context
             )
             
             if fresh_analysis.get('source') == 'ai_model':

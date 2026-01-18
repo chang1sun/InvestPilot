@@ -177,13 +177,12 @@ class DataProvider:
             if df is None or df.empty:
                 return []
             
-            query_upper = query.upper()
-            
-            # Filter by code, name, or pinyin
+            # 不转换大小写，使用不区分大小写的匹配
+            # Filter by code, name, or pinyin (case-insensitive)
             mask = (
-                df['基金代码'].str.contains(query_upper) | 
-                df['基金简称'].str.contains(query_upper) | 
-                df['拼音缩写'].str.contains(query_upper)
+                df['基金代码'].str.contains(query, case=False, na=False) | 
+                df['基金简称'].str.contains(query, case=False, na=False) | 
+                df['拼音缩写'].str.contains(query, case=False, na=False)
             )
             
             results_df = df[mask].head(20) # Limit to 20 results
@@ -322,7 +321,7 @@ class DataProvider:
         Search for a stock symbol. 
         Tries Yahoo Finance API first, then falls back to local static list.
         """
-        if search_type == 'CN_FUND':
+        if search_type == 'FUND_CN':
             return DataProvider.search_cn_fund(query)
 
         results = []
