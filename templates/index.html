@@ -1215,10 +1215,10 @@
                                                     
                                                     <!-- Label -->
                                                     <span v-if="record.source === 'user'">
-                                                        [[ record.type === 'BUY' ? (currentLanguage === 'zh' ? '真买' : 'Real Buy') : (currentLanguage === 'zh' ? '真卖' : 'Real Sell') ]]
+                                                        [[ getUserActionLabel(record) ]]
                                                     </span>
                                                     <span v-else>
-                                                        [[ record.type === 'BUY' ? (currentLanguage === 'zh' ? 'AI买' : 'AI Buy') : (currentLanguage === 'zh' ? 'AI卖' : 'AI Sell') ]]
+                                                        [[ getAIActionLabel(record) ]]
                                                     </span>
                                                 </span>
                                                 
@@ -5032,7 +5032,8 @@
                                 reason: sig.reason || '',
                                 source: 'ai',
                                 adopted: sig.adopted || false,
-                                is_current: sig.is_current || false
+                                is_current: sig.is_current || false,
+                                position_action: sig.position_action || null
                             });
                         }
                     });
@@ -5881,6 +5882,87 @@
                     }
                 });
 
+                // 智能判断用户操作类型
+                const getUserActionLabel = (record) => {
+                    if (!record || !record.type) return '';
+                    
+                    // 获取当前分析股票的符号
+                    const currentSymbol = analysisResult.value?.symbol || query.value;
+                    if (!currentSymbol) {
+                        // 如果没有当前股票信息，使用简单的标签
+                        return record.type === 'BUY' ? 
+                            (currentLanguage.value === 'zh' ? '真买' : 'Real Buy') : 
+                            (currentLanguage.value === 'zh' ? '真卖' : 'Real Sell');
+                    }
+                    
+                    // 获取当前股票的所有用户交易记录
+                    const userTransactions = allTransactionRecords.value.filter(r => 
+                        r.source === 'user'
+                    ).sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    if (record.type === 'BUY') {
+                        // 判断是否为首次买入
+                        const buyTransactions = userTransactions.filter(r => r.type === 'BUY');
+                        const recordIndex = buyTransactions.findIndex(r => 
+                            r.date === record.date && Math.abs((r.price || 0) - (record.price || 0)) < 0.01
+                        );
+                        
+                        if (recordIndex === 0) {
+                            return currentLanguage.value === 'zh' ? '真买' : 'Real Buy';
+                        } else {
+                            return currentLanguage.value === 'zh' ? '真加仓' : 'Real Add';
+                        }
+                    } else if (record.type === 'SELL') {
+                        // 判断是否为清仓
+                        const recordDate = new Date(record.date);
+                        const transactionsBeforeThis = userTransactions.filter(r => 
+                            new Date(r.date) <= recordDate
+                        );
+                        
+                        // 计算到此交易为止的持仓数量
+                        let totalQuantity = 0;
+                        for (const trans of transactionsBeforeThis) {
+                            if (trans.type === 'BUY') {
+                                totalQuantity += trans.quantity || 0;
+                            } else if (trans.type === 'SELL') {
+                                totalQuantity -= trans.quantity || 0;
+                            }
+                        }
+                        
+                        // 如果卖出后持仓为0，则为清仓
+                        if (Math.abs(totalQuantity) < 0.001) {
+                            return currentLanguage.value === 'zh' ? '真清仓' : 'Real Close';
+                        } else {
+                            return currentLanguage.value === 'zh' ? '真减仓' : 'Real Reduce';
+                        }
+                    }
+                    
+                    return currentLanguage.value === 'zh' ? '真操作' : 'Real Trade';
+                };
+
+                // 智能判断AI操作类型
+                const getAIActionLabel = (record) => {
+                    if (!record || !record.type) return '';
+                    
+                    // 如果有position_action字段，优先使用
+                    if (record.position_action) {
+                        const actionMap = {
+                            'OPEN': currentLanguage.value === 'zh' ? 'AI建仓' : 'AI Open',
+                            'ADD': currentLanguage.value === 'zh' ? 'AI加仓' : 'AI Add',
+                            'REDUCE': currentLanguage.value === 'zh' ? 'AI减仓' : 'AI Reduce',
+                            'CLOSE': currentLanguage.value === 'zh' ? 'AI平仓' : 'AI Close'
+                        };
+                        return actionMap[record.position_action] || (record.type === 'BUY' ? 
+                            (currentLanguage.value === 'zh' ? 'AI买' : 'AI Buy') : 
+                            (currentLanguage.value === 'zh' ? 'AI卖' : 'AI Sell'));
+                    }
+                    
+                    // 默认显示
+                    return record.type === 'BUY' ? 
+                        (currentLanguage.value === 'zh' ? 'AI买' : 'AI Buy') : 
+                        (currentLanguage.value === 'zh' ? 'AI卖' : 'AI Sell');
+                };
+
                 return {
                     currentTab,
                     currentLanguage,
@@ -5913,6 +5995,8 @@
                     expandedTrades,
                     toggleTrade,
                     allTransactionRecords,  // Transaction records for display
+                    getUserActionLabel,
+                    getAIActionLabel,
                     hotStocks,
                     loadingHotStocks,
                     marketIndices,
