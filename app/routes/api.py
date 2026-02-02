@@ -80,6 +80,40 @@ def update_cash_balance(user_id, currency, amount, transaction_type, trade_date,
     
     return True, 'success'
 
+def get_or_create_account(user_id, currency):
+    """
+    获取或创建账户（处理并发创建的唯一约束冲突）
+    :param user_id: 用户ID
+    :param currency: 币种
+    :return: Account对象，如果失败返回None
+    """
+    # 先尝试查询
+    account = Account.query.filter_by(user_id=user_id, currency=currency).first()
+    if account:
+        return account
+    
+    # 如果不存在，尝试创建
+    try:
+        account = Account(
+            user_id=user_id,
+            currency=currency,
+            total_deposit=0,
+            total_withdrawal=0,
+            realized_profit_loss=0
+        )
+        db.session.add(account)
+        db.session.commit()
+        return account
+    except Exception as e:
+        # 如果创建失败（可能是并发创建导致唯一约束冲突），回滚并重新查询
+        db.session.rollback()
+        account = Account.query.filter_by(user_id=user_id, currency=currency).first()
+        if account:
+            return account
+        # 如果仍然不存在，记录错误并返回None
+        print(f"⚠️ 无法创建或获取账户 (user_id={user_id}, currency={currency}): {str(e)}")
+        return None
+
 @api_bp.route('/models', methods=['GET'])
 def get_models():
     """Get available models for frontend"""
@@ -1529,7 +1563,9 @@ def get_portfolios():
     if not user:
         return jsonify({'error': '未登录'}), 401
     
-    portfolios = Portfolio.query.filter_by(user_id=user.id).all()
+    # 获取所有持仓，但过滤掉数量为0的非现金持仓
+    all_portfolios = Portfolio.query.filter_by(user_id=user.id).all()
+    portfolios = [p for p in all_portfolios if p.total_quantity > 0 or p.asset_type == 'CASH']
     
     # 引入 batch_fetcher
     from app.services.data_provider import batch_fetcher
@@ -1592,7 +1628,9 @@ def refresh_portfolios():
     if not user:
         return jsonify({'error': '未登录'}), 401
     
-    portfolios = Portfolio.query.filter_by(user_id=user.id).all()
+    # 获取所有持仓，但过滤掉数量为0的非现金持仓
+    all_portfolios = Portfolio.query.filter_by(user_id=user.id).all()
+    portfolios = [p for p in all_portfolios if p.total_quantity > 0 or p.asset_type == 'CASH']
     
     # 引入 batch_fetcher
     from app.services.data_provider import batch_fetcher
@@ -1755,6 +1793,38 @@ def create_portfolio():
         'success': True,
         'portfolio': portfolio.to_dict()
     })
+
+@api_bp.route('/portfolios/<int:portfolio_id>', methods=['PUT'])
+def update_portfolio(portfolio_id):
+    """更新持仓信息（主要用于编辑现金余额）"""
+    user = get_user_from_request()
+    if not user:
+        return jsonify({'error': '未登录'}), 401
+    
+    portfolio = Portfolio.query.filter_by(id=portfolio_id, user_id=user.id).first()
+    if not portfolio:
+        return jsonify({'error': '持仓不存在'}), 404
+    
+    data = request.json
+    
+    # 只允许更新现金账户的余额
+    if portfolio.asset_type == 'CASH':
+        if 'total_quantity' in data:
+            try:
+                new_balance = float(data['total_quantity'])
+                if new_balance < 0:
+                    return jsonify({'error': '余额不能为负数'}), 400
+                portfolio.total_quantity = new_balance
+                portfolio.total_cost = new_balance  # 现金的成本等于余额
+                db.session.commit()
+                return jsonify({
+                    'success': True,
+                    'portfolio': portfolio.to_dict()
+                })
+            except ValueError:
+                return jsonify({'error': '余额格式错误'}), 400
+    else:
+        return jsonify({'error': '只能编辑现金账户余额'}), 403
 
 @api_bp.route('/portfolios/<int:portfolio_id>', methods=['DELETE'])
 def delete_portfolio(portfolio_id):
@@ -2112,18 +2182,9 @@ def get_account_by_currency(currency):
     if not user:
         return jsonify({'error': '未登录'}), 401
     
-    account = Account.query.filter_by(user_id=user.id, currency=currency).first()
+    account = get_or_create_account(user.id, currency)
     if not account:
-        # 自动创建账户
-        account = Account(
-            user_id=user.id,
-            currency=currency,
-            total_deposit=0,
-            total_withdrawal=0,
-            realized_profit_loss=0
-        )
-        db.session.add(account)
-        db.session.commit()
+        return jsonify({'error': '无法创建或获取账户'}), 500
     
     return jsonify(account.to_dict())
 
@@ -2157,17 +2218,9 @@ def create_cash_flow():
         return jsonify({'error': f'数据格式错误: {str(e)}'}), 400
     
     # 查找或创建账户
-    account = Account.query.filter_by(user_id=user.id, currency=currency).first()
+    account = get_or_create_account(user.id, currency)
     if not account:
-        account = Account(
-            user_id=user.id,
-            currency=currency,
-            total_deposit=0,
-            total_withdrawal=0,
-            realized_profit_loss=0
-        )
-        db.session.add(account)
-        db.session.flush()
+        return jsonify({'error': '无法创建或获取账户'}), 500
     
     # 检查出金时余额是否足够
     if flow_type == 'WITHDRAWAL':
@@ -2303,25 +2356,9 @@ def get_portfolio_stats():
     currency = request.args.get('currency', 'USD')
     
     # 获取账户信息
-    account = Account.query.filter_by(user_id=user.id, currency=currency).first()
+    account = get_or_create_account(user.id, currency)
     if not account:
-        try:
-            account = Account(
-                user_id=user.id,
-                currency=currency,
-                total_deposit=0,
-                total_withdrawal=0,
-                realized_profit_loss=0
-            )
-            db.session.add(account)
-            db.session.commit()
-        except Exception as e:
-            # 如果创建失败（可能是并发创建导致唯一约束冲突），重新查询
-            db.session.rollback()
-            account = Account.query.filter_by(user_id=user.id, currency=currency).first()
-            if not account:
-                # 如果仍然不存在，返回错误
-                return jsonify({'error': f'无法创建或获取账户: {str(e)}'}), 500
+        return jsonify({'error': '无法创建或获取账户'}), 500
     
     # 获取所有持仓
     portfolios = Portfolio.query.filter_by(user_id=user.id, currency=currency).all()

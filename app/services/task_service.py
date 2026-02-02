@@ -123,9 +123,17 @@ class TaskService:
         from datetime import datetime
         
         symbol = params.get('symbol')
+        asset_type = params.get('asset_type', 'STOCK')  # 获取资产类型
         is_cn_fund = params.get('is_cn_fund', False)  #  新增：是否为中国基金
         model_name = params.get('model', 'gemini-3-flash-preview')
         language = params.get('language', 'zh')
+        
+        # 获取资产名称（特别是基金名称）
+        symbol_name = None
+        if is_cn_fund or asset_type == 'FUND_CN':
+            symbol_name = DataProvider.get_symbol_name(symbol, asset_type='FUND_CN')
+            if symbol_name:
+                print(f"📝 Found fund name: {symbol_name} for {symbol}")
         
         # 检查停止标志
         if stop_flag.is_set():
@@ -180,7 +188,9 @@ class TaskService:
             kline_data,
             model_name=model_name,
             language=language,
-            current_position=current_position_state
+            current_position=current_position_state,
+            asset_type=asset_type,  # 传递资产类型
+            symbol_name=symbol_name  # 传递资产名称（基金名称）
         )
         
         # 构建返回给前端的数据
@@ -295,11 +305,11 @@ class TaskService:
         
         return {
             'symbol': symbol,
+            'asset_type': asset_type,
             'kline_data': kline_data,
             'analysis': final_result,
             'source': 'user_real_data'
-        }
-    
+        }    
     def _execute_portfolio_diagnosis(self, params, stop_flag):
         """执行持仓诊断任务"""
         if stop_flag.is_set():

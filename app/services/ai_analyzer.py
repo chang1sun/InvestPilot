@@ -57,7 +57,7 @@ class AIAnalyzer:
         }
         return examples.get(asset_type, 'SYMBOL')
 
-    def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None, asset_type="STOCK", portfolio_context=None):
+    def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None, asset_type="STOCK", portfolio_context=None, symbol_name=None):
         """
         Analyze K-line data using AI models to find buy/sell points.
         Supports: Gemini, GPT, Claude, Grok, Qwen
@@ -107,6 +107,10 @@ class AIAnalyzer:
             role_desc = "You are a professional **Fixed Income Strategist**."
             macro_focus = "Focus on Central Bank Policy, Inflation Data (CPI/PPI), Yield Curve, and Economic Cycle. Analyze interest rate expectations and credit spreads."
             asset_name = "bond"
+        elif asset_type == "FUND_CN":
+            role_desc = "You are a professional **Chinese Fund Analyst** specializing in **Medium to Long-term Investment**."
+            macro_focus = "Focus on Fund Manager's strategy, Asset allocation, Historical performance, Market style (Growth/Value), and Chinese market trends. Note: This is a mutual fund with NET VALUE (not OHLC), so avoid technical indicators designed for intraday trading. Focus on trend analysis, moving averages, and momentum."
+            asset_name = "Chinese fund"
         else: # STOCK
             role_desc = "You are a professional **Macro-Quant Strategist** specializing in **Low-Frequency Swing Trading**."
             macro_focus = "Consider current global macro trends (e.g., Interest Rates, Tech Cycles, Geopolitics) relevant to this stock. Analyze fundamentals like earnings, valuation, and sector rotation."
@@ -152,7 +156,7 @@ class AIAnalyzer:
                         )
                     
                     portfolio_info += f"""
-**CURRENT SYMBOL ({symbol}) - DETAILED HOLDING**:
+**CURRENT SYMBOL ({symbol_name if symbol_name else symbol}) - DETAILED HOLDING**:
 - Quantity Held: {current_symbol_detail['quantity']}
 - Average Cost: ${current_symbol_detail['avg_cost']:.2f}
 - Current Price: ${current_symbol_detail.get('current_price', 0):.2f}
@@ -160,7 +164,7 @@ class AIAnalyzer:
 - Portfolio Allocation: {current_symbol_detail['percentage']:.1f}%
 - Unrealized P&L: ${current_symbol_detail['unrealized_pnl']:,.2f} ({current_symbol_detail['unrealized_pnl_pct']:+.2f}%)
 
-**TRANSACTION HISTORY FOR {symbol}**:
+**TRANSACTION HISTORY FOR {symbol_name if symbol_name else symbol}**:
 {chr(10).join(transactions_list) if transactions_list else '  - No transactions yet'}
 
 **IMPORTANT**: When making recommendations for this symbol:
@@ -213,18 +217,24 @@ class AIAnalyzer:
     **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
     - The system currently has NO open position (100% Cash).
     - The user does NOT hold this asset in their real portfolio.
-    - You are actively looking for HIGH-PROBABILITY BUY opportunities.
+    - You are looking for HIGH-QUALITY BUY opportunities with favorable risk/reward.
     
     **MANDATORY INSTRUCTION FOR EMPTY POSITION**:
-    1. Your PRIMARY task is to identify NEW BUY signals based on the data.
-    2. Be PROACTIVE: If technical indicators show a clear trend reversal, breakout, or oversold bounce with volume confirmation, you SHOULD recommend a BUY.
-    3. Only recommend WAIT if:
-       - The trend is clearly bearish with no reversal signs.
-       - The {asset_name} is in a consolidation phase with no clear direction.
-       - Risk/reward is unfavorable (e.g., near resistance with weak momentum).
-    4. When recommending BUY, specify the entry price and suggested position size (quantity_percent: 30-100).
+    1. Your PRIMARY task is to identify QUALITY BUY signals with strong confirmation.
+    2. Be SELECTIVE and PATIENT: Only recommend BUY when you see:
+       - Clear trend reversal with MULTIPLE confirmations (price action + volume + momentum indicators)
+       - Breakout above key resistance with strong volume and follow-through
+       - Oversold bounce with clear support level and improving momentum
+       - Favorable risk/reward ratio (at least 2:1 reward-to-risk)
+    3. Recommend WAIT if:
+       - The trend is clearly bearish with no reversal signs
+       - The {asset_name} is in a consolidation phase with no clear direction
+       - Risk/reward is unfavorable (e.g., near resistance with weak momentum)
+       - Technical indicators show mixed or conflicting signals
+       - Volume confirmation is lacking
+    4. When recommending BUY, specify the entry price and suggested position size (quantity_percent: 20-60, based on setup quality).
     5. Consider portfolio diversification: Review the user's current holdings (if any) to avoid over-concentration in similar assets.
-    6. Remember: The goal is to CAPTURE TRENDS, not to avoid all risk. Calculated risk-taking is part of swing trading.
+    6. Remember: CAPITAL PRESERVATION is as important as CAPTURING TRENDS. Quality over quantity - it's better to wait for high-probability setups than to force trades.
     """
 
         prompt = f"""
@@ -232,33 +242,34 @@ class AIAnalyzer:
 Your goal is to generate alpha by combining **Technical Precision** (Price/Volume/Indicators) with **Macro/Fundamental Insight**.
 
 **ASSET TYPE**: {asset_type} ({asset_name})
+**ASSET IDENTIFIER**: {symbol}{f' - {symbol_name}' if symbol_name else ''}
 **IMPORTANT**: This is a {asset_name} analysis. Use {asset_name}-specific terminology and avoid metrics that don't apply to this asset class.
 
 **CORE PHILOSOPHY:**
 "Price action reflects all known information, but understanding the Macro Context explains the 'Why' behind the moves."
 
 **TASK:**
-Analyze the historical data for this {asset_type} ({symbol}) to identify high-probability Buying and Selling points.
+Analyze the historical data for this {asset_type} ({symbol_name if symbol_name else symbol}) to identify high-probability Buying and Selling points.
 {portfolio_info}
 **ANALYSIS FRAMEWORK:**
 1. **Quantitative (70%)**: Rigorous analysis of Price, Volume, and Trends (MA5, MA20, RSI) provided in the data.
 2. **Macro & Fundamental (30%)**:
-   - Use your **internal knowledge** about this specific {asset_name} ({symbol}).
+   - Use your **internal knowledge** about this specific {asset_name} ({symbol_name if symbol_name else symbol}).
    - {macro_focus}
    - If the asset is unknown to you, infer "Smart Money" sentiment strictly from Volume/Price divergence.
 
 **STRATEGY GUIDELINES: SWING TRADING**
 1. **Timeframe**: Aim for multi-week trends (2 weeks to 1 month). Avoid daily noise.
 2. **Entry Philosophy**: 
-   - When EMPTY: Be OPPORTUNISTIC. Look for clear technical setups (trend reversals, breakouts, oversold bounces).
+   - When EMPTY: Be SELECTIVE and PATIENT. Only recommend BUY when multiple confirmations align (trend + volume + momentum + favorable risk/reward).
    - When HOLDING: Be DISCIPLINED. Protect profits and cut losses based on technical breakdown.
 3. **Risk Management**: 
-   - For BUY signals: Suggest position size (30-100% of available capital based on conviction).
+   - For BUY signals: Suggest position size (20-60% of available capital based on conviction). Start with smaller positions to manage risk.
    - For SELL signals: Specify exit percentage (25-100% based on severity).
 4. **Conviction Levels**:
-   - HIGH (100% position): Strong trend + volume + macro tailwind.
-   - MEDIUM (50-70%): Good setup but some uncertainty.
-   - LOW (30-40%): Speculative or early-stage signal.
+   - HIGH (50-60% position): Strong trend + volume + macro tailwind + clear support levels.
+   - MEDIUM (30-40%): Good setup but some uncertainty or mixed signals.
+   - LOW (20-25%): Speculative or early-stage signal with higher risk.
 
 {position_context}
 
@@ -278,9 +289,9 @@ Analyze the historical data for this {asset_type} ({symbol}) to identify high-pr
    - If the last action is a BUY and no Sell signal has occurred, mark status as "HOLDING".
 5. **Current Action (MANDATORY)**:
    - You MUST provide a "current_action" based on the LATEST data point.
-   - For EMPTY positions: Choose between "BUY" (with conviction level via quantity_percent) or "WAIT" (with clear reason why not buying).
+   - For EMPTY positions: Choose between "BUY" (with conviction level via quantity_percent) or "WAIT" (with clear reason).
    - For HOLDING positions: Choose between "HOLD", "SELL", or "BUY MORE".
-   - **CRITICAL**: If you see a valid technical setup (e.g., MA crossover, RSI reversal from oversold, breakout with volume), you SHOULD recommend BUY. Don't be overly cautious.
+   - **CRITICAL**: Only recommend BUY when you have HIGH CONFIDENCE based on multiple confirming factors. A single indicator (e.g., just MA crossover or just RSI oversold) is NOT sufficient. Look for confluence of signals and favorable risk/reward.
 6. **Latest Data Handling**: If the latest data point is today (incomplete candle), use it as the current price for decision making.
 
 **LANGUAGE**: {lang_instruction}
