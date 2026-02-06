@@ -1,6 +1,6 @@
 """
 Multi-Model Configuration for AI Quant Agent
-Supports: Gemini, GPT, Claude, Grok, Qwen
+Supports: Gemini, GPT, Claude, Qwen
 """
 
 MODEL_REGISTRY = {
@@ -10,6 +10,8 @@ MODEL_REGISTRY = {
         "display_name": "Gemini 3 Pro (Preview)",
         "api_key_env": "GEMINI_API_KEY",
         "supports_search": True,
+        "supports_thinking": False,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 2097152,  # 2M上下文
         "cost_tier": "high"
     },
@@ -18,6 +20,8 @@ MODEL_REGISTRY = {
         "display_name": "Gemini 3 Flash (Preview)",
         "api_key_env": "GEMINI_API_KEY",
         "supports_search": True,
+        "supports_thinking": False,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 1048576,  # 1M上下文
         "cost_tier": "low"
     },
@@ -28,6 +32,8 @@ MODEL_REGISTRY = {
         "display_name": "GPT-5.1",
         "api_key_env": "OPENAI_API_KEY",
         "supports_search": True,
+        "supports_thinking": True,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 32768,
         "cost_tier": "premium"
     },
@@ -36,6 +42,8 @@ MODEL_REGISTRY = {
         "display_name": "GPT-5 Mini",
         "api_key_env": "OPENAI_API_KEY",
         "supports_search": True,
+        "supports_thinking": True,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 16384,
         "cost_tier": "medium"
     },
@@ -44,6 +52,8 @@ MODEL_REGISTRY = {
         "display_name": "GPT-5 Nano",
         "api_key_env": "OPENAI_API_KEY",
         "supports_search": True,
+        "supports_thinking": False,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 8192,
         "cost_tier": "low"
     },
@@ -54,6 +64,8 @@ MODEL_REGISTRY = {
         "display_name": "Claude Sonnet 4.5",
         "api_key_env": "ANTHROPIC_API_KEY",
         "supports_search": True,
+        "supports_thinking": False,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 200000,  # 200K上下文
         "cost_tier": "high"
     },
@@ -62,6 +74,8 @@ MODEL_REGISTRY = {
         "display_name": "Claude Haiku 4.5",
         "api_key_env": "ANTHROPIC_API_KEY",
         "supports_search": True,
+        "supports_thinking": False,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 200000,  # 200K上下文
         "cost_tier": "low"
     },
@@ -70,24 +84,30 @@ MODEL_REGISTRY = {
         "display_name": "Claude Opus 4.5",
         "api_key_env": "ANTHROPIC_API_KEY",
         "supports_search": True,
+        "supports_thinking": False,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 200000,  # 200K上下文
         "cost_tier": "premium"
     },
     
     # ===== Alibaba Qwen =====
-    "qwen3-max": {
+    "qwen3-max-2026-01-23": {
         "provider": "qwen",
         "display_name": "Qwen3 Max",
         "api_key_env": "QWEN_API_KEY",
         "supports_search": True,
+        "supports_thinking": True,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 262144,  # 256K上下文
         "cost_tier": "high"
     },
     "qwen-plus-2025-12-01": {
         "provider": "qwen",
-        "display_name": "Qwen Plus (2025-12-01)",
+        "display_name": "Qwen Plus",
         "api_key_env": "QWEN_API_KEY",
         "supports_search": True,
+        "supports_thinking": True,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 131072,  # 128K上下文
         "cost_tier": "medium"
     },
@@ -96,6 +116,8 @@ MODEL_REGISTRY = {
         "display_name": "Qwen Flash",
         "api_key_env": "QWEN_API_KEY",
         "supports_search": True,
+        "supports_thinking": True,
+        "supports_tools": True,  # Function calling / Agent mode
         "max_tokens": 32768,
         "cost_tier": "low"
     },
@@ -106,6 +128,8 @@ MODEL_REGISTRY = {
         "display_name": "Local Algo (MA+RSI)",
         "api_key_env": None,
         "supports_search": False,
+        "supports_thinking": False,
+        "supports_tools": False,
         "max_tokens": 0,
         "cost_tier": "free"
     }
@@ -146,7 +170,8 @@ def get_models_for_frontend():
             "id": model_id,
             "name": config["display_name"],
             "provider": config["provider"],
-            "supports_search": config["supports_search"]
+            "supports_search": config["supports_search"],
+            "supports_tools": config.get("supports_tools", False)
         })
     return models
 

@@ -9,6 +9,41 @@ from app.services.technical_strategy import TechnicalStrategy
 from app.services.model_adapters import get_adapter
 from app.services.model_config import get_model_config
 
+
+# ============================================================
+# Shared Constants for Agent Prompts
+# ============================================================
+
+# Asset type → (role, asset_name, macro_focus)
+ASSET_ROLE_MAP = {
+    'STOCK': (
+        "Macro-Quant Strategist",
+        "stock",
+        "earnings, valuation, sector rotation, and institutional flows"
+    ),
+    'CRYPTO': (
+        "Crypto Asset Analyst",
+        "cryptocurrency",
+        "on-chain data, market sentiment, regulatory news, and Bitcoin correlation"
+    ),
+    'COMMODITY': (
+        "Commodities Trader",
+        "commodity",
+        "supply/demand dynamics, geopolitics, Dollar Index, and inventory reports"
+    ),
+    'BOND': (
+        "Fixed Income Strategist",
+        "bond",
+        "central bank policy, inflation data, yield curve, and economic cycle"
+    ),
+    'FUND_CN': (
+        "Chinese Fund Analyst",
+        "Chinese fund",
+        "fund manager strategy, asset allocation, historical performance, and Chinese market trends"
+    ),
+}
+
+
 class AIAnalyzer:
     def __init__(self):
         # Legacy: keep for backward compatibility
@@ -56,6 +91,178 @@ class AIAnalyzer:
             'BOND': '^TNX, ^IRX, ^TYX'
         }
         return examples.get(asset_type, 'SYMBOL')
+
+    # ============================================================
+    # Agent-mode shared helpers
+    # ============================================================
+
+    def _check_agent_support(self, model_name):
+        """
+        Check if a model supports agent (tool calling) mode.
+
+        Returns:
+            Tuple of (supports_tools: bool, config: dict, adapter: BaseModelAdapter or None)
+        """
+        config = get_model_config(model_name)
+        if not config or not config.get('supports_tools', False):
+            return False, config, None
+        adapter = self._get_adapter(model_name)
+        if not adapter or not adapter.is_available():
+            return False, config, None
+        return True, config, adapter
+
+    def _create_tool_executor(self, user_id=None, symbol=None, asset_type="STOCK", provider=None):
+        """Create an AgentToolExecutor with the given context."""
+        from app.services.agent_tools import AgentToolExecutor
+        return AgentToolExecutor(
+            user_id=user_id,
+            current_symbol=symbol,
+            asset_type=asset_type,
+            provider=provider
+        )
+
+    def _get_tool_descriptions_text(self):
+        """Build a human-readable list of available tools for inclusion in prompts."""
+        from app.services.agent_tools import TOOL_DEFINITIONS
+        return "\n".join(
+            f"- **{t['name']}**: {t['description']}" for t in TOOL_DEFINITIONS
+        )
+
+    def _build_position_info(self, current_position, language="zh"):
+        """Build position context string for agent prompts."""
+        if current_position:
+            return f"""\n**CURRENT POSITION STATE**: HOLDING
+- Quantity: {current_position.get('quantity', 'Unknown')}
+- Average Cost: {current_position.get('avg_cost', current_position.get('price', 'Unknown'))}
+- Last Buy Date: {current_position.get('date', 'Unknown')}
+- Your primary task: Decide whether to HOLD, SELL, or BUY MORE.
+"""
+        return """\n**CURRENT POSITION STATE**: EMPTY (No open position)
+- Your primary task: Identify whether now is a good time to BUY, or recommend WAIT.
+- Be SELECTIVE: Only recommend BUY when you see multiple confirming signals with favorable risk/reward.
+"""
+
+    def _parse_json_response(self, text):
+        """Extract and parse JSON from an LLM response string."""
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            text = json_match.group(0)
+        else:
+            text = text.replace('```json', '').replace('```', '').strip()
+        return json.loads(text)
+
+    def _run_agent(self, adapter, prompt, tool_executor, label="Agent",
+                   max_iterations=None, **log_extra):
+        """
+        Execute an agent-mode call: generate_with_tools, timing, logging.
+
+        Args:
+            adapter: ModelAdapter instance
+            prompt: Prompt string
+            tool_executor: AgentToolExecutor instance
+            label: Log label
+            max_iterations: Override default tool call iteration limit
+            **log_extra: Extra key=value pairs to print in the log header
+
+        Returns:
+            Tuple of (response_text, usage_dict, elapsed_seconds)
+
+        Raises:
+            ValueError: If the response is empty
+        """
+        start_time = time.time()
+        print(f"\n{'='*60}")
+        print(f"[{label}] Starting agent-mode call")
+        if max_iterations:
+            print(f"  max_iterations: {max_iterations}")
+        for k, v in log_extra.items():
+            print(f"  {k}: {v}")
+
+        gen_kwargs = {}
+        if max_iterations:
+            gen_kwargs['max_iterations'] = max_iterations
+        text, usage = adapter.generate_with_tools(prompt, tool_executor, **gen_kwargs)
+        elapsed = time.time() - start_time
+
+        if not text:
+            raise ValueError(f"Empty response from AI agent ({label})")
+
+        print(f"[{label}] \u2705 Completed")
+        print(f"  Time: {elapsed:.2f}s | Tool calls: {len(tool_executor.tool_calls)}")
+        if usage:
+            print(f"  Tokens: in={usage.get('input_tokens','N/A')}, out={usage.get('output_tokens','N/A')}")
+        print(f"{'='*60}\n")
+
+        return text, usage, elapsed
+
+    def _agent_error_result(self, error_msg, tool_executor, language="zh"):
+        """Build a standard error result dict for agent failures."""
+        friendly = "AI Agent 服务暂时不可用" if language == 'zh' else "AI Agent service temporarily unavailable"
+        return {
+            "error": friendly,
+            "signals": [],
+            "trades": [],
+            "source": "error",
+            "tool_calls": tool_executor.tool_calls if tool_executor else [],
+            "agent_trace": tool_executor.trace if tool_executor else [],
+            "agent_error": error_msg
+        }
+
+    def _merge_thinking_to_trace(self, result, tool_executor):
+        """
+        Extract 'thinking_process' from the LLM's JSON response and merge it
+        into the agent_trace timeline.  The thinking steps are interleaved with
+        existing tool_call entries by order: each thinking step is placed before
+        the next tool_call that follows it in the timeline.
+        
+        If reasoning_content / native thinking was already captured (non-empty
+        thinking entries in trace), the JSON thinking_process is treated as a
+        supplementary summary appended at the end.
+        """
+        thinking_steps = result.pop('thinking_process', None)
+        if not thinking_steps or not isinstance(thinking_steps, list):
+            return
+
+        # Check if we already have native thinking entries from the API
+        existing_thinking = [e for e in tool_executor.trace if e.get('type') == 'thinking']
+
+        if existing_thinking:
+            # Native thinking already captured — add JSON thinking as a final summary
+            # only if it has materially different content
+            return
+
+        # No native thinking was captured — weave JSON thinking into the trace
+        # Strategy: interleave thinking steps before tool_call entries
+        old_trace = list(tool_executor._trace)
+        new_trace = []
+        thinking_idx = 0
+        tool_call_count = 0
+
+        for entry in old_trace:
+            if entry.get('type') == 'tool_call':
+                # Insert the next thinking step before this tool call
+                if thinking_idx < len(thinking_steps):
+                    new_trace.append({
+                        "type": "thinking",
+                        "content": thinking_steps[thinking_idx],
+                        "timestamp": entry.get('timestamp', datetime.now().isoformat())
+                    })
+                    thinking_idx += 1
+                new_trace.append(entry)
+                tool_call_count += 1
+            else:
+                new_trace.append(entry)
+
+        # Append any remaining thinking steps at the end (post-tool-call reasoning)
+        while thinking_idx < len(thinking_steps):
+            new_trace.append({
+                "type": "thinking",
+                "content": thinking_steps[thinking_idx],
+                "timestamp": datetime.now().isoformat()
+            })
+            thinking_idx += 1
+
+        tool_executor._trace = new_trace
 
     def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None, asset_type="STOCK", portfolio_context=None, symbol_name=None):
         """
@@ -417,6 +624,167 @@ Data:
                 friendly_msg = "AI service temporarily unavailable"
             return TechnicalStrategy.analyze(enriched_data, error_msg=friendly_msg, language=language)
 
+    def analyze_with_agent(self, symbol, model_name="gemini-3-flash-preview", language="zh",
+                           current_position=None, asset_type="STOCK", portfolio_context=None,
+                           symbol_name=None, user_id=None):
+        """
+        Agent-mode K-line analysis using function calling.
+        The AI model actively calls tools to fetch real-time data.
+        Falls back to standard analyze() on failure.
+        """
+        supports, config, adapter = self._check_agent_support(model_name)
+        if not supports:
+            print(f"[Agent] Model {model_name} does not support tools, falling back to standard analyze")
+            from app.services.data_provider import batch_fetcher
+            kline_data = batch_fetcher.get_cached_kline_data(
+                symbol, period="3y", interval="1d",
+                is_cn_fund=(asset_type == "FUND_CN")
+            )
+            if not kline_data:
+                return {"error": "Could not fetch data", "signals": [], "trades": []}
+            return self.analyze(
+                symbol, kline_data, model_name=model_name, language=language,
+                current_position=current_position, asset_type=asset_type,
+                portfolio_context=portfolio_context, symbol_name=symbol_name
+            )
+
+        tool_executor = self._create_tool_executor(user_id, symbol, asset_type, provider=config.get('provider'))
+        lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
+        role, asset_name, focus = ASSET_ROLE_MAP.get(asset_type, ASSET_ROLE_MAP['STOCK'])
+        position_info = self._build_position_info(current_position, language)
+        tool_descriptions = self._get_tool_descriptions_text()
+
+        prompt = f"""You are a professional **{role}** specializing in **Swing Trading** with access to real-time market data tools.
+
+**ASSET**: {symbol}{f' ({symbol_name})' if symbol_name else ''} [{asset_type}]
+**DATE**: {datetime.now().strftime('%Y-%m-%d')}
+
+{position_info}
+
+**YOUR AVAILABLE TOOLS**:
+{tool_descriptions}
+
+**ANALYSIS WORKFLOW** (Follow this order):
+1. Call `get_realtime_price` to get the current price of {symbol}
+2. Call `get_kline_data` with period="3mo" to get recent price history
+3. Call `calculate_technical_indicators` to get MA5, MA20, RSI analysis
+4. Call `get_portfolio_holdings` to understand the user's full portfolio context
+5. If the user holds {symbol}, call `get_transaction_history` for {symbol}
+6. Optional: Use `compare_assets` or `get_exchange_rate` if needed
+
+**ANALYSIS FRAMEWORK**:
+- **Technical (70%)**: Price, Volume, MA crossovers, RSI, support/resistance
+- **Macro & Fundamental (30%)**: {focus}
+- **Risk Management**: Portfolio concentration, position sizing (20-60%), risk/reward ratio (min 2:1)
+
+**SWING TRADING GUIDELINES**:
+- Timeframe: 2 weeks to 1 month
+- When EMPTY: Be selective. Require multiple confirmations (trend + volume + momentum)
+- When HOLDING: Be disciplined. Protect profits, cut losses on breakdown
+- Position sizing by conviction: HIGH (50-60%), MEDIUM (30-40%), LOW (20-25%)
+
+**LANGUAGE**: {lang_instruction}
+
+**OUTPUT FORMAT**: Provide your final answer as a JSON object:
+{{
+    "thinking_process": [
+        "Step 1: I'll start by fetching the real-time price to understand current levels...",
+        "Step 2: Now I'll look at 3-month historical data for trend analysis...",
+        "Step 3: Technical indicators show RSI at 45, MA5 above MA20 — moderately bullish...",
+        "Step 4: Considering the user's portfolio context, this position is..."
+    ],
+    "analysis_summary": "Comprehensive strategic summary referencing specific data from your tool calls.",
+    "trades": [],
+    "current_action": {{
+        "action": "BUY" | "SELL" | "HOLD" | "WAIT",
+        "price": <current price from tool>,
+        "quantity_percent": <20-60 for BUY, 25-100 for SELL>,
+        "reason": "Detailed reason referencing actual data from your tool calls."
+    }}
+}}
+
+**IMPORTANT**: The "thinking_process" field is REQUIRED — it must capture your reasoning at EACH step (before/after each tool call). Base ALL recommendations on REAL DATA from tool calls. Return ONLY JSON.
+"""
+
+        try:
+            text, usage, elapsed = self._run_agent(
+                adapter, prompt, tool_executor, label="KlineAgent",
+                Symbol=symbol, Model=model_name, Asset=asset_type,
+                Position='HOLDING' if current_position else 'EMPTY'
+            )
+
+            result = self._parse_json_response(text)
+            self._merge_thinking_to_trace(result, tool_executor)
+
+            # Extract signals from current_action
+            signals = []
+            current_action = result.get('current_action')
+            if current_action and current_action.get('action') in ['BUY', 'SELL']:
+                signal = {
+                    "type": current_action['action'],
+                    "date": datetime.now().strftime('%Y-%m-%d'),
+                    "price": current_action.get('price'),
+                    "reason": current_action.get('reason'),
+                    "is_current": True
+                }
+                if current_action.get('quantity_percent'):
+                    signal['quantity_percent'] = current_action['quantity_percent']
+                signals.append(signal)
+
+            result['signals'] = signals
+            result['source'] = 'ai_agent'
+            result['tool_calls'] = tool_executor.tool_calls
+            result['agent_trace'] = tool_executor.trace
+            return result
+
+        except Exception as e:
+            print(f"[KlineAgent] ❌ Failed: {e}, falling back to standard analyze")
+            # Fallback to standard analyze
+            try:
+                from app.services.data_provider import batch_fetcher
+                kline_data = batch_fetcher.get_cached_kline_data(
+                    symbol, period="3y", interval="1d",
+                    is_cn_fund=(asset_type == "FUND_CN")
+                )
+                if kline_data:
+                    fallback = self.analyze(
+                        symbol, kline_data, model_name=model_name, language=language,
+                        current_position=current_position, asset_type=asset_type,
+                        portfolio_context=portfolio_context, symbol_name=symbol_name
+                    )
+                    fallback['agent_fallback'] = True
+                    fallback['agent_error'] = str(e)
+                    fallback['tool_calls'] = tool_executor.tool_calls
+                    fallback['agent_trace'] = tool_executor.trace
+                    return fallback
+            except Exception as fallback_err:
+                print(f"[KlineAgent] Fallback also failed: {fallback_err}")
+
+            # Last resort: local strategy
+            enriched_data = []
+            try:
+                from app.services.data_provider import batch_fetcher
+                kline_data = batch_fetcher.get_cached_kline_data(
+                    symbol, period="3y", interval="1d",
+                    is_cn_fund=(asset_type == "FUND_CN")
+                )
+                if kline_data:
+                    enriched_data = calculate_indicators(kline_data)
+            except:
+                pass
+
+            if enriched_data:
+                result = TechnicalStrategy.analyze(
+                    enriched_data,
+                    error_msg="AI Agent 服务暂时不可用" if language == 'zh' else "AI Agent unavailable",
+                    language=language
+                )
+                result['tool_calls'] = tool_executor.tool_calls
+                result['agent_trace'] = tool_executor.trace
+                return result
+
+            return self._agent_error_result(str(e), tool_executor, language)
+
     def analyze_incremental(self, symbol, kline_data, last_analyzed_date, model_name="gemini-3-flash-preview", language="zh"):
         """
         Analyze ONLY the new data points since last_analyzed_date.
@@ -671,6 +1039,138 @@ Data:
                 ]
             }
 
+    def recommend_stocks_with_agent(self, criteria, model_name="gemini-3-flash-preview", language="zh"):
+        """
+        Agent-mode market recommendation using function calling.
+        The AI proactively fetches real-time market data via tools to inform its picks.
+        Falls back to standard recommend_stocks() on failure.
+        """
+        supports, config, adapter = self._check_agent_support(model_name)
+        if not supports:
+            return self.recommend_stocks(criteria, model_name=model_name, language=language)
+
+        asset_type = criteria.get('asset_type', 'STOCK')
+        tool_executor = self._create_tool_executor(asset_type=asset_type, provider=config.get('provider'))
+        lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
+        tool_descriptions = self._get_tool_descriptions_text()
+        role, asset_name, focus = ASSET_ROLE_MAP.get(asset_type, ASSET_ROLE_MAP['STOCK'])
+
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        market = criteria.get('market', 'Any')
+
+        prompt = f"""You are a professional **{role}** and financial advisor with access to real-time market data tools AND web search.
+
+**DATE**: {current_date}
+**TASK**: Recommend 10 promising {asset_type} assets for purchase in the next 1-4 weeks.
+
+**CRITERIA**:
+- Asset Type: {asset_type} (MANDATORY — only recommend this type)
+- Market: {market}
+- Capital Size: {criteria.get('capital', 'Not specified')}
+- Risk Tolerance: {criteria.get('risk', 'Not specified')}
+- Trading Frequency: {criteria.get('frequency', 'Not specified')}
+- Include ETF: {criteria.get('include_etf', 'false')}
+
+**YOUR AVAILABLE TOOLS**:
+{tool_descriptions}
+
+**⚠️ CRITICAL METHODOLOGY — "News-First, Data-Verified" (MANDATORY)**:
+You MUST follow a **top-down, news-driven** approach. Do NOT start by picking well-known blue-chip stocks and then looking for reasons to recommend them — that is "drawing the target after shooting the arrow" and produces biased, stale recommendations.
+
+**MANDATORY WORKFLOW** (follow this exact order):
+**Phase 1 — Market Intelligence Gathering (use `search_market_news` FIRST, BEFORE any price/kline tools)**:
+1. Call `search_market_news` with query: "{market} {asset_type} market news today {current_date}" — get the latest market headlines, policy changes, earnings surprises, sector rotations, and breaking news
+2. Call `search_market_news` again with query: "{market} {asset_type} hot stocks this week catalysts" — discover which specific assets are being talked about due to real catalysts (earnings beats, new contracts, policy tailwinds, sector momentum, analyst upgrades, etc.)
+3. Call `search_market_news` for sector/thematic trends, e.g., query: "AI stocks rally semiconductor EV sector news {current_date}" — identify 2-3 hot themes/sectors
+
+**Phase 2 — Candidate Identification (based on Phase 1 findings)**:
+4. From the news and trends discovered in Phase 1, compile a list of 15-20 candidate symbols that were **specifically mentioned in recent news** or belong to the hot sectors/themes you identified
+5. Use `batch_get_realtime_prices` to check current prices for these news-driven candidates
+
+**Phase 3 — Technical Verification (validate the news-driven picks)**:
+6. Use `batch_get_kline_data` to verify that the top candidates show favorable price trends (not just news hype)
+7. Use `calculate_technical_indicators` for your top 3-5 picks to confirm entry timing
+8. Use `get_exchange_rate` if recommending non-USD assets
+
+**ANTI-PATTERN WARNING**: If you find yourself thinking "let me check some popular/well-known stocks like [blue chips]" WITHOUT first calling `search_market_news` — STOP. Go back to Phase 1. Every recommended asset MUST trace back to a specific recent catalyst or news-driven thesis discovered through `search_market_news`.
+
+**EFFICIENCY TIP**: Prefer `batch_get_realtime_prices` (up to 20 symbols) and `batch_get_kline_data` (up to 10 symbols) over single-symbol tools. This saves time and tool call budget.
+
+**SYMBOL FORMAT GUIDE** (CRITICAL — use exact format or data fetch will fail):
+- US stocks: ticker only → AAPL, TSLA, MSFT, NVDA
+- HK stocks: 4-digit code + '.HK' → 0700.HK (Tencent), 9988.HK (Alibaba), 0005.HK (HSBC). ALWAYS use exactly 4 digits, pad with leading zeros if needed (e.g. 0005.HK, NOT 5.HK or 00005.HK)
+- A-shares Shanghai: 6-digit code + '.SS' → 600519.SS (Moutai), 601318.SS (Ping An)
+- A-shares Shenzhen: 6-digit code + '.SZ' → 000858.SZ (Wuliangye), 300750.SZ (CATL)
+- Crypto: symbol + '-USD' → BTC-USD, ETH-USD
+- Commodities: Yahoo Finance format → GC=F (gold), CL=F (crude oil), SI=F (silver)
+- Chinese funds: 6-digit code only → 015283, 000001
+
+**ANALYSIS FOCUS**: {focus}
+
+**RATING SYSTEM**:
+- ⭐⭐⭐ (High Confidence): Strong catalyst + confirmed bullish technicals + favorable macro
+- ⭐⭐ (Medium): Solid catalyst but mixed technicals, or strong technicals but uncertain catalyst timeline
+- ⭐ (Speculative): Early-stage catalyst, high risk/reward, unconfirmed news
+- ⚠️ (Caution): Neutral/Wait — catalyst priced in or technicals unfavorable
+- 🔻 (Avoid): Negative news, deteriorating fundamentals
+
+**LANGUAGE**: {lang_instruction}
+
+**OUTPUT FORMAT** (JSON):
+{{
+    "thinking_process": [
+        "Step 1: Calling search_market_news to find latest {market} market news and catalysts...",
+        "Step 2: Found these key themes from news: [theme1], [theme2]...",
+        "Step 3: Identified candidate stocks mentioned in news: [list]...",
+        "Step 4: Verifying prices and trends for news-driven candidates...",
+        "Step 5: Technical analysis confirms/rejects the following picks..."
+    ],
+    "market_overview": "A comprehensive 3-5 paragraph market analysis covering: (1) Current market trend and sentiment — cite specific news headlines or events from your search; (2) Key drivers — recent policy changes, earnings season highlights, sector rotation based on actual news; (3) Risk factors and headwinds discovered from news; (4) Investment strategy recommendation grounded in the current news cycle. MUST reference specific news events, dates, and data points.",
+    "recommendations": [
+        {{
+            "symbol": "Ticker",
+            "name": "Asset Name",
+            "price": "Current Price (from tool)",
+            "level": "⭐⭐⭐ or ⭐⭐ or ⭐ or ⚠️ or 🔻",
+            "reason": "A thorough 3-5 sentence analysis that MUST include: (1) The specific NEWS CATALYST that brought this asset to attention — cite the actual news event, date, or development discovered during search; (2) Technical validation — cite price action, trend data, or technical signals from tools; (3) Clear explanation for the confidence level — how strong is the catalyst, is it already priced in, what is the risk/reward; (4) Specific risk factors and what could invalidate this thesis."
+        }}
+    ]
+}}
+
+**CONTENT QUALITY REQUIREMENTS**:
+- "market_overview" MUST be substantial (200+ words) and grounded in actual news from your search
+- Each "reason" MUST be detailed (80+ words), cite actual news catalysts AND technical data
+- Each "reason" MUST explicitly explain: "I found this stock because [news from search_market_news], and technicals confirm/support because [data from tools]"
+- Each "reason" MUST justify the confidence level with evidence
+- Do NOT recommend stocks purely based on "it's a well-known company" — every pick needs a RECENT, SPECIFIC catalyst
+- Do NOT use vague language like "looks promising" — use specific data points and news references
+
+**IMPORTANT**: The "thinking_process" field is REQUIRED — capture your reasoning at each step. Recommendations MUST be driven by news/catalysts discovered through `search_market_news`, then validated by technical data from tools. Return ONLY JSON.
+"""
+
+        try:
+            text, usage, elapsed = self._run_agent(
+                adapter, prompt, tool_executor, label="RecommendAgent",
+                max_iterations=25,
+                Model=model_name, Asset=asset_type, Market=market
+            )
+
+            result = self._parse_json_response(text)
+            self._merge_thinking_to_trace(result, tool_executor)
+            result['tool_calls'] = tool_executor.tool_calls
+            result['agent_trace'] = tool_executor.trace
+            result['source'] = 'ai_agent'
+            return result
+
+        except Exception as e:
+            print(f"[RecommendAgent] ❌ Failed: {e}, falling back to standard recommend_stocks")
+            fallback = self.recommend_stocks(criteria, model_name=model_name, language=language)
+            fallback['agent_fallback'] = True
+            fallback['agent_error'] = str(e)
+            fallback['tool_calls'] = tool_executor.tool_calls
+            fallback['agent_trace'] = tool_executor.trace
+            return fallback
+
     def analyze_portfolio_item(self, holding_data, model_name="gemini-3-flash-preview", language="zh"):
         """
         Analyze a specific holding and provide advice (Buy/Sell/Hold).
@@ -775,7 +1275,7 @@ Data:
             print(f"  Provider: {config.get('provider', 'unknown')}")
             print(f"  Language: {language}")
             print(f"  Symbol: {symbol}")
-            print(f"  Avg Price: {avg_price}, Weight: {percentage}%")
+            print(f"  Avg Price: {avg_price}, Weight: {percentage_str}")
             print(f"  Supports search: {supports_search}")
             
             # Use unified adapter interface
@@ -818,6 +1318,97 @@ Data:
                 "action": "Error analyzing position.",
                 "analysis": str(e)
             }
+
+    def analyze_portfolio_item_with_agent(self, holding_data, model_name="gemini-3-flash-preview",
+                                           language="zh", user_id=None):
+        """
+        Agent-mode single-holding diagnosis using function calling.
+        The AI fetches real-time data for the symbol before making its recommendation.
+        Falls back to standard analyze_portfolio_item() on failure.
+        """
+        symbol = holding_data.get('symbol', 'UNKNOWN')
+        asset_type = holding_data.get('asset_type', 'STOCK')
+
+        supports, config, adapter = self._check_agent_support(model_name)
+        if not supports:
+            return self.analyze_portfolio_item(holding_data, model_name=model_name, language=language)
+
+        tool_executor = self._create_tool_executor(user_id, symbol, asset_type, provider=config.get('provider'))
+        lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
+        tool_descriptions = self._get_tool_descriptions_text()
+        role, asset_name, focus = ASSET_ROLE_MAP.get(asset_type, ASSET_ROLE_MAP['STOCK'])
+
+        avg_price = holding_data.get('avg_price', 'Unknown')
+        percentage = holding_data.get('percentage')
+        percentage_str = f"{percentage}%" if percentage is not None else "Unknown"
+
+        prompt = f"""You are a professional **{role}** and portfolio manager with access to real-time market data tools.
+
+**TASK**: Analyze a client's {asset_type} holding and provide advice.
+
+**HOLDING DETAILS**:
+- Symbol: {symbol}
+- Asset Type: {asset_type}
+- Average Buy Price: {avg_price}
+- Portfolio Weight: {percentage_str}
+
+**YOUR AVAILABLE TOOLS**:
+{tool_descriptions}
+
+**ANALYSIS WORKFLOW**:
+1. Call `get_realtime_price` to get the current price of {symbol}
+2. Call `get_kline_data` (period="1mo") to see recent price action
+3. Call `calculate_technical_indicators` to assess momentum and trend
+4. Call `get_portfolio_holdings` to see the full portfolio context
+5. If relevant, call `get_transaction_history` for {symbol}
+
+**EVALUATION CRITERIA** (use {asset_name}-specific metrics — {focus}):
+- Current price vs average buy price (P&L assessment)
+- Market outlook and technical momentum
+- Risk/reward at current levels
+- Portfolio weight appropriateness
+
+**LANGUAGE**: {lang_instruction}
+
+**OUTPUT FORMAT** (JSON):
+{{
+    "thinking_process": [
+        "Step 1: Fetching current price to compare with average buy price...",
+        "Step 2: Recent trend data shows...",
+        "Step 3: Technical indicators suggest...",
+        "Step 4: Considering portfolio weight and risk, my recommendation is..."
+    ],
+    "symbol": "{symbol}",
+    "current_price": "<from get_realtime_price>",
+    "rating": "Strong Buy | Buy | Hold | Sell | Strong Sell",
+    "action": "Detailed advice referencing real data from your tool calls.",
+    "analysis": "Reasoning based on real-time data, technicals, and market context."
+}}
+
+**IMPORTANT**: The "thinking_process" field is REQUIRED — capture your reasoning at each step. Base ALL analysis on REAL DATA from tool calls. Return ONLY JSON.
+"""
+
+        try:
+            text, usage, elapsed = self._run_agent(
+                adapter, prompt, tool_executor, label="DiagnosisAgent",
+                Symbol=symbol, Model=model_name, Asset=asset_type
+            )
+
+            result = self._parse_json_response(text)
+            self._merge_thinking_to_trace(result, tool_executor)
+            result['tool_calls'] = tool_executor.tool_calls
+            result['agent_trace'] = tool_executor.trace
+            result['source'] = 'ai_agent'
+            return result
+
+        except Exception as e:
+            print(f"[DiagnosisAgent] ❌ Failed: {e}, falling back to standard analyze_portfolio_item")
+            fallback = self.analyze_portfolio_item(holding_data, model_name=model_name, language=language)
+            fallback['agent_fallback'] = True
+            fallback['agent_error'] = str(e)
+            fallback['tool_calls'] = tool_executor.tool_calls
+            fallback['agent_trace'] = tool_executor.trace
+            return fallback
 
     def analyze_full_portfolio(self, portfolios_data, model_name="gemini-3-flash-preview", language="zh"):
         """

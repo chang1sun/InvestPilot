@@ -307,7 +307,6 @@ class DataProvider:
                     print(f"Error parsing row for {symbol}: {e}")
                     continue
             
-            print(f"✅ Fetched {len(data)} data points for CN fund {symbol}")
             return data
             
         except Exception as e:
@@ -778,15 +777,12 @@ class BatchFetcher:
         if use_cache:
             cached_data = self._get_from_cache(cache_key)
             if cached_data:
-                print(f"✅ Using cached batch data for {len(symbols)} symbols")
                 return cached_data
         
         # Acquire rate limit permission before making API call
         self._rate_limiter.acquire()
         
         try:
-            print(f"📡 Batch fetching {len(symbols)} symbols with period={period}, interval={interval}")
-            
             results = {}
             
             # Use yfinance batch download
@@ -846,10 +842,6 @@ class BatchFetcher:
                     # Let's try to match columns if possible, or just log warning
                     print("    ⚠️ Unexpected data format from yfinance batch download")
             
-            # Count successful fetches
-            successful = sum(1 for df in results.values() if not df.empty)
-            print(f"✅ Batch fetch complete: {successful}/{len(symbols)} symbols fetched successfully")
-            
             # Update cache
             self._update_cache(cache_key, results)
             
@@ -891,16 +883,11 @@ class BatchFetcher:
         self._rate_limiter.acquire()
         
         # Fetch data
-        print(f"📊 Fetching K-line data for {symbol} (period={period}, interval={interval}, is_cn_fund={is_cn_fund})")
         result = DataProvider.get_kline_data(symbol, period, interval, is_cn_fund=is_cn_fund)
         
         # Update cache
         if result:
             self._update_cache(cache_key, result)
-            print(f"✅ K-line data cached for {symbol}")
-        else:
-            print(f"⚠️ No K-line data returned for {symbol}")
-        
         return result
     
     @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
@@ -926,9 +913,6 @@ class BatchFetcher:
         # Acquire rate limit permission
         self._rate_limiter.acquire()
         
-        # Fetch data
-        print(f"💰 Fetching current price for {symbol} (type={asset_type}, currency={currency})")
-        
         # Determine if it's a Chinese fund: FUND type + CNY currency OR FUND_CN type
         is_cn_fund = (asset_type == 'FUND' and currency == 'CNY') or asset_type == 'FUND_CN'
         
@@ -940,10 +924,6 @@ class BatchFetcher:
         # Update cache
         if result is not None:
             self._update_cache(cache_key, result)
-            print(f"✅ Price cached for {symbol}: {result}")
-        else:
-            print(f"⚠️ No price data returned for {symbol}")
-        
         return result
     
     @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
@@ -969,9 +949,6 @@ class BatchFetcher:
         # Acquire rate limit permission
         self._rate_limiter.acquire()
         
-        # Fetch data
-        print(f"📈 Fetching daily change for {symbol} (type={asset_type}, currency={currency})")
-        
         # Chinese funds don't have daily change data easily available
         is_cn_fund = (asset_type == 'FUND' and currency == 'CNY') or asset_type == 'FUND_CN'
         
@@ -984,10 +961,6 @@ class BatchFetcher:
         # Update cache
         if result is not None:
             self._update_cache(cache_key, result)
-            print(f"✅ Daily change cached for {symbol}: {result}%")
-        else:
-            print(f"⚠️ No daily change data returned for {symbol}")
-        
         return result
     
     @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
@@ -1016,12 +989,10 @@ class BatchFetcher:
         self._rate_limiter.acquire()
         
         # Fetch data
-        print(f"💱 Fetching exchange rate for {from_currency}/{to_currency}")
         result = DataProvider.get_exchange_rate(from_currency, to_currency)
         
         # Update cache
         self._update_cache(cache_key, result)
-        print(f"✅ Exchange rate cached for {from_currency}/{to_currency}: {result}")
         
         return result
 

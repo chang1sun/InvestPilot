@@ -303,9 +303,14 @@ def recommend():
             db.session.delete(cached)
             db.session.commit()
     
-    # 没有缓存，调用 AI 生成推荐
+    # 没有缓存，调用 AI 生成推荐 — 智能选择 Agent / Standard 模式
     print(f"[Recommend] No cache found, calling AI for {today}")
-    result = ai_analyzer.recommend_stocks(criteria, model_name=model_name, language=language)
+    from app.services.model_config import get_model_config as _get_mc
+    _mc = _get_mc(model_name)
+    if _mc and _mc.get('supports_tools', False):
+        result = ai_analyzer.recommend_stocks_with_agent(criteria, model_name=model_name, language=language)
+    else:
+        result = ai_analyzer.recommend_stocks(criteria, model_name=model_name, language=language)
     
     # 保存到缓存（使用 upsert 模式：如果已存在则更新，否则插入）
     try:
@@ -348,6 +353,8 @@ def portfolio_advice():
     language = data.get('language', 'zh')
     
     result = ai_analyzer.analyze_portfolio_item(data, model_name=model_name, language=language)
+    # Note: Single-item diagnosis via this sync endpoint doesn't use agent mode.
+    # For agent mode, use the async task endpoint which routes through task_service.
     return jsonify(result)
 
 @api_bp.route('/translate', methods=['POST'])
@@ -919,13 +926,8 @@ def get_market_indices():
     # Cache for 5 minutes
     try:
         r.setex(cache_key, 300, json.dumps(result))
-        print(f"✅ Market indices cached: {len(result)} indices")
     except Exception as e:
         print(f"⚠️ Failed to cache market indices: {e}")
-    
-    # Debug: Print which indices were successfully fetched
-    fetched_symbols = [r['symbol'] for r in result]
-    print(f"📊 Successfully fetched indices: {fetched_symbols}")
     
     return jsonify(result)
 
@@ -1054,7 +1056,6 @@ def get_trending_stocks():
             return None
     
     # Process data from all markets
-    print("Processing trending stocks...")
     for symbol in all_symbols:
         market = symbol_market[symbol]
         hist = batch_data.get(symbol, pd.DataFrame())

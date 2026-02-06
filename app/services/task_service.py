@@ -182,16 +182,33 @@ class TaskService:
                     'avg_cost': float(real_portfolio.avg_cost)
                 }
         
-        # 调用 AI 分析
-        analysis_result = self.ai_analyzer.analyze(
-            symbol,
-            kline_data,
-            model_name=model_name,
-            language=language,
-            current_position=current_position_state,
-            asset_type=asset_type,  # 传递资产类型
-            symbol_name=symbol_name  # 传递资产名称（基金名称）
-        )
+        # 调用 AI 分析 — 优先使用 Agent 模式（function calling）
+        from app.services.model_config import get_model_config
+        model_config = get_model_config(model_name)
+        use_agent = model_config and model_config.get('supports_tools', False) and model_name != 'local-strategy'
+        
+        if use_agent:
+            print(f"🤖 [Agent Mode] Using agent mode for {symbol} with {model_name}")
+            analysis_result = self.ai_analyzer.analyze_with_agent(
+                symbol,
+                model_name=model_name,
+                language=language,
+                current_position=current_position_state,
+                asset_type=asset_type,
+                symbol_name=symbol_name,
+                user_id=user_id
+            )
+        else:
+            print(f"📝 [Standard Mode] Using standard prompt for {symbol} with {model_name}")
+            analysis_result = self.ai_analyzer.analyze(
+                symbol,
+                kline_data,
+                model_name=model_name,
+                language=language,
+                current_position=current_position_state,
+                asset_type=asset_type,
+                symbol_name=symbol_name
+            )
         
         # 构建返回给前端的数据
         reconstructed_trades = []
@@ -300,7 +317,11 @@ class TaskService:
             "ai_suggestion": ai_signals,  # 保持兼容性
             "current_action": analysis_result.get('current_action'),
             "is_fallback": analysis_result.get('is_fallback', False),
-            "fallback_reason": analysis_result.get('fallback_reason', '')
+            "fallback_reason": analysis_result.get('fallback_reason', ''),
+                "tool_calls": analysis_result.get('tool_calls', []),  # Agent tool call log
+                "agent_trace": analysis_result.get('agent_trace', []),  # Thinking + tool call timeline
+                "agent_mode": analysis_result.get('source') == 'ai_agent',
+            "agent_fallback": analysis_result.get('agent_fallback', False)
         }
         
         return {
@@ -309,36 +330,51 @@ class TaskService:
             'kline_data': kline_data,
             'analysis': final_result,
             'source': 'user_real_data'
-        }    
+        }
     def _execute_portfolio_diagnosis(self, params, stop_flag):
-        """执行持仓诊断任务"""
+        """执行持仓诊断任务 — 支持 Agent 模式"""
         if stop_flag.is_set():
             return None
         
+        model_name = params.get('model', 'gemini-3-flash-preview')
+        language = params.get('language', 'zh')
+
+        # Check if model supports agent mode
+        from app.services.model_config import get_model_config
+        model_config = get_model_config(model_name)
+        use_agent = model_config and model_config.get('supports_tools', False)
+
         # Check if this is a full portfolio analysis or single item
         portfolios = params.get('portfolios')
         if portfolios and isinstance(portfolios, list):
-            # Full portfolio analysis
+            # Full portfolio analysis (not agent-ified yet — uses search)
             result = self.ai_analyzer.analyze_full_portfolio(
-                portfolios,
-                model_name=params.get('model', 'gemini-3-flash-preview'),
-                language=params.get('language', 'zh')
+                portfolios, model_name=model_name, language=language
             )
         else:
-            # Single item analysis (backward compatibility)
-            result = self.ai_analyzer.analyze_portfolio_item(
-                params,
-                model_name=params.get('model', 'gemini-3-flash-preview'),
-                language=params.get('language', 'zh')
-            )
+            # Single item analysis
+            if use_agent:
+                print(f"🤖 [Agent Mode] Using agent mode for portfolio diagnosis with {model_name}")
+                result = self.ai_analyzer.analyze_portfolio_item_with_agent(
+                    params, model_name=model_name, language=language,
+                    user_id=params.get('user_id')
+                )
+            else:
+                print(f"📝 [Standard Mode] Using standard prompt for portfolio diagnosis")
+                result = self.ai_analyzer.analyze_portfolio_item(
+                    params, model_name=model_name, language=language
+                )
         
         return result
     
     def _execute_stock_recommendation(self, params, stop_flag):
-        """执行股票推荐任务"""
+        """执行股票推荐任务 — 支持 Agent 模式"""
         if stop_flag.is_set():
             return None
         
+        model_name = params.get('model', 'gemini-3-flash-preview')
+        language = params.get('language', 'zh')
+
         criteria = {
             'market': params.get('market', 'Any'),
             'asset_type': params.get('asset_type', 'STOCK'),
@@ -347,12 +383,22 @@ class TaskService:
             'risk': params.get('risk', 'Any'),
             'frequency': params.get('frequency', 'Any')
         }
-        
-        result = self.ai_analyzer.recommend_stocks(
-            criteria,
-            model_name=params.get('model', 'gemini-3-flash-preview'),
-            language=params.get('language', 'zh')
-        )
+
+        # Check if model supports agent mode
+        from app.services.model_config import get_model_config
+        model_config = get_model_config(model_name)
+        use_agent = model_config and model_config.get('supports_tools', False)
+
+        if use_agent:
+            print(f"🤖 [Agent Mode] Using agent mode for stock recommendation with {model_name}")
+            result = self.ai_analyzer.recommend_stocks_with_agent(
+                criteria, model_name=model_name, language=language
+            )
+        else:
+            print(f"📝 [Standard Mode] Using standard prompt for stock recommendation")
+            result = self.ai_analyzer.recommend_stocks(
+                criteria, model_name=model_name, language=language
+            )
         
         return result
     
