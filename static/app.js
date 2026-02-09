@@ -39,7 +39,7 @@ createApp({
         const savedPreferences = getSavedPreferences();
         const sessionData = getSessionData();
 
-        const currentTab = ref(savedPreferences.currentTab || 'portfolio');
+        const currentTab = ref(savedPreferences.currentTab || 'tracking');
         const currentLanguage = ref(savedPreferences.currentLanguage || 'en');
         
         // Disclaimer Banner State
@@ -2962,6 +2962,58 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
             }
             trackingChartInstance = echarts.init(chartDom);
 
+            // Build portfolio series config with markPoint at start
+            const portfolioStartIdx = data.portfolio_start_index;
+            const hasPortfolio = portfolioStartIdx !== null && portfolioStartIdx !== undefined;
+            const startDate = hasPortfolio ? data.dates[portfolioStartIdx] : null;
+            const startValue = hasPortfolio ? data.portfolio[portfolioStartIdx] : null;
+
+            const portfolioSeries = {
+                name: currentLanguage.value === 'zh' ? '精选组合' : 'Curated Picks',
+                type: 'line',
+                data: data.portfolio,
+                smooth: true,
+                connectNulls: false,
+                lineStyle: { width: 2.5, color: '#2563eb' },
+                itemStyle: { color: '#2563eb' },
+                showSymbol: false,
+                areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(37,99,235,0.15)' }, { offset: 1, color: 'rgba(37,99,235,0)' }] } }
+            };
+
+            // Add a markPoint at the portfolio start date
+            if (hasPortfolio) {
+                portfolioSeries.markPoint = {
+                    symbol: 'circle',
+                    symbolSize: 10,
+                    label: {
+                        show: true,
+                        formatter: currentLanguage.value === 'zh' ? '精选起点' : 'Start',
+                        fontSize: 10,
+                        color: '#2563eb',
+                        position: 'top',
+                        distance: 10
+                    },
+                    itemStyle: {
+                        color: '#2563eb',
+                        borderColor: '#fff',
+                        borderWidth: 2,
+                        shadowColor: 'rgba(37,99,235,0.4)',
+                        shadowBlur: 6
+                    },
+                    data: [{
+                        coord: [startDate, startValue]
+                    }]
+                };
+                // Also add a vertical markLine at the start date
+                portfolioSeries.markLine = {
+                    silent: true,
+                    symbol: 'none',
+                    lineStyle: { type: 'dashed', color: '#2563eb', width: 1, opacity: 0.5 },
+                    label: { show: false },
+                    data: [{ xAxis: startDate }]
+                };
+            }
+
             const option = {
                 tooltip: {
                     trigger: 'axis',
@@ -2977,7 +3029,15 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                         return html;
                     }
                 },
-                grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+                legend: {
+                    show: true,
+                    top: 0,
+                    right: 0,
+                    textStyle: { fontSize: 10 },
+                    itemWidth: 16,
+                    itemHeight: 2
+                },
+                grid: { left: '3%', right: '4%', bottom: '3%', top: '14%', containLabel: true },
                 xAxis: {
                     type: 'category',
                     data: data.dates,
@@ -2989,16 +3049,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                     splitLine: { lineStyle: { type: 'dashed' } }
                 },
                 series: [
-                    {
-                        name: currentLanguage.value === 'zh' ? '精选组合' : 'Curated Picks',
-                        type: 'line',
-                        data: data.portfolio,
-                        smooth: true,
-                        lineStyle: { width: 2.5, color: '#2563eb' },
-                        itemStyle: { color: '#2563eb' },
-                        showSymbol: false,
-                        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(37,99,235,0.15)' }, { offset: 1, color: 'rgba(37,99,235,0)' }] } }
-                    },
+                    portfolioSeries,
                     {
                         name: 'SPY (S&P 500)',
                         type: 'line',

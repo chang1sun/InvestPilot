@@ -29,7 +29,7 @@ PER_STOCK_ALLOCATION = INITIAL_CAPITAL / MAX_HOLDINGS
 BENCHMARK_SP500 = "SPY"
 BENCHMARK_NASDAQ100 = "QQQ"
 # Inception date for performance comparison
-INCEPTION_DATE = "2025-01-01"
+INCEPTION_DATE = "2026-01-01"
 
 
 class TrackingService:
@@ -161,6 +161,8 @@ class TrackingService:
         """
         Get portfolio performance vs benchmarks (S&P 500 and NASDAQ 100).
         Returns aligned date series for charting.
+        Benchmark data starts from inception date; portfolio data is null
+        before the first snapshot, and starts aligned with SPY at that point.
         """
         if not start_date:
             start_date = INCEPTION_DATE
@@ -169,34 +171,62 @@ class TrackingService:
             TrackingDailySnapshot.date >= start_date
         ).order_by(TrackingDailySnapshot.date.asc()).all()
 
-        if not snapshots:
-            return {'portfolio': [], 'sp500': [], 'nasdaq100': [], 'dates': []}
+        # Determine date range: always start from inception, end at today or last snapshot
+        today_str = date.today().strftime('%Y-%m-%d')
+        if snapshots:
+            last_date = max(snapshots[-1].date.strftime('%Y-%m-%d'), today_str)
+        else:
+            last_date = today_str
 
-        first_date = snapshots[0].date.strftime('%Y-%m-%d')
-        last_date = snapshots[-1].date.strftime('%Y-%m-%d')
+        # Fetch benchmark data from inception to present
+        sp500_data = self._get_benchmark_series(BENCHMARK_SP500, start_date, last_date)
+        nasdaq_data = self._get_benchmark_series(BENCHMARK_NASDAQ100, start_date, last_date)
 
-        # Fetch benchmark data
-        sp500_data = self._get_benchmark_series(BENCHMARK_SP500, first_date, last_date)
-        nasdaq_data = self._get_benchmark_series(BENCHMARK_NASDAQ100, first_date, last_date)
+        if not sp500_data and not nasdaq_data:
+            return {'portfolio': [], 'sp500': [], 'nasdaq100': [], 'dates': [], 'portfolio_start_index': None}
 
-        # Build aligned series
+        # Build snapshot lookup
+        snapshot_map = {}
+        for snap in snapshots:
+            snapshot_map[snap.date.strftime('%Y-%m-%d')] = snap
+
+        # Use the union of all benchmark dates as the x-axis
+        all_dates = sorted(set(list(sp500_data.keys()) + list(nasdaq_data.keys())))
+
+        # Find where portfolio data begins
+        first_snapshot_date = snapshots[0].date.strftime('%Y-%m-%d') if snapshots else None
+        portfolio_start_index = None
+
+        # Get the SPY return on the first snapshot date so we can align the portfolio curve
+        spy_offset = 0.0
+        if first_snapshot_date and first_snapshot_date in sp500_data:
+            spy_offset = sp500_data[first_snapshot_date]
+
         dates = []
         portfolio_series = []
         sp500_series = []
         nasdaq_series = []
 
-        for snap in snapshots:
-            d = snap.date.strftime('%Y-%m-%d')
+        for d in all_dates:
             dates.append(d)
-            portfolio_series.append(round(snap.total_return_pct, 2))
             sp500_series.append(sp500_data.get(d))
             nasdaq_series.append(nasdaq_data.get(d))
+
+            snap = snapshot_map.get(d)
+            if snap:
+                # Portfolio return aligned: actual return + spy_offset at inception
+                portfolio_series.append(round(snap.total_return_pct + spy_offset, 2))
+                if portfolio_start_index is None:
+                    portfolio_start_index = len(dates) - 1
+            else:
+                portfolio_series.append(None)
 
         return {
             'dates': dates,
             'portfolio': portfolio_series,
             'sp500': sp500_series,
-            'nasdaq100': nasdaq_series
+            'nasdaq100': nasdaq_series,
+            'portfolio_start_index': portfolio_start_index
         }
 
     def _get_benchmark_series(self, ticker: str, start_date: str, end_date: str) -> Dict[str, float]:
