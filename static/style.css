@@ -1,0 +1,249 @@
+[v-cloak] { display: none !important; }
+.chart-container { height: 500px; width: 100%; } /* Fixed height for chart */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #f1f1f1; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Text Content Styling */
+.prose-sm { font-size: 0.875rem; line-height: 1.6; }
+.analysis-card { background: #ffffff; border-radius: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #f3f4f6; }
+.analysis-header { border-left: 4px solid #3b82f6; padding-left: 1rem; margin-bottom: 0.75rem; }
+.market-card { background: linear-gradient(to bottom right, #eff6ff, #ffffff); border: 1px solid #bfdbfe; }
+
+/* Button Animation */
+.btn-pulse { animation: pulse-soft 2s infinite; }
+@keyframes pulse-soft {
+    0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+/* Stock Card Animation */
+@keyframes fade-in-up {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.stock-card {
+    animation: fade-in-up 0.5s ease-out;
+}
+
+.stock-card:nth-child(1) { animation-delay: 0s; }
+.stock-card:nth-child(2) { animation-delay: 0.1s; }
+.stock-card:nth-child(3) { animation-delay: 0.2s; }
+.stock-card:nth-child(4) { animation-delay: 0.3s; }
+.stock-card:nth-child(5) { animation-delay: 0.4s; }
+.stock-card:nth-child(6) { animation-delay: 0.5s; }
+.stock-card:nth-child(7) { animation-delay: 0.6s; }
+.stock-card:nth-child(8) { animation-delay: 0.7s; }
+
+/* Text truncation */
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Task List Animation */
+@keyframes slide-in-right {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+.animate-slide-in-right {
+    animation: slide-in-right 0.3s ease-out;
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+}
+
+/* Task Item Animation */
+@keyframes task-add {
+    0% {
+        opacity: 0;
+        transform: translateX(20px) scale(0.95);
+    }
+    100% {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+.task-item {
+    animation: task-add 0.3s ease-out;
+}
+
+/* Toast Notification */
+@keyframes toast-slide-in {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes toast-slide-out {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.toast-enter {
+    animation: toast-slide-in 0.3s ease-out;
+}
+
+.toast-exit {
+    animation: toast-slide-out 0.3s ease-out;
+}
+
+/* Button Click Animation */
+@keyframes button-click {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(0.95);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.btn-click-animation {
+    animation: button-click 0.3s ease-out;
+}
+
+/* Loading Spinner */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+/* Sticky Column Styles for Portfolio Table */
+tr:hover td.sticky {
+    background-color: #f9fafb !important;
+}
+
+thead tr th.sticky {
+    background-color: #f9fafb !important;
+}
+
+/* Task List Slide Animation */
+.task-list-slide {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Pulse Animation for New Task */
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
+    }
+}
+
+.task-new {
+    animation: pulse-glow 1.5s ease-out, task-add 0.3s ease-out;
+}
+
+/* Draggable Button Styles */
+.dragging {
+    cursor: grabbing !important;
+    opacity: 0.8;
+    transform: scale(1.1);
+}
+
+/* Recommendation Card Enhancements */
+.recommendation-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.recommendation-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border-color: #3b82f6;
+}
+
+/* Portfolio Diagnosis Enhancements */
+.portfolio-input-group {
+    position: relative;
+}
+
+.portfolio-input-group::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, #9333ea, #ec4899);
+    border-radius: 3px 0 0 3px;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.portfolio-input-group:focus-within::before {
+    opacity: 1;
+}
+
+.portfolio-result-card {
+    background: linear-gradient(135deg, #ffffff 0%, #faf5ff 100%);
+    border: 2px solid #e9d5ff;
+    box-shadow: 0 10px 15px -3px rgba(139, 92, 246, 0.1), 0 4px 6px -2px rgba(139, 92, 246, 0.05);
+}
+
+/* Shimmer animation for buttons */
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.animate-shimmer {
+    animation: shimmer 2s infinite;
+}
