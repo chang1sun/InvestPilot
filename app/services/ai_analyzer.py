@@ -176,13 +176,97 @@ class AIAnalyzer:
 """
 
     def _parse_json_response(self, text):
-        """Extract and parse JSON from an LLM response string."""
+        """Extract and parse JSON from an LLM response string with robust error recovery."""
+        # Step 1: Extract JSON block
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if json_match:
-            text = json_match.group(0)
+            json_text = json_match.group(0)
         else:
-            text = text.replace('```json', '').replace('```', '').strip()
-        return json.loads(text)
+            json_text = text.replace('```json', '').replace('```', '').strip()
+
+        # Step 2: Try parsing as-is
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError as first_err:
+            print(f"[JSON Parse] First attempt failed: {first_err}")
+
+        # Step 3: Apply common fixes and retry
+        repaired = self._repair_json_text(json_text)
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError as second_err:
+            print(f"[JSON Parse] Second attempt (after repair) failed: {second_err}")
+
+        # Step 4: Try to find and parse the largest valid JSON object via balanced braces
+        balanced = self._extract_balanced_json(json_text)
+        if balanced and balanced != json_text:
+            try:
+                return json.loads(balanced)
+            except json.JSONDecodeError:
+                repaired_balanced = self._repair_json_text(balanced)
+                try:
+                    return json.loads(repaired_balanced)
+                except json.JSONDecodeError:
+                    pass
+
+        # Step 5: All attempts failed — raise with the original error for clarity
+        raise first_err
+
+    @staticmethod
+    def _repair_json_text(text):
+        """Apply common repairs to malformed JSON from LLM output."""
+        # Remove trailing commas before } or ]
+        text = re.sub(r',\s*([}\]])', r'\1', text)
+        # Remove control characters except \n \r \t
+        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+        # Fix unescaped newlines inside string values: replace literal newlines with \\n
+        # Strategy: process line by line and escape newlines within JSON string values
+        text = text.replace('\r\n', '\n')
+        # Replace literal tabs that are not already escaped
+        # (tabs inside JSON strings should be \\t)
+        lines = text.split('\n')
+        result_lines = []
+        for line in lines:
+            result_lines.append(line)
+        text = '\n'.join(result_lines)
+        # Try to fix single quotes used instead of double quotes (only outside of already-double-quoted strings)
+        # This is risky so we only do it if the text has no double quotes for keys
+        if re.search(r"'\w+'\s*:", text) and not re.search(r'"\w+"\s*:', text):
+            text = text.replace("'", '"')
+        return text
+
+    @staticmethod
+    def _extract_balanced_json(text):
+        """Extract the largest balanced JSON object from text using brace counting."""
+        start = text.find('{')
+        if start == -1:
+            return None
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\':
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+        # Unbalanced — try closing the remaining braces
+        if depth > 0:
+            return text[start:] + '}' * depth
+        return None
 
     def _run_agent(self, adapter, prompt, tool_executor, label="Agent",
                    max_iterations=None, **log_extra):
@@ -1006,14 +1090,7 @@ CHECK 3 — Valuation & P&L Context:
             if not text:
                 raise ValueError(f"Empty response from {model_name}")
 
-            # Robust JSON extraction
-            json_match = re.search(r'\{.*\}', text, re.DOTALL)
-            if json_match:
-                text = json_match.group(0)
-            else:
-                text = text.replace('```json', '').replace('```', '').strip()
-
-            result = json.loads(text)
+            result = self._parse_json_response(text)
             
             # Print success log
             print(f"[LLM DEBUG] ✅ Full portfolio analysis completed successfully")

@@ -47,7 +47,7 @@ def create_app(config_class=Config):
     app.register_blueprint(main_bp)
     
     # Import models to ensure they are registered
-    from app.models.analysis import User, Task
+    from app.models.analysis import User, Task, TrackingStock, TrackingTransaction, TrackingDailySnapshot, TrackingDecisionLog
     
     # Register error handlers for API routes to return JSON
     @app.errorhandler(500)

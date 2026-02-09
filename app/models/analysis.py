@@ -342,3 +342,136 @@ class Transaction(db.Model):
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
         }
+
+
+# ============================================================
+# Stock Tracking Models (Curated Stock Tracking Feature)
+# ============================================================
+
+class TrackingStock(db.Model):
+    """Currently tracked (held) stocks in the curated list"""
+    __tablename__ = 'tracking_stocks'
+
+    id = db.Column(db.Integer, primary_key=True)
+    symbol = db.Column(db.String(32), nullable=False, unique=True, index=True)
+    name = db.Column(db.String(128), nullable=True)  # Stock display name
+    buy_price = db.Column(db.Float, nullable=False)  # Price when added to the list
+    buy_date = db.Column(db.Date, nullable=False, index=True)
+    current_price = db.Column(db.Float, nullable=True)  # Latest cached price
+    reason = db.Column(db.Text, nullable=True)  # AI reasoning for buying
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        unrealized_pct = None
+        if self.buy_price and self.current_price and self.buy_price > 0:
+            unrealized_pct = round(((self.current_price - self.buy_price) / self.buy_price) * 100, 2)
+        return {
+            'id': self.id,
+            'symbol': self.symbol,
+            'name': self.name,
+            'buy_price': self.buy_price,
+            'buy_date': self.buy_date.strftime('%Y-%m-%d'),
+            'current_price': self.current_price,
+            'reason': self.reason,
+            'unrealized_pct': unrealized_pct,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+
+
+class TrackingTransaction(db.Model):
+    """Historical buy/sell transactions for tracking portfolio"""
+    __tablename__ = 'tracking_transactions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    symbol = db.Column(db.String(32), nullable=False, index=True)
+    name = db.Column(db.String(128), nullable=True)
+    action = db.Column(db.String(10), nullable=False, index=True)  # BUY or SELL
+    price = db.Column(db.Float, nullable=False)
+    date = db.Column(db.Date, nullable=False, index=True)
+    reason = db.Column(db.Text, nullable=True)  # AI reasoning
+
+    # For SELL transactions: record realized P&L
+    buy_price = db.Column(db.Float, nullable=True)  # Original buy price (for SELL)
+    realized_pct = db.Column(db.Float, nullable=True)  # Realized return % (for SELL)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'symbol': self.symbol,
+            'name': self.name,
+            'action': self.action,
+            'price': self.price,
+            'date': self.date.strftime('%Y-%m-%d'),
+            'reason': self.reason,
+            'buy_price': self.buy_price,
+            'realized_pct': self.realized_pct,
+            'created_at': self.created_at.isoformat()
+        }
+
+
+class TrackingDailySnapshot(db.Model):
+    """Daily portfolio value snapshot for performance charting"""
+    __tablename__ = 'tracking_daily_snapshots'
+
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False, unique=True, index=True)
+    portfolio_value = db.Column(db.Float, nullable=False)  # Total portfolio value (initial_capital basis)
+    cash = db.Column(db.Float, nullable=False)  # Remaining cash
+    holdings_value = db.Column(db.Float, nullable=False)  # Sum of current holding values
+    total_return_pct = db.Column(db.Float, nullable=False, default=0)  # Total return % since inception
+    realized_pnl = db.Column(db.Float, nullable=False, default=0)  # Cumulative realized P&L
+    holdings_json = db.Column(db.Text, nullable=True)  # JSON snapshot of holdings at this date
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'date': self.date.strftime('%Y-%m-%d'),
+            'portfolio_value': self.portfolio_value,
+            'cash': self.cash,
+            'holdings_value': self.holdings_value,
+            'total_return_pct': self.total_return_pct,
+            'realized_pnl': self.realized_pnl,
+            'holdings_json': self.holdings_json,
+            'created_at': self.created_at.isoformat()
+        }
+
+
+class TrackingDecisionLog(db.Model):
+    """Log of each AI decision run (even when no changes are made)"""
+    __tablename__ = 'tracking_decision_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    model_name = db.Column(db.String(50), nullable=False)
+    has_changes = db.Column(db.Boolean, default=False)  # Whether portfolio was updated
+    summary = db.Column(db.Text, nullable=True)  # AI's market summary / reasoning
+    actions_json = db.Column(db.Text, nullable=True)  # JSON list of actions taken
+    raw_response = db.Column(db.Text, nullable=True)  # Full AI response for debugging
+    elapsed_seconds = db.Column(db.Float, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        actions = []
+        if self.actions_json:
+            try:
+                actions = json.loads(self.actions_json)
+            except Exception:
+                pass
+        return {
+            'id': self.id,
+            'date': self.date.strftime('%Y-%m-%d'),
+            'model_name': self.model_name,
+            'has_changes': self.has_changes,
+            'summary': self.summary,
+            'actions': actions,
+            'elapsed_seconds': self.elapsed_seconds,
+            'created_at': self.created_at.isoformat()
+        }

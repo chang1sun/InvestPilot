@@ -531,6 +531,13 @@
             >
                             [[ currentLanguage === 'zh' ? '市场风向' : 'Market Trends' ]]
             </button>
+            <button 
+                @click="currentTab = 'tracking'"
+                            class="px-3 py-2 text-sm font-medium transition-colors duration-200"
+                            :class="currentTab === 'tracking' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-900'"
+            >
+                            [[ currentLanguage === 'zh' ? '精选跟踪' : 'Curated Picks' ]]
+            </button>
         </div>
 
                     <!-- Right Side Actions -->
@@ -592,11 +599,17 @@
         </nav>
 
         <!-- Loading State -->
-        <div v-if="(currentTab === 'analysis' && loadingAnalysis) || (currentTab === 'recommend' && loadingRecommend) || (currentTab === 'portfolio' && loadingPortfolio)" class="flex-1 flex items-center justify-center min-h-[400px]">
+        <div v-if="(currentTab === 'analysis' && loadingAnalysis) || (currentTab === 'recommend' && loadingRecommend) || (currentTab === 'portfolio' && loadingPortfolio) || (currentTab === 'tracking' && loadingTracking)" class="flex-1 flex items-center justify-center min-h-[400px]">
             <div class="text-center">
                 <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p class="text-gray-600 font-medium">[[ currentLanguage === 'zh' ? 'AI 正在深度分析中...' : 'AI is analyzing deep data...' ]]</p>
-                <p class="text-sm text-gray-400 mt-2">[[ currentLanguage === 'zh' ? '正在搜索实时市场资讯 & 计算策略...' : 'Searching real-time market info & calculating strategies...' ]]</p>
+                <template v-if="currentTab === 'tracking'">
+                    <p class="text-gray-600 font-medium">[[ currentLanguage === 'zh' ? '正在加载跟踪数据...' : 'Loading tracking data...' ]]</p>
+                    <p class="text-sm text-gray-400 mt-2">[[ currentLanguage === 'zh' ? '正在获取持仓信息与收益数据' : 'Fetching holdings and performance data' ]]</p>
+                </template>
+                <template v-else>
+                    <p class="text-gray-600 font-medium">[[ currentLanguage === 'zh' ? 'AI 正在深度分析中...' : 'AI is analyzing deep data...' ]]</p>
+                    <p class="text-sm text-gray-400 mt-2">[[ currentLanguage === 'zh' ? '正在搜索实时市场资讯 & 计算策略...' : 'Searching real-time market info & calculating strategies...' ]]</p>
+                </template>
             </div>
         </div>
 
@@ -1715,6 +1728,268 @@
                 <div class="text-gray-300 text-6xl mb-4">🔍</div>
                 <p class="text-gray-500 text-sm">[[ currentLanguage === 'zh' ? 'AI 将根据您的筛选条件推荐优质资产' : 'AI will recommend quality assets based on your criteria' ]]</p>
             </div>
+
+        <!-- ============================================================ -->
+        <!-- Stock Tracking Tab Content -->
+        <!-- ============================================================ -->
+        <div v-if="currentTab === 'tracking' && !loadingTracking" class="animate-fade-in">
+            <div class="max-w-7xl mx-auto space-y-4">
+                <!-- Header -->
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-900">
+                            [[ currentLanguage === 'zh' ? '精选股票跟踪' : 'Curated Stock Tracking' ]]
+                        </h2>
+                        <p class="text-xs text-gray-500 mt-0.5">
+                            [[ currentLanguage === 'zh' ? 'AI 每日深度决策，维护精选美股观察名单' : 'AI daily deep analysis to maintain a curated US stock watchlist' ]]
+                        </p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button
+                            @click="refreshTrackingPrices()"
+                            :disabled="trackingRefreshing"
+                            class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-1.5 text-xs font-medium disabled:opacity-50"
+                        >
+                            <svg :class="{'animate-spin': trackingRefreshing}" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            [[ currentLanguage === 'zh' ? '刷新价格' : 'Refresh Prices' ]]
+                        </button>
+                        <button
+                            @click="runTrackingDecision()"
+                            :disabled="trackingRunning"
+                            class="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:shadow-lg transition-all flex items-center gap-1.5 text-xs font-medium disabled:opacity-50"
+                        >
+                            <svg v-if="trackingRunning" class="animate-spin w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                            </svg>
+                            [[ trackingRunning ? (currentLanguage === 'zh' ? 'AI 决策中...' : 'AI Deciding...') : (currentLanguage === 'zh' ? '手动运行 AI 决策' : 'Run AI Decision') ]]
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Portfolio Summary Cards -->
+                <div v-if="trackingSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <!-- Portfolio Value -->
+                    <div class="bg-white rounded-lg border border-gray-200 p-4">
+                        <div class="text-xs text-gray-500 mb-1">[[ currentLanguage === 'zh' ? '组合价值' : 'Portfolio Value' ]]</div>
+                        <div class="text-lg font-bold text-gray-900">$[[ formatNumber(trackingSummary.portfolio_value) ]]</div>
+                        <div class="text-xs mt-1" :class="trackingSummary.total_return_pct >= 0 ? 'text-green-600' : 'text-red-600'">
+                            [[ trackingSummary.total_return_pct >= 0 ? '+' : '' ]][[ formatNumber(trackingSummary.total_return_pct) ]]%
+                        </div>
+                    </div>
+                    <!-- Unrealized P&L -->
+                    <div class="bg-white rounded-lg border border-gray-200 p-4">
+                        <div class="text-xs text-gray-500 mb-1">[[ currentLanguage === 'zh' ? '未实现盈亏' : 'Unrealized P&L' ]]</div>
+                        <div class="text-lg font-bold" :class="trackingSummary.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'">
+                            [[ trackingSummary.unrealized_pnl >= 0 ? '+' : '' ]]$[[ formatNumber(trackingSummary.unrealized_pnl) ]]
+                        </div>
+                    </div>
+                    <!-- Realized P&L -->
+                    <div class="bg-white rounded-lg border border-gray-200 p-4">
+                        <div class="text-xs text-gray-500 mb-1">[[ currentLanguage === 'zh' ? '已实现盈亏' : 'Realized P&L' ]]</div>
+                        <div class="text-lg font-bold" :class="trackingSummary.realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'">
+                            [[ trackingSummary.realized_pnl >= 0 ? '+' : '' ]]$[[ formatNumber(trackingSummary.realized_pnl) ]]
+                        </div>
+                    </div>
+                    <!-- Cash / Holdings -->
+                    <div class="bg-white rounded-lg border border-gray-200 p-4">
+                        <div class="text-xs text-gray-500 mb-1">[[ currentLanguage === 'zh' ? '持仓 / 现金' : 'Holdings / Cash' ]]</div>
+                        <div class="text-lg font-bold text-gray-900">[[ trackingSummary.num_holdings ]]/[[ trackingSummary.max_holdings ]]</div>
+                        <div class="text-xs text-gray-500 mt-1">[[ currentLanguage === 'zh' ? '现金' : 'Cash' ]]: $[[ formatNumber(trackingSummary.cash) ]]</div>
+                    </div>
+                </div>
+
+                <!-- Performance Chart -->
+                <div class="bg-white rounded-lg border border-gray-200 p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-semibold text-gray-700">
+                            [[ currentLanguage === 'zh' ? '收益率对比' : 'Performance Comparison' ]]
+                        </h3>
+                        <div class="flex items-center gap-4 text-xs">
+                            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-blue-600 inline-block rounded"></span> [[ currentLanguage === 'zh' ? '精选组合' : 'Curated Picks' ]]</span>
+<span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-orange-500 inline-block rounded"></span> SPY (S&P 500)</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-green-500 inline-block rounded"></span> QQQ (NASDAQ 100)</span>
+                        </div>
+                    </div>
+                    <div ref="trackingChartRef" style="height: 320px; width: 100%;"></div>
+                    <div v-if="!trackingBenchmark || !trackingBenchmark.dates || trackingBenchmark.dates.length === 0" class="flex items-center justify-center h-48 text-gray-400 text-sm">
+                        [[ currentLanguage === 'zh' ? '暂无历史数据，运行 AI 决策后将开始记录' : 'No historical data yet. Run AI decision to start tracking.' ]]
+                    </div>
+                </div>
+
+                <!-- Current Holdings Table -->
+                <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                        <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                            [[ currentLanguage === 'zh' ? '当前持仓' : 'Current Holdings' ]]
+                        </h3>
+                        <span class="text-xs text-gray-500" v-if="trackingSummary">
+                            [[ trackingSummary.num_holdings ]] / [[ trackingSummary.max_holdings ]] [[ currentLanguage === 'zh' ? '个席位' : 'slots' ]]
+                        </span>
+                    </div>
+                    <div v-if="trackingHoldings.length === 0" class="p-8 text-center text-gray-400 text-sm">
+                        [[ currentLanguage === 'zh' ? '暂无持仓，等待 AI 决策买入' : 'No holdings yet. Waiting for AI to make buy decisions.' ]]
+                    </div>
+                    <div v-else class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">[[ currentLanguage === 'zh' ? '标的' : 'Symbol' ]]</th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">[[ currentLanguage === 'zh' ? '买入价' : 'Buy Price' ]]</th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">[[ currentLanguage === 'zh' ? '现价' : 'Current' ]]</th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">[[ currentLanguage === 'zh' ? '收益率' : 'Return' ]]</th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">[[ currentLanguage === 'zh' ? '占比' : 'Weight' ]]</th>
+                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">[[ currentLanguage === 'zh' ? '买入日期' : 'Buy Date' ]]</th>
+                                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase w-8"></th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                <template v-for="h in trackingHoldings" :key="h.id">
+                                    <tr class="hover:bg-gray-50 cursor-pointer transition-colors" @click="expandedHoldingId = expandedHoldingId === h.id ? null : h.id">
+                                        <td class="px-4 py-3">
+                                            <div class="flex flex-col">
+                                                <span class="text-sm font-semibold text-gray-900">[[ h.symbol ]]</span>
+                                                <span v-if="h.name && h.name !== h.symbol" class="text-xs text-gray-500">[[ h.name ]]</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-4 py-3 text-right text-sm text-gray-900">$[[ formatNumber(h.buy_price) ]]</td>
+                                        <td class="px-4 py-3 text-right text-sm font-medium text-gray-900">$[[ formatNumber(h.current_price || h.buy_price) ]]</td>
+                                        <td class="px-4 py-3 text-right">
+                                            <span class="text-sm font-semibold" :class="(h.unrealized_pct || 0) >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                [[ (h.unrealized_pct || 0) >= 0 ? '+' : '' ]][[ formatNumber(h.unrealized_pct || 0) ]]%
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 text-right">
+                                            <div class="flex flex-col items-end">
+                                                <span class="text-sm font-medium text-gray-900">[[ formatNumber(h.allocation_pct || 0) ]]%</span>
+                                                <span class="text-xs text-gray-400">$[[ formatNumber(h.market_value || 0) ]]</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-4 py-3 text-right text-xs text-gray-500">[[ h.buy_date ]]</td>
+                                        <td class="px-4 py-3 text-center">
+                                            <svg class="w-4 h-4 text-gray-400 transition-transform duration-200 inline-block" :class="{'rotate-180': expandedHoldingId === h.id}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        </td>
+                                    </tr>
+                                    <!-- Expanded Reason Row -->
+                                    <tr v-if="expandedHoldingId === h.id">
+                                        <td colspan="7" class="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50">
+                                            <div class="flex items-start gap-2">
+                                                <span class="text-blue-500 mt-0.5 flex-shrink-0">💡</span>
+                                                <div>
+                                                    <div class="text-xs font-semibold text-blue-700 mb-1">[[ currentLanguage === 'zh' ? '买入理由' : 'Buy Rationale' ]]</div>
+                                                    <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">[[ h.reason || (currentLanguage === 'zh' ? '暂无理由' : 'No reason provided') ]]</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Transaction History & Decision Logs -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <!-- Recent Transactions -->
+                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                [[ currentLanguage === 'zh' ? '交易记录' : 'Transaction History' ]]
+                            </h3>
+                        </div>
+                        <div v-if="trackingTransactions.length === 0" class="p-6 text-center text-gray-400 text-sm">
+                            [[ currentLanguage === 'zh' ? '暂无交易记录' : 'No transactions yet' ]]
+                        </div>
+                        <div v-else class="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                            <div v-for="tx in trackingTransactions" :key="tx.id" class="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
+                                <div class="flex items-center gap-3">
+                                    <span class="px-2 py-0.5 rounded text-xs font-bold" :class="tx.action === 'BUY' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
+                                        [[ tx.action ]]
+                                    </span>
+                                    <div>
+                                        <div class="text-sm font-semibold text-gray-900">[[ tx.symbol ]]</div>
+                                        <div class="text-xs text-gray-500">[[ tx.date ]] · $[[ formatNumber(tx.price) ]]</div>
+                                    </div>
+                                </div>
+                                <div v-if="tx.action === 'SELL' && tx.realized_pct !== null" class="text-right">
+                                    <span class="text-sm font-semibold" :class="tx.realized_pct >= 0 ? 'text-green-600' : 'text-red-600'">
+                                        [[ tx.realized_pct >= 0 ? '+' : '' ]][[ formatNumber(tx.realized_pct) ]]%
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Decision Logs -->
+                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                [[ currentLanguage === 'zh' ? 'AI 决策日志' : 'AI Decision Logs' ]]
+                            </h3>
+                        </div>
+                        <div v-if="trackingDecisions.length === 0" class="p-6 text-center text-gray-400 text-sm">
+                            [[ currentLanguage === 'zh' ? '暂无决策记录' : 'No decision logs yet' ]]
+                        </div>
+                        <div v-else class="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                            <div v-for="d in trackingDecisions" :key="d.id" class="px-4 py-3 hover:bg-gray-50 cursor-pointer" @click="expandedDecisionId = expandedDecisionId === d.id ? null : d.id">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <span class="text-xs font-mono text-gray-500 flex-shrink-0">[[ d.date ]]</span>
+                                        <span class="px-1.5 py-0.5 rounded text-xs font-bold flex-shrink-0" :class="d.has_changes ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'">
+                                            [[ d.has_changes ? (currentLanguage === 'zh' ? '有变更' : 'Changed') : (currentLanguage === 'zh' ? '无变更' : 'No Change') ]]
+                                        </span>
+                                        <!-- Action tags preview (collapsed) -->
+                                        <div v-if="expandedDecisionId !== d.id && d.actions && d.actions.length > 0" class="flex items-center gap-1 min-w-0 overflow-hidden">
+                                            <span v-for="(a, idx) in d.actions" :key="idx" class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-xs flex-shrink-0" :class="a.action === 'BUY' ? 'text-green-600' : 'text-red-600'">
+                                                <span class="font-semibold">[[ a.action === 'BUY' ? '↑' : '↓' ]][[ a.symbol ]]</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-xs text-gray-400 flex-shrink-0">
+                                        <span>[[ d.model_name ]]</span>
+                                        <span v-if="d.elapsed_seconds">[[ formatNumber(d.elapsed_seconds) ]]s</span>
+                                        <svg class="w-4 h-4 transition-transform duration-200" :class="{'rotate-180': expandedDecisionId === d.id}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <!-- Expanded Decision Details -->
+                                <div v-if="expandedDecisionId === d.id" class="mt-3 pt-3 border-t border-gray-200 space-y-3">
+                                    <!-- Action cards -->
+                                    <div v-if="d.actions && d.actions.length > 0" class="space-y-2">
+                                        <div v-for="(a, idx) in d.actions" :key="idx" class="rounded-lg p-3" :class="a.action === 'BUY' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'">
+                                            <div class="flex items-center gap-2 mb-1.5">
+                                                <span class="px-2 py-0.5 rounded text-xs font-bold" :class="a.action === 'BUY' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'">[[ a.action ]]</span>
+                                                <span class="text-sm font-bold text-gray-900">[[ a.symbol ]]</span>
+                                            </div>
+                                            <p v-if="a.reason" class="text-xs text-gray-700 leading-relaxed whitespace-pre-line">[[ a.reason ]]</p>
+                                        </div>
+                                    </div>
+                                    <!-- Summary -->
+                                    <div v-if="d.summary" class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                        <div class="text-xs font-semibold text-gray-500 mb-1.5">[[ currentLanguage === 'zh' ? '📝 决策摘要' : '📝 Decision Summary' ]]</div>
+                                        <p class="text-xs text-gray-700 leading-relaxed whitespace-pre-line">[[ d.summary ]]</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Last Decision Info -->
+                <div v-if="trackingSummary && trackingSummary.last_decision_date" class="text-center text-xs text-gray-400 py-2">
+                    [[ currentLanguage === 'zh' ? '上次 AI 决策' : 'Last AI Decision' ]]: [[ trackingSummary.last_decision_date ]]
+                    · [[ currentLanguage === 'zh' ? '起始日期' : 'Inception' ]]: [[ trackingSummary.inception_date ]]
+                    · [[ currentLanguage === 'zh' ? '初始资金' : 'Initial Capital' ]]: $[[ formatNumber(trackingSummary.initial_capital) ]]
+                </div>
+            </div>
+        </div>
 
         <!-- Portfolio Diagnosis Tab Content -->
         <div v-if="currentTab === 'portfolio' && !loadingPortfolio" class="animate-fade-in">

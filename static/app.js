@@ -59,6 +59,20 @@ createApp({
         const loadingRecommend = ref(false);
         const loadingPortfolio = ref(false);
         const creatingTask = ref(false);
+
+        // Stock Tracking State
+        const loadingTracking = ref(false);
+        const trackingRefreshing = ref(false);
+        const trackingRunning = ref(false);
+        const trackingSummary = ref(null);
+        const trackingHoldings = ref([]);
+        const trackingTransactions = ref([]);
+        const trackingDecisions = ref([]);
+        const trackingBenchmark = ref(null);
+        const trackingChartRef = ref(null);
+        let trackingChartInstance = null;
+        const expandedDecisionId = ref(null);
+        const expandedHoldingId = ref(null);
         
         // 从 sessionStorage 恢复会话数据（刷新页面时保留）
         const recCriteria = ref(sessionData.recCriteria || { market: 'Any', asset_type: 'STOCK', include_etf: 'false', capital: 'Any', risk: 'Any', frequency: 'Any' });
@@ -1305,6 +1319,9 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
             if (newTab === 'portfolio' && currentUser.value) {
                 loadPortfolios();
             }
+            if (newTab === 'tracking') {
+                loadTrackingData();
+            }
         });
 
         // 监听 tab 切换，恢复 k 线图
@@ -1321,6 +1338,11 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                             }, 100);
                         }
                     }
+                });
+            }
+            if (newTab === 'tracking' && trackingBenchmark.value) {
+                nextTick(() => {
+                    initTrackingChart();
                 });
             }
         });
@@ -1435,6 +1457,11 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                 loadTasks();
                 startTaskPolling();
                 loadPortfolios();
+            }
+
+            // Load data for the restored tab (fix: watch doesn't fire when initial value has no change)
+            if (currentTab.value === 'tracking') {
+                loadTrackingData();
             }
         });
 
@@ -2831,6 +2858,174 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                 (currentLanguage.value === 'zh' ? 'AI卖' : 'AI Sell');
         };
 
+        // ============================================================
+        // Stock Tracking Functions
+        // ============================================================
+
+        const loadTrackingData = async () => {
+            loadingTracking.value = true;
+            try {
+                // Load main data first (fast DB queries)
+                const [summaryRes, holdingsRes, txnRes, decisionsRes] = await Promise.all([
+                    fetch('/api/tracking/summary'),
+                    fetch('/api/tracking/holdings'),
+                    fetch('/api/tracking/transactions?limit=30'),
+                    fetch('/api/tracking/decisions?limit=20')
+                ]);
+                if (summaryRes.ok) trackingSummary.value = await summaryRes.json();
+                if (holdingsRes.ok) {
+                    const hData = await holdingsRes.json();
+                    trackingHoldings.value = hData.holdings || [];
+                }
+                if (txnRes.ok) {
+                    const tData = await txnRes.json();
+                    trackingTransactions.value = tData.transactions || [];
+                }
+                if (decisionsRes.ok) {
+                    const dData = await decisionsRes.json();
+                    trackingDecisions.value = dData.decisions || [];
+                }
+            } catch (e) {
+                console.error('Failed to load tracking data:', e);
+            } finally {
+                loadingTracking.value = false;
+            }
+
+            // Load benchmark data asynchronously (may be slow due to yfinance network calls)
+            try {
+                const benchmarkRes = await fetch('/api/tracking/benchmark');
+                if (benchmarkRes.ok) {
+                    trackingBenchmark.value = await benchmarkRes.json();
+                    nextTick(() => initTrackingChart());
+                }
+            } catch (e) {
+                console.error('Failed to load benchmark data:', e);
+            }
+        };
+
+        const refreshTrackingPrices = async () => {
+            trackingRefreshing.value = true;
+            try {
+                const res = await fetch('/api/tracking/refresh-prices', { method: 'POST' });
+                if (res.ok) {
+                    toastMessage.value = currentLanguage.value === 'zh' ? '价格已刷新' : 'Prices refreshed';
+                    toastType.value = 'success';
+                    setTimeout(() => toastMessage.value = '', 3000);
+                    await loadTrackingData();
+                }
+            } catch (e) {
+                console.error('Failed to refresh prices:', e);
+            } finally {
+                trackingRefreshing.value = false;
+            }
+        };
+
+        const runTrackingDecision = async () => {
+            trackingRunning.value = true;
+            toastMessage.value = currentLanguage.value === 'zh' ? 'AI 正在深度分析中，请稍候...' : 'AI is analyzing deeply, please wait...';
+            toastType.value = 'info';
+            try {
+                const res = await fetch('/api/tracking/run-decision', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: selectedModel.value || 'gemini-3-flash-preview' })
+                });
+                if (res.ok) {
+                    const result = await res.json();
+                    toastMessage.value = result.has_changes
+                        ? (currentLanguage.value === 'zh' ? 'AI 决策完成，组合已更新！' : 'AI decision complete, portfolio updated!')
+                        : (currentLanguage.value === 'zh' ? 'AI 决策完成，暂无变更。' : 'AI decision complete, no changes.');
+                    toastType.value = result.has_changes ? 'success' : 'info';
+                    await loadTrackingData();
+                } else {
+                    const err = await res.json();
+                    toastMessage.value = err.error || 'Failed';
+                    toastType.value = 'error';
+                }
+            } catch (e) {
+                toastMessage.value = 'Error: ' + e.message;
+                toastType.value = 'error';
+            } finally {
+                trackingRunning.value = false;
+                setTimeout(() => toastMessage.value = '', 5000);
+            }
+        };
+
+        const initTrackingChart = () => {
+            const chartDom = trackingChartRef.value;
+            if (!chartDom || typeof echarts === 'undefined') return;
+            const data = trackingBenchmark.value;
+            if (!data || !data.dates || data.dates.length === 0) return;
+
+            if (trackingChartInstance) {
+                trackingChartInstance.dispose();
+            }
+            trackingChartInstance = echarts.init(chartDom);
+
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        let html = `<div style="font-size:12px"><strong>${params[0].axisValue}</strong>`;
+                        params.forEach(p => {
+                            if (p.value !== null && p.value !== undefined) {
+                                const color = p.value >= 0 ? '#16a34a' : '#dc2626';
+                                html += `<br/><span style="color:${p.color}">${p.seriesName}</span>: <span style="color:${color};font-weight:bold">${p.value >= 0 ? '+' : ''}${p.value}%</span>`;
+                            }
+                        });
+                        html += '</div>';
+                        return html;
+                    }
+                },
+                grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+                xAxis: {
+                    type: 'category',
+                    data: data.dates,
+                    axisLabel: { fontSize: 10, interval: Math.floor(data.dates.length / 6) }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLabel: { fontSize: 10, formatter: '{value}%' },
+                    splitLine: { lineStyle: { type: 'dashed' } }
+                },
+                series: [
+                    {
+                        name: currentLanguage.value === 'zh' ? '精选组合' : 'Curated Picks',
+                        type: 'line',
+                        data: data.portfolio,
+                        smooth: true,
+                        lineStyle: { width: 2.5, color: '#2563eb' },
+                        itemStyle: { color: '#2563eb' },
+                        showSymbol: false,
+                        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(37,99,235,0.15)' }, { offset: 1, color: 'rgba(37,99,235,0)' }] } }
+                    },
+                    {
+                        name: 'SPY (S&P 500)',
+                        type: 'line',
+                        data: data.sp500,
+                        smooth: true,
+                        lineStyle: { width: 1.5, color: '#f97316', type: 'dashed' },
+                        itemStyle: { color: '#f97316' },
+                        showSymbol: false
+                    },
+                    {
+                        name: 'QQQ (NASDAQ 100)',
+                        type: 'line',
+                        data: data.nasdaq100,
+                        smooth: true,
+                        lineStyle: { width: 1.5, color: '#22c55e', type: 'dashed' },
+                        itemStyle: { color: '#22c55e' },
+                        showSymbol: false
+                    }
+                ]
+            };
+
+            trackingChartInstance.setOption(option);
+            window.addEventListener('resize', () => {
+                if (trackingChartInstance) trackingChartInstance.resize();
+            });
+        };
+
         return {
             currentTab,
             currentLanguage,
@@ -2993,7 +3188,22 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
             editingCash,
             editCashForm,
             openEditCashModal,
-            updateCashBalance
+            updateCashBalance,
+            // Stock Tracking
+            loadingTracking,
+            trackingRefreshing,
+            trackingRunning,
+            trackingSummary,
+            trackingHoldings,
+            trackingTransactions,
+            trackingDecisions,
+            trackingBenchmark,
+            trackingChartRef,
+            expandedDecisionId,
+            expandedHoldingId,
+            loadTrackingData,
+            refreshTrackingPrices,
+            runTrackingDecision
         };
     }
 }).mount('#app');

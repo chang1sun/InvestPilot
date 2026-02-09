@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app import create_app, db
-from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Account, CashFlow, Task, Portfolio, Transaction
+from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Account, CashFlow, Task, Portfolio, Transaction, TrackingStock, TrackingTransaction, TrackingDailySnapshot, TrackingDecisionLog
 
 def init_database():
     """初始化数据库表（幂等性：如果表已存在则跳过）"""
@@ -23,7 +23,11 @@ def init_database():
         inspector = inspect(db.engine)
         existing_tables = inspector.get_table_names()
         
-        required_tables = ['users', 'accounts', 'cash_flows', 'tasks', 'analysis_logs', 'stock_trade_signals', 'recommendation_cache', 'portfolios', 'transactions']
+        required_tables = [
+            'users', 'accounts', 'cash_flows', 'tasks', 'analysis_logs',
+            'stock_trade_signals', 'recommendation_cache', 'portfolios', 'transactions',
+            'tracking_stocks', 'tracking_transactions', 'tracking_daily_snapshots', 'tracking_decision_logs'
+        ]
         missing_tables = [t for t in required_tables if t not in existing_tables]
         
         if missing_tables:
@@ -44,6 +48,10 @@ def init_database():
         print("- tasks")
         print("- portfolios")
         print("- transactions")
+        print("- tracking_stocks")
+        print("- tracking_transactions")
+        print("- tracking_daily_snapshots")
+        print("- tracking_decision_logs")
         
         # 显示统计信息
         try:
@@ -56,6 +64,10 @@ def init_database():
             task_count = Task.query.count()
             portfolio_count = Portfolio.query.count()
             transaction_count = Transaction.query.count()
+            tracking_stock_count = TrackingStock.query.count()
+            tracking_txn_count = TrackingTransaction.query.count()
+            tracking_snapshot_count = TrackingDailySnapshot.query.count()
+            tracking_decision_count = TrackingDecisionLog.query.count()
             
             print(f"\nCurrent data:")
             print(f"- Analysis logs: {analysis_count}")
@@ -67,6 +79,10 @@ def init_database():
             print(f"- Tasks: {task_count}")
             print(f"- Portfolios: {portfolio_count}")
             print(f"- Transactions: {transaction_count}")
+            print(f"- Tracking stocks: {tracking_stock_count}")
+            print(f"- Tracking transactions: {tracking_txn_count}")
+            print(f"- Tracking snapshots: {tracking_snapshot_count}")
+            print(f"- Tracking decisions: {tracking_decision_count}")
         except Exception as e:
             print(f"\nWarning: Could not query statistics: {e}")
 

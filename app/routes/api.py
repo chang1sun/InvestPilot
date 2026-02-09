@@ -2493,3 +2493,103 @@ def unadopt_ai_signal(signal_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# Stock Tracking API Endpoints
+# ============================================================
+
+@api_bp.route('/tracking/summary', methods=['GET'])
+def tracking_summary():
+    """Get tracking portfolio summary."""
+    from app.services.tracking_service import tracking_service
+    try:
+        summary = tracking_service.get_portfolio_summary()
+        return jsonify(summary)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/tracking/holdings', methods=['GET'])
+def tracking_holdings():
+    """Get current tracking holdings."""
+    from app.services.tracking_service import tracking_service
+    try:
+        holdings = tracking_service.get_current_holdings()
+        return jsonify({'holdings': holdings})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/tracking/transactions', methods=['GET'])
+def tracking_transactions():
+    """Get tracking transaction history."""
+    from app.services.tracking_service import tracking_service
+    limit = request.args.get('limit', 50, type=int)
+    try:
+        txns = tracking_service.get_transaction_history(limit=limit)
+        return jsonify({'transactions': txns})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/tracking/decisions', methods=['GET'])
+def tracking_decisions():
+    """Get AI decision logs."""
+    from app.services.tracking_service import tracking_service
+    limit = request.args.get('limit', 30, type=int)
+    try:
+        logs = tracking_service.get_decision_logs(limit=limit)
+        return jsonify({'decisions': logs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/tracking/snapshots', methods=['GET'])
+def tracking_snapshots():
+    """Get daily portfolio snapshots for charting."""
+    from app.services.tracking_service import tracking_service
+    start_date = request.args.get('start_date', None)
+    try:
+        snapshots = tracking_service.get_daily_snapshots(start_date=start_date)
+        return jsonify({'snapshots': snapshots})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/tracking/benchmark', methods=['GET'])
+def tracking_benchmark():
+    """Get portfolio vs benchmark comparison data."""
+    from app.services.tracking_service import tracking_service
+    start_date = request.args.get('start_date', None)
+    try:
+        data = tracking_service.get_benchmark_comparison(start_date=start_date)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/tracking/refresh-prices', methods=['POST'])
+def tracking_refresh_prices():
+    """Refresh current prices for all tracked stocks."""
+    from app.services.tracking_service import tracking_service
+    try:
+        result = tracking_service.refresh_prices()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/tracking/run-decision', methods=['POST'])
+def tracking_run_decision():
+    """Manually trigger an AI decision run (admin action)."""
+    from app.services.tracking_service import tracking_service
+    model = request.json.get('model', 'gemini-3-flash-preview') if request.is_json else 'gemini-3-flash-preview'
+    try:
+        result = tracking_service.run_daily_decision(model_name=model)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/tracking/snapshot', methods=['POST'])
+def tracking_take_snapshot():
+    """Manually take a daily snapshot."""
+    from app.services.tracking_service import tracking_service
+    try:
+        snapshot = tracking_service.take_daily_snapshot()
+        return jsonify(snapshot) if snapshot else jsonify({'message': 'Snapshot already exists for today'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
