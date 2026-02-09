@@ -59,7 +59,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "calculate_technical_indicators",
-        "description": "Calculate technical indicators (MA5, MA20, RSI14) for given K-line data. Call get_kline_data first, then pass the data here.",
+        "description": "Calculate technical indicators (MA5, MA20, RSI14) for a single symbol. For multiple symbols, use batch_calculate_technical_indicators instead.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -74,6 +74,26 @@ TOOL_DEFINITIONS = [
                 }
             },
             "required": ["symbol"]
+        }
+    },
+    {
+        "name": "batch_calculate_technical_indicators",
+        "description": "Calculate technical indicators (MA5, MA20, RSI14) for multiple symbols in a single call. Much more efficient than calling calculate_technical_indicators repeatedly.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of ticker symbols (max 10). Use correct format for each market: US stocks (AAPL), HK stocks 4-digit+'.HK' (0700.HK), A-shares '.SS'/'.SZ' (600519.SS, 000858.SZ), Crypto (BTC-USD), CN funds 6-digit (015283)."
+                },
+                "period": {
+                    "type": "string",
+                    "enum": ["1mo", "3mo", "6mo", "1y", "3y"],
+                    "description": "Period of data to analyze. Default: 3mo"
+                }
+            },
+            "required": ["symbols"]
         }
     },
     {
@@ -251,6 +271,8 @@ class AgentToolExecutor:
                 result = self._get_kline_data(**arguments)
             elif tool_name == "calculate_technical_indicators":
                 result = self._calculate_technical_indicators(**arguments)
+            elif tool_name == "batch_calculate_technical_indicators":
+                result = self._batch_calculate_technical_indicators(**arguments)
             elif tool_name == "get_portfolio_holdings":
                 result = self._get_portfolio_holdings()
             elif tool_name == "get_transaction_history":
@@ -761,6 +783,86 @@ class AgentToolExecutor:
                 "change_5d_pct": pct_5d,
                 "change_20d_pct": pct_20d,
                 "recent_data": recent
+            })
+
+        return json.dumps({
+            "results": results,
+            "count": len(results),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+        })
+
+    def _batch_calculate_technical_indicators(self, symbols, period="3mo"):
+        """Calculate technical indicators for multiple symbols in one call"""
+        if len(symbols) > 10:
+            symbols = symbols[:10]
+
+        effective_type = self.asset_type
+        is_cn_fund = effective_type == "FUND_CN"
+
+        results = []
+        for sym in symbols:
+            data = batch_fetcher.get_cached_kline_data(
+                sym, period=period, interval="1d", is_cn_fund=is_cn_fund
+            )
+
+            if not data:
+                results.append({
+                    "symbol": sym,
+                    "error": f"No data available for {sym}"
+                })
+                continue
+
+            enriched = calculate_indicators(data)
+
+            # Return last 10 data points with indicators (compact for batch)
+            recent = enriched[-10:]
+            
+            # Build compact summary
+            latest = recent[-1] if recent else {}
+            prev = recent[-2] if len(recent) > 1 else {}
+
+            # Generate analysis hints
+            analysis_hints = {}
+            if latest.get("MA5") and latest.get("MA20"):
+                if latest["MA5"] > latest["MA20"] and prev.get("MA5", 0) <= prev.get("MA20", 0):
+                    analysis_hints["ma_signal"] = "Golden Cross"
+                elif latest["MA5"] < latest["MA20"] and prev.get("MA5", 0) >= prev.get("MA20", 0):
+                    analysis_hints["ma_signal"] = "Death Cross"
+                elif latest["MA5"] > latest["MA20"]:
+                    analysis_hints["ma_signal"] = "Bullish"
+                else:
+                    analysis_hints["ma_signal"] = "Bearish"
+
+            if latest.get("RSI"):
+                rsi = latest["RSI"]
+                if rsi > 70:
+                    analysis_hints["rsi_signal"] = f"Overbought ({rsi:.1f})"
+                elif rsi < 30:
+                    analysis_hints["rsi_signal"] = f"Oversold ({rsi:.1f})"
+                else:
+                    analysis_hints["rsi_signal"] = f"Neutral ({rsi:.1f})"
+
+            results.append({
+                "symbol": sym,
+                "period": period,
+                "latest": {
+                    "date": latest.get("date"),
+                    "close": latest.get("close"),
+                    "MA5": round(latest.get("MA5", 0), 2),
+                    "MA20": round(latest.get("MA20", 0), 2),
+                    "RSI": round(latest.get("RSI", 0), 1)
+                },
+                "analysis_hints": analysis_hints,
+                "recent_10d": [
+                    {
+                        "date": d["date"],
+                        "close": round(d["close"], 2),
+                        "MA5": round(d.get("MA5", 0), 2),
+                        "MA20": round(d.get("MA20", 0), 2),
+                        "RSI": round(d.get("RSI", 0), 1)
+                    }
+                    for d in recent
+                ]
             })
 
         return json.dumps({

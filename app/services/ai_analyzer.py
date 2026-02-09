@@ -14,32 +14,96 @@ from app.services.model_config import get_model_config
 # Shared Constants for Agent Prompts
 # ============================================================
 
+# ============================================================
+# Unified Investment Philosophy (shared across all prompts)
+# ============================================================
+INVESTMENT_PHILOSOPHY = """
+**INVESTMENT PHILOSOPHY — Catalyst-Driven Trend Following with Macro Timing**
+
+You pursue **high win-rate AND high reward-to-risk** trades by requiring triple confirmation before entry:
+
+1. **Catalyst (WHY now?)** — A concrete, recent event or structural shift that can move the price:
+   news, earnings, policy, sector rotation, fund flows, or macro regime change.
+   A trade without a catalyst is a gamble.
+
+2. **Technicals (WHEN to act?)** — Price-volume structure confirms the catalyst is being priced in:
+   trend alignment (MA5 > MA20 > MA60 for longs), volume expansion on breakout,
+   momentum (RSI 40-70 for entries, divergence for exits), and key support/resistance levels.
+   A catalyst without technical confirmation is premature.
+
+3. **Valuation & Macro Anchor (HOW MUCH upside?)** — Valuation percentile, historical range,
+   sector comps, or macro positioning provides the margin of safety and defines the reward target.
+   Overvalued assets with catalysts are traps; undervalued assets with catalysts are opportunities.
+
+**RISK FRAMEWORK**:
+- Minimum reward-to-risk ratio: 2:1 (prefer 3:1)
+- Position sizing by conviction: HIGH 50-70%, MEDIUM 30-50%, LOW 15-30%
+- Timeframe: 2 weeks to 2 months (swing to position trading)
+- Stop-loss: Always define invalidation level; no "hope-based" holding
+- Portfolio-level: No single position > 30% of total portfolio; sector concentration < 50%
+"""
+
+# ============================================================
+# Signal type definitions (6 actions, bilingual)
+# ============================================================
+SIGNAL_DEFINITIONS_EN = """
+**ACTION SIGNAL TYPES** (use EXACTLY one of these):
+- **BUY**: Open a NEW position (only when currently EMPTY / no holding)
+- **ADD**: Increase an EXISTING position (only when already HOLDING)
+- **REDUCE**: Partially sell an existing position (only when HOLDING, sell 25-75%)
+- **SELL**: Fully close / liquidate the entire position (only when HOLDING, sell 100%)
+- **HOLD**: Keep the current position unchanged, no action needed (only when HOLDING)
+- **WAIT**: Stay on the sidelines, do not open a position (only when EMPTY)
+
+⚠️ CRITICAL RULES:
+- If user is EMPTY (no position): only BUY or WAIT are valid.
+- If user is HOLDING: only ADD, REDUCE, SELL, or HOLD are valid.
+- NEVER output BUY when user already holds the asset — use ADD instead.
+- NEVER output WAIT when user already holds the asset — use HOLD instead.
+"""
+
+SIGNAL_DEFINITIONS_ZH = """
+**操作信号类型**（必须使用以下其中一种）：
+- **BUY**（买入/建仓）：开立新仓位（仅在当前空仓时使用）
+- **ADD**（加仓）：增加现有持仓（仅在已持有时使用）
+- **REDUCE**（减仓）：部分卖出现有持仓（仅在已持有时使用，卖出 25-75%）
+- **SELL**（平仓/清仓）：全部卖出，完全平仓（仅在已持有时使用，卖出 100%）
+- **HOLD**（持有）：维持当前仓位不变（仅在已持有时使用）
+- **WAIT**（等待/观望）：暂不建仓，继续观察（仅在空仓时使用）
+
+⚠️ 关键规则：
+- 如果用户当前空仓（无持仓）：只能输出 BUY 或 WAIT。
+- 如果用户当前持仓中：只能输出 ADD、REDUCE、SELL 或 HOLD。
+- 用户已持有时，绝不能输出 BUY —— 应使用 ADD。
+- 用户已持有时，绝不能输出 WAIT —— 应使用 HOLD。
+"""
+
 # Asset type → (role, asset_name, macro_focus)
 ASSET_ROLE_MAP = {
     'STOCK': (
-        "Macro-Quant Strategist",
+        "Equity Strategist",
         "stock",
-        "earnings, valuation, sector rotation, and institutional flows"
+        "earnings growth, PE/PB percentile vs 5-year range, sector rotation signals, institutional fund flows, and index-level sentiment (VIX, breadth)"
     ),
     'CRYPTO': (
-        "Crypto Asset Analyst",
+        "Digital Asset Strategist",
         "cryptocurrency",
-        "on-chain data, market sentiment, regulatory news, and Bitcoin correlation"
+        "on-chain metrics (active addresses, exchange flows), BTC dominance, regulatory catalysts, macro liquidity (DXY, real yields), and market sentiment (Fear & Greed Index)"
     ),
     'COMMODITY': (
-        "Commodities Trader",
+        "Commodities Strategist",
         "commodity",
-        "supply/demand dynamics, geopolitics, Dollar Index, and inventory reports"
+        "supply/demand balance (inventories, production data), geopolitical risk premium, Dollar Index (DXY), central bank policy impact, seasonal patterns, and COT positioning"
     ),
     'BOND': (
         "Fixed Income Strategist",
         "bond",
-        "central bank policy, inflation data, yield curve, and economic cycle"
+        "central bank rate path, inflation trajectory (CPI/PCE), yield curve shape (2s10s spread), credit spreads, Treasury supply/demand, and economic cycle positioning"
     ),
     'FUND_CN': (
-        "Chinese Fund Analyst",
+        "Chinese Fund Strategist",
         "Chinese fund",
-        "fund manager strategy, asset allocation, historical performance, and Chinese market trends"
+        "fund manager's strategy consistency, NAV trend vs benchmark, sector allocation drift, A-share market regime (value/growth rotation), policy catalysts (PBOC, fiscal stimulus), and northbound/southbound fund flows"
     ),
 }
 
@@ -60,37 +124,6 @@ class AIAnalyzer:
                 print(f"Failed to get adapter for {model_id}: {e}")
                 return None
         return self._adapters[model_id]
-    
-    def _get_forbidden_assets(self, asset_type):
-        """Get list of forbidden asset types for the prompt"""
-        all_types = {
-            'STOCK': 'Stocks, Equities, Company shares',
-            'CRYPTO': 'Cryptocurrencies, Digital currencies, Tokens',
-            'COMMODITY': 'Commodities, Futures, Raw materials',
-            'BOND': 'Bonds, Fixed income, Treasuries'
-        }
-        forbidden = [desc for type_key, desc in all_types.items() if type_key != asset_type]
-        return ', '.join(forbidden)
-    
-    def _get_allowed_assets(self, asset_type):
-        """Get description of allowed assets"""
-        descriptions = {
-            'STOCK': 'Stocks, Equities, Company shares (e.g., AAPL, TSLA, MSFT)',
-            'CRYPTO': 'Cryptocurrencies, Digital currencies, Tokens (e.g., BTC-USD, ETH-USD, SOL-USD)',
-            'COMMODITY': 'Commodities, Futures, Raw materials (e.g., GC=F, CL=F, SI=F)',
-            'BOND': 'Bonds, Fixed income, Treasuries (e.g., ^TNX, ^IRX, ^TYX)'
-        }
-        return descriptions.get(asset_type, 'Unknown asset type')
-    
-    def _get_example_symbol(self, asset_type):
-        """Get example symbol for the asset type"""
-        examples = {
-            'STOCK': 'AAPL, TSLA, MSFT',
-            'CRYPTO': 'BTC-USD, ETH-USD, SOL-USD',
-            'COMMODITY': 'GC=F, CL=F, SI=F',
-            'BOND': '^TNX, ^IRX, ^TYX'
-        }
-        return examples.get(asset_type, 'SYMBOL')
 
     # ============================================================
     # Agent-mode shared helpers
@@ -266,451 +299,155 @@ class AIAnalyzer:
 
     def analyze(self, symbol, kline_data, model_name="gemini-3-flash-preview", language="zh", current_position=None, asset_type="STOCK", portfolio_context=None, symbol_name=None):
         """
-        Analyze K-line data using AI models to find buy/sell points.
-        Supports: Gemini, GPT, Claude, Grok, Qwen
-        :param current_position: Optional dict { 'date': 'YYYY-MM-DD', 'price': float, 'reason': str } indicating last BUY signal.
-        :param asset_type: STOCK, CRYPTO, COMMODITY, BOND
-        :param portfolio_context: Optional dict with user's complete portfolio information
+        Analyze K-line data. For 'local-strategy', runs deterministic technical analysis.
+        For all AI models, delegates to agent mode (analyze_with_agent).
         """
         if not kline_data:
             return {"error": "No K-line data provided", "signals": [], "trades": []}
 
-        # 1. Preprocess data: Add indicators to help the LLM (also used for local strategy)
-        enriched_data = calculate_indicators(kline_data)
-        
-        # --- DIRECT LOCAL STRATEGY ---
-        # If user specifically selected "local-strategy", skip LLM entirely.
+        # Local strategy: deterministic MA+RSI analysis, no LLM needed
         if model_name == "local-strategy":
+            enriched_data = calculate_indicators(kline_data)
             reason = "用户手动选择" if language == 'zh' else "User manually selected"
             return TechnicalStrategy.analyze(enriched_data, error_msg=reason, language=language)
 
-        # Get model adapter
-        adapter = self._get_adapter(model_name)
-        if not adapter or not adapter.is_available():
-            reason = "API Key 缺失" if language == 'zh' else "API Key missing"
-            return TechnicalStrategy.analyze(enriched_data, error_msg=reason, language=language)
-        
-        # 2. Prepare Prompt for LLM
-        # Limit data to recent history to focus attention and save tokens (last 100 candles for swing trading)
-        recent_data = enriched_data[-100:] if len(enriched_data) > 100 else enriched_data
-        
-        csv_data = "Date,Open,High,Low,Close,Volume,MA5,MA20,RSI\n"
-        for d in recent_data:
-            csv_data += f"{d['date']},{d['open']},{d['high']},{d['low']},{d['close']},{d['volume']},{d['MA5']:.2f},{d['MA20']:.2f},{d['RSI']:.2f}\n"
-
-        # Language specific instruction
-        lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
-
-        # Asset Type Specific Context
-        if asset_type == "CRYPTO":
-            role_desc = "You are a professional **Crypto Asset Analyst** specializing in **Swing Trading**."
-            macro_focus = "Focus on On-chain data, Market Sentiment, Regulatory news, and Bitcoin correlation. Avoid traditional equity metrics like P/E ratio or dividends."
-            asset_name = "cryptocurrency"
-        elif asset_type == "COMMODITY":
-            role_desc = "You are a professional **Commodities Trader**."
-            macro_focus = "Focus on Supply/Demand dynamics, Geopolitics, Dollar Index (DXY), and Inventory reports. Consider seasonal patterns and production data."
-            asset_name = "commodity"
-        elif asset_type == "BOND":
-            role_desc = "You are a professional **Fixed Income Strategist**."
-            macro_focus = "Focus on Central Bank Policy, Inflation Data (CPI/PPI), Yield Curve, and Economic Cycle. Analyze interest rate expectations and credit spreads."
-            asset_name = "bond"
-        elif asset_type == "FUND_CN":
-            role_desc = "You are a professional **Chinese Fund Analyst** specializing in **Medium to Long-term Investment**."
-            macro_focus = "Focus on Fund Manager's strategy, Asset allocation, Historical performance, Market style (Growth/Value), and Chinese market trends. Note: This is a mutual fund with NET VALUE (not OHLC), so avoid technical indicators designed for intraday trading. Focus on trend analysis, moving averages, and momentum."
-            asset_name = "Chinese fund"
-        else: # STOCK
-            role_desc = "You are a professional **Macro-Quant Strategist** specializing in **Low-Frequency Swing Trading**."
-            macro_focus = "Consider current global macro trends (e.g., Interest Rates, Tech Cycles, Geopolitics) relevant to this stock. Analyze fundamentals like earnings, valuation, and sector rotation."
-            asset_name = "stock"
-
-        # Build Portfolio Context (if available)
-        portfolio_info = ""
-        if portfolio_context:
-            total_value = portfolio_context.get('total_value', 0)
-            holdings_count = portfolio_context.get('holdings_count', 0)
-            holdings_summary = portfolio_context.get('holdings_summary', [])
-            current_symbol_detail = portfolio_context.get('current_symbol_detail')
-            
-            if holdings_count > 0:
-                # Build holdings summary (only symbol, percentage, and P&L)
-                holdings_list = []
-                for h in holdings_summary:
-                    holdings_list.append(
-                        f"  - {h['symbol']} ({h['asset_type']}): {h['percentage']:.1f}% of portfolio, "
-                        f"P&L: {h['unrealized_pnl_pct']:+.2f}%"
-                    )
-                
-                portfolio_info = f"""
-**USER'S PORTFOLIO OVERVIEW**:
-- Total Portfolio Value: ${total_value:,.2f}
-- Number of Holdings: {holdings_count}
-- Holdings Distribution:
-{chr(10).join(holdings_list)}
-
-**PORTFOLIO CONTEXT FOR DECISION MAKING**:
-- Consider portfolio diversification when recommending position sizes.
-- If the portfolio is heavily concentrated in one sector/asset, be more cautious about adding similar positions.
-- If analyzing a symbol already held, consider the current allocation percentage.
-"""
-                
-                # Add detailed info for current symbol if held
-                if current_symbol_detail:
-                    transactions_list = []
-                    for t in current_symbol_detail.get('transactions', []):
-                        transactions_list.append(
-                            f"  - {t['date']}: {t['type']} {t['quantity']} @ ${t['price']:.2f}"
-                            + (f" ({t['notes']})" if t.get('notes') else "")
-                        )
-                    
-                    portfolio_info += f"""
-**CURRENT SYMBOL ({symbol_name if symbol_name else symbol}) - DETAILED HOLDING**:
-- Quantity Held: {current_symbol_detail['quantity']}
-- Average Cost: ${current_symbol_detail['avg_cost']:.2f}
-- Current Price: ${current_symbol_detail.get('current_price', 0):.2f}
-- Position Value: ${current_symbol_detail.get('position_value', 0):,.2f}
-- Portfolio Allocation: {current_symbol_detail['percentage']:.1f}%
-- Unrealized P&L: ${current_symbol_detail['unrealized_pnl']:,.2f} ({current_symbol_detail['unrealized_pnl_pct']:+.2f}%)
-
-**TRANSACTION HISTORY FOR {symbol_name if symbol_name else symbol}**:
-{chr(10).join(transactions_list) if transactions_list else '  - No transactions yet'}
-
-**IMPORTANT**: When making recommendations for this symbol:
-1. You already know the user HOLDS this position (not just AI simulation).
-2. Consider the current P&L and allocation percentage.
-3. If recommending SELL, consider tax implications and the user's actual cost basis.
-4. If recommending BUY MORE, ensure it doesn't over-concentrate the portfolio.
-"""
-
-        # Build Position Context
-        position_context = ""
-        if current_position:
-            qty_info = f"- Quantity: {current_position.get('quantity')}" if current_position.get('quantity') else ""
-            cost_info = f"- Avg Cost: {current_position.get('avg_cost')}" if current_position.get('avg_cost') else ""
-            
-            position_context = f"""
-    **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
-    - The system IS CURRENTLY HOLDING this asset.
-    {qty_info}
-    {cost_info}
-    - Last Buy Date: {current_position.get('date', 'Unknown')}
-    - Last Buy Price: {current_position.get('price', 'Unknown')}
-    
-    **MANDATORY INSTRUCTION FOR EXISTING POSITION**:
-    1. You MUST acknowledge this existing position.
-    2. Your primary task is to decide: **HOLD** or **SELL** (or **BUY MORE**).
-    3. If you recommend SELLING, specify the price and quantity (percentage).
-    4. Consider the user's actual holding details provided in the portfolio context above.
-    """
-        else:
-            # Check if user holds this symbol in real portfolio (even if AI doesn't have a position)
-            has_real_holding = portfolio_context and portfolio_context.get('current_symbol_detail') is not None
-            
-            if has_real_holding:
-                position_context = f"""
-    **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
-    - The AI system currently has NO simulated position for this asset.
-    - However, the USER ACTUALLY HOLDS this asset in their real portfolio (see portfolio context above).
-    - You are analyzing whether to recommend BUY MORE, HOLD, or SELL based on current technicals.
-    
-    **MANDATORY INSTRUCTION FOR USER-HELD POSITION**:
-    1. Acknowledge that the user holds this position (even though AI simulation doesn't).
-    2. Your task is to evaluate: Should the user **HOLD**, **SELL** (partial or full), or **BUY MORE**?
-    3. Consider the user's actual cost basis, current P&L, and portfolio allocation.
-    4. Be mindful of portfolio concentration - if this position is already large, be cautious about recommending BUY MORE.
-    5. When recommending actions, reference the user's actual holding details.
-    """
-            else:
-                position_context = f"""
-    **CURRENT SYSTEM STATE (CRITICAL - READ FIRST)**:
-    - The system currently has NO open position (100% Cash).
-    - The user does NOT hold this asset in their real portfolio.
-    - You are looking for HIGH-QUALITY BUY opportunities with favorable risk/reward.
-    
-    **MANDATORY INSTRUCTION FOR EMPTY POSITION**:
-    1. Your PRIMARY task is to identify QUALITY BUY signals with strong confirmation.
-    2. Be SELECTIVE and PATIENT: Only recommend BUY when you see:
-       - Clear trend reversal with MULTIPLE confirmations (price action + volume + momentum indicators)
-       - Breakout above key resistance with strong volume and follow-through
-       - Oversold bounce with clear support level and improving momentum
-       - Favorable risk/reward ratio (at least 2:1 reward-to-risk)
-    3. Recommend WAIT if:
-       - The trend is clearly bearish with no reversal signs
-       - The {asset_name} is in a consolidation phase with no clear direction
-       - Risk/reward is unfavorable (e.g., near resistance with weak momentum)
-       - Technical indicators show mixed or conflicting signals
-       - Volume confirmation is lacking
-    4. When recommending BUY, specify the entry price and suggested position size (quantity_percent: 20-60, based on setup quality).
-    5. Consider portfolio diversification: Review the user's current holdings (if any) to avoid over-concentration in similar assets.
-    6. Remember: CAPITAL PRESERVATION is as important as CAPTURING TRENDS. Quality over quantity - it's better to wait for high-probability setups than to force trades.
-    """
-
-        prompt = f"""
-{role_desc}
-Your goal is to generate alpha by combining **Technical Precision** (Price/Volume/Indicators) with **Macro/Fundamental Insight**.
-
-**ASSET TYPE**: {asset_type} ({asset_name})
-**ASSET IDENTIFIER**: {symbol}{f' - {symbol_name}' if symbol_name else ''}
-**IMPORTANT**: This is a {asset_name} analysis. Use {asset_name}-specific terminology and avoid metrics that don't apply to this asset class.
-
-**CORE PHILOSOPHY:**
-"Price action reflects all known information, but understanding the Macro Context explains the 'Why' behind the moves."
-
-**TASK:**
-Analyze the historical data for this {asset_type} ({symbol_name if symbol_name else symbol}) to identify high-probability Buying and Selling points.
-{portfolio_info}
-**ANALYSIS FRAMEWORK:**
-1. **Quantitative (70%)**: Rigorous analysis of Price, Volume, and Trends (MA5, MA20, RSI) provided in the data.
-2. **Macro & Fundamental (30%)**:
-   - Use your **internal knowledge** about this specific {asset_name} ({symbol_name if symbol_name else symbol}).
-   - {macro_focus}
-   - If the asset is unknown to you, infer "Smart Money" sentiment strictly from Volume/Price divergence.
-
-**STRATEGY GUIDELINES: SWING TRADING**
-1. **Timeframe**: Aim for multi-week trends (2 weeks to 1 month). Avoid daily noise.
-2. **Entry Philosophy**: 
-   - When EMPTY: Be SELECTIVE and PATIENT. Only recommend BUY when multiple confirmations align (trend + volume + momentum + favorable risk/reward).
-   - When HOLDING: Be DISCIPLINED. Protect profits and cut losses based on technical breakdown.
-3. **Risk Management**: 
-   - For BUY signals: Suggest position size (20-60% of available capital based on conviction). Start with smaller positions to manage risk.
-   - For SELL signals: Specify exit percentage (25-100% based on severity).
-4. **Conviction Levels**:
-   - HIGH (50-60% position): Strong trend + volume + macro tailwind + clear support levels.
-   - MEDIUM (30-40%): Good setup but some uncertainty or mixed signals.
-   - LOW (20-25%): Speculative or early-stage signal with higher risk.
-
-{position_context}
-
-**ANALYSIS INPUTS:**
-- **Price Data**: Open, High, Low, Close, Volume.
-- **Indicators**: MA5 (Short-term), MA20 (Medium-term), RSI (Momentum).
-
-**INSTRUCTIONS:**
-1. **Trend Analysis**: Assess the trend direction using MA alignment and Price Action.
-2. **Volume Analysis**: Confirm moves with volume (e.g., high volume on breakout).
-3. **Holistic Reasoning**: In your "reason" and "analysis_summary", you MUST weave in macro/sector logic where appropriate (e.g., "Tech sector correction," "Oversold bounce amidst positive sector news").
-4. **Trade Identification**:
-   - List specific TRADES based on historical data.
-   - **RESPECT CURRENT STATE**: 
-     * If HOLDING: Focus on whether to HOLD, SELL, or BUY MORE.
-     * If EMPTY: Evaluate if current market conditions warrant a NEW BUY. Be proactive but not reckless.
-   - If the last action is a BUY and no Sell signal has occurred, mark status as "HOLDING".
-5. **Current Action (MANDATORY)**:
-   - You MUST provide a "current_action" based on the LATEST data point.
-   - For EMPTY positions: Choose between "BUY" (with conviction level via quantity_percent) or "WAIT" (with clear reason).
-   - For HOLDING positions: Choose between "HOLD", "SELL", or "BUY MORE".
-   - **CRITICAL**: Only recommend BUY when you have HIGH CONFIDENCE based on multiple confirming factors. A single indicator (e.g., just MA crossover or just RSI oversold) is NOT sufficient. Look for confluence of signals and favorable risk/reward.
-6. **Latest Data Handling**: If the latest data point is today (incomplete candle), use it as the current price for decision making.
-
-**LANGUAGE**: {lang_instruction}
-
-**OUTPUT FORMAT (Strict JSON)**:
-{{
-    "analysis_summary": "Strategic summary integrating Technical Trend, Volume Profile, and Macro/Sector Outlook.",
-    "trades": [
-        {{
-            "buy_date": "YYYY-MM-DD",
-            "buy_price": 123.45,
-            "sell_date": "YYYY-MM-DD", 
-            "sell_price": 145.67, 
-            "status": "CLOSED", 
-            "holding_period": "15 days",
-            "return_rate": "+18.0%",
-            "reason": "Brief rationale for BUY",
-            "sell_reason": "Brief rationale for SELL"
-        }}
-    ],
-    "current_action": {{
-        "action": "BUY" | "SELL" | "HOLD" | "WAIT",
-        "price": 123.45,
-        "quantity_percent": 50,
-        "reason": "Brief reason for the action."
-    }}
-}}
-Return ONLY the JSON.
-Data:
-{csv_data}
-"""
-        try:
-            # Start timing
-            start_time = time.time()
-            config = get_model_config(model_name)
-            print(f"\n{'='*60}")
-            print(f"[LLM DEBUG] Starting analysis")
-            print(f"  Symbol: {symbol}")
-            print(f"  Model: {model_name}")
-            print(f"  Provider: {config.get('provider', 'unknown')}")
-            print(f"  Language: {language}")
-            print(f"  Data points: {len(kline_data)}")
-            print(f"  Position: {'HOLDING' if current_position else 'EMPTY'}")
-            
-            # Use unified adapter interface
-            text, usage = adapter.generate(prompt)
-            
-            # End timing
-            elapsed_time = time.time() - start_time
-            
-            if not text:
-                raise ValueError("Empty response from AI model")
-
-            # Robust JSON extraction using regex
-            json_match = re.search(r'\{.*\}', text, re.DOTALL)
-            if json_match:
-                text = json_match.group(0)
-            else:
-                # Attempt cleanup just in case
-                text = text.replace('```json', '').replace('```', '').strip()
-            
-            result = json.loads(text)
-            
-            signals = []
-            # 处理 current_action - 只有 BUY/SELL 才添加到 signals（在 K 线图上显示）
-            # WAIT/HOLD 不添加到 signals，而是保留在 current_action 中供摘要显示
-            current_action = result.get('current_action')
-            if current_action:
-                action_type = current_action.get('action')
-                if action_type in ['BUY', 'SELL']:  # 只有 BUY/SELL 才在 K 线图上显示
-                    signal_data = {
-                        "type": action_type,
-                        "date": kline_data[-1]['date'], # 使用最新日期
-                        "price": current_action.get('price') or kline_data[-1].get('close'),
-                        "reason": current_action.get('reason'),
-                        "is_current": True  # 标记为当前建议
-                    }
-                    if current_action.get('quantity_percent'):
-                        signal_data['quantity_percent'] = current_action.get('quantity_percent')
-                    signals.append(signal_data)
-
-            # 注意：AI 输出的 trades 只是对历史数据的回顾分析，不是实际建议
-            # 因此不添加到 signals 中（不在 K 线图上显示）
-            # 真实的用户交易记录由前端从 user_transactions 读取并显示为"真买"/"真卖"
-            
-            result['signals'] = signals
-            result['source'] = 'ai_model'
-            
-            # Print success log
-            print(f"[LLM DEBUG] ✅ Analysis completed successfully")
-            print(f"  Total time: {elapsed_time:.2f}s")
-            print(f"  Trades found: {len(result.get('trades', []))}")
-            print(f"  Signals found: {len(signals)}")
-            print(f"  Response length: {len(text)} chars")
-            if usage:
-                print(f"  Token usage: input={usage.get('input_tokens', 'N/A')}, output={usage.get('output_tokens', 'N/A')}")
-            print(f"{'='*60}\n")
-            
-            return result
-            
-        except Exception as e:
-            error_msg = str(e)
-            elapsed_time = time.time() - start_time if 'start_time' in locals() else 0
-            
-            print(f"[LLM DEBUG] ❌ Analysis failed")
-            print(f"  Total time: {elapsed_time:.2f}s")
-            print(f"  Error: {error_msg}")
-            print(f"  Fallback: Using local strategy (MA+RSI)")
-            print(f"{'='*60}\n")
-            
-            # Handle 429 Resource Exhausted specifically
-            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                if language == 'zh':
-                    friendly_msg = "API 配额已用尽"
-                else:
-                    friendly_msg = "API quota exhausted"
-                return TechnicalStrategy.analyze(enriched_data, error_msg=friendly_msg, language=language)
-            
-            # Generic error handling
-            if language == 'zh':
-                friendly_msg = "AI 服务暂时不可用"
-            else:
-                friendly_msg = "AI service temporarily unavailable"
-            return TechnicalStrategy.analyze(enriched_data, error_msg=friendly_msg, language=language)
+        # All AI models use agent mode (function calling)
+        return self.analyze_with_agent(
+            symbol, model_name=model_name, language=language,
+            asset_type=asset_type, symbol_name=symbol_name
+        )
 
     def analyze_with_agent(self, symbol, model_name="gemini-3-flash-preview", language="zh",
-                           current_position=None, asset_type="STOCK", portfolio_context=None,
-                           symbol_name=None, user_id=None):
+                           asset_type="STOCK", symbol_name=None, user_id=None):
         """
         Agent-mode K-line analysis using function calling.
-        The AI model actively calls tools to fetch real-time data.
-        Falls back to standard analyze() on failure.
+        The AI model actively calls tools to fetch real-time price, kline,
+        technical indicators, and portfolio/position data on its own.
+        No data is pre-fetched or pre-passed — all context comes from tool calls.
         """
         supports, config, adapter = self._check_agent_support(model_name)
         if not supports:
-            print(f"[Agent] Model {model_name} does not support tools, falling back to standard analyze")
-            from app.services.data_provider import batch_fetcher
-            kline_data = batch_fetcher.get_cached_kline_data(
-                symbol, period="3y", interval="1d",
-                is_cn_fund=(asset_type == "FUND_CN")
-            )
-            if not kline_data:
-                return {"error": "Could not fetch data", "signals": [], "trades": []}
-            return self.analyze(
-                symbol, kline_data, model_name=model_name, language=language,
-                current_position=current_position, asset_type=asset_type,
-                portfolio_context=portfolio_context, symbol_name=symbol_name
-            )
+            raise ValueError(f"Model {model_name} does not support tool calling")
 
         tool_executor = self._create_tool_executor(user_id, symbol, asset_type, provider=config.get('provider'))
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
         role, asset_name, focus = ASSET_ROLE_MAP.get(asset_type, ASSET_ROLE_MAP['STOCK'])
-        position_info = self._build_position_info(current_position, language)
         tool_descriptions = self._get_tool_descriptions_text()
 
-        prompt = f"""You are a professional **{role}** specializing in **Swing Trading** with access to real-time market data tools.
+        prompt = f"""You are a professional **{role}** with access to real-time market data tools.
+
+{INVESTMENT_PHILOSOPHY}
 
 **ASSET**: {symbol}{f' ({symbol_name})' if symbol_name else ''} [{asset_type}]
 **DATE**: {datetime.now().strftime('%Y-%m-%d')}
 
-{position_info}
-
 **YOUR AVAILABLE TOOLS**:
 {tool_descriptions}
 
-**ANALYSIS WORKFLOW** (Follow this order):
-1. Call `get_realtime_price` to get the current price of {symbol}
-2. Call `get_kline_data` with period="3mo" to get recent price history
-3. Call `calculate_technical_indicators` to get MA5, MA20, RSI analysis
-4. Call `get_portfolio_holdings` to understand the user's full portfolio context
-5. If the user holds {symbol}, call `get_transaction_history` for {symbol}
-6. Optional: Use `compare_assets` or `get_exchange_rate` if needed
+**ANALYSIS WORKFLOW** (follow this order):
+1. Call `search_market_news` to find recent news, catalysts, and macro context for {symbol}
+2. Call `get_realtime_price` to get the current price of {symbol}
+3. Call `get_kline_data` with period="6mo" to get price history for trend and valuation context
+4. Call `calculate_technical_indicators` to get MA, RSI, and momentum analysis
+5. Call `get_portfolio_holdings` to check if user holds {symbol} and understand portfolio context
+6. If user holds {symbol}, call `get_transaction_history` for {symbol} to review trade history
+7. Optional: `compare_assets` or `get_exchange_rate` if needed
 
-**ANALYSIS FRAMEWORK**:
-- **Technical (70%)**: Price, Volume, MA crossovers, RSI, support/resistance
-- **Macro & Fundamental (30%)**: {focus}
-- **Risk Management**: Portfolio concentration, position sizing (20-60%), risk/reward ratio (min 2:1)
+**EFFICIENCY TIP**: If analyzing multiple symbols, use `batch_calculate_technical_indicators` instead of calling `calculate_technical_indicators` repeatedly.
 
-**SWING TRADING GUIDELINES**:
-- Timeframe: 2 weeks to 1 month
-- When EMPTY: Be selective. Require multiple confirmations (trend + volume + momentum)
-- When HOLDING: Be disciplined. Protect profits, cut losses on breakdown
-- Position sizing by conviction: HIGH (50-60%), MEDIUM (30-40%), LOW (20-25%)
+**THREE-CHECKPOINT DECISION FRAMEWORK** (all three must be evaluated):
+
+CHECK 1 — Catalyst (from `search_market_news`):
+- What recent event, news, or structural shift affects {symbol}?
+- Is the catalyst forward-looking (not yet priced in) or backward-looking (already reflected)?
+- Rate catalyst strength: STRONG (earnings beat, major policy, sector breakout) / MODERATE (analyst upgrade, sector tailwind) / WEAK (no clear catalyst) / NEGATIVE (headwinds)
+
+CHECK 2 — Technicals (from kline + indicators):
+- Trend: Is MA5 > MA20? Is price above/below key moving averages?
+- Momentum: RSI position (40-70 = healthy uptrend zone), momentum direction
+- Volume: Is volume confirming the price move? Expansion on breakout? Contraction on pullback?
+- Structure: Key support/resistance levels, chart patterns
+- Rate technicals: BULLISH / NEUTRAL / BEARISH
+
+CHECK 3 — Valuation & Macro Anchor (from price history + fundamentals + news):
+- Where is the current price relative to its 6-month range? (bottom 20% = cheap, top 20% = expensive)
+- {focus}
+- What is the macro backdrop? (risk-on vs risk-off, sector cycle position)
+- Rate valuation: ATTRACTIVE / FAIR / STRETCHED
+
+{"""**ENTRY DECISION MATRIX (for BUY/ADD — when EMPTY or adding to HOLDING)**:
+| Catalyst | Technicals | Valuation | Decision (EMPTY → BUY / HOLDING → ADD) |
+|----------|------------|-----------|----------|
+| STRONG   | BULLISH    | ATTRACTIVE| HIGH conviction (50-70%) |
+| STRONG   | BULLISH    | FAIR      | MEDIUM conviction (30-50%) |
+| STRONG   | NEUTRAL    | ATTRACTIVE| MEDIUM conviction (30-50%), wait for technical trigger |
+| MODERATE | BULLISH    | ATTRACTIVE| MEDIUM conviction (30-40%) |
+| STRONG   | BEARISH    | any       | WAIT/HOLD — catalyst not confirmed by price action |
+| WEAK     | BULLISH    | any       | WAIT/HOLD — rally without fundamental support is fragile |
+| any      | any        | STRETCHED | CAUTION — limited upside, define tight stop |
+
+**EXIT DECISION MATRIX (for REDUCE/SELL — only when HOLDING)**:
+- Catalyst deterioration (earnings miss, policy reversal): SELL (close 100%)
+- Technical breakdown (price < MA20, rising volume on decline): REDUCE 30-50%
+- Valuation stretched + momentum fading: REDUCE 25-50%, raise stop
+- Take profit: Price reached target or +20% from entry with momentum slowing: REDUCE or SELL
+
+**POSITION AWARENESS** (determine from tool calls):
+- After calling `get_portfolio_holdings`, determine if user is HOLDING or EMPTY for {symbol}.
+- If HOLDING: choose from ADD / REDUCE / SELL / HOLD only. NEVER use BUY or WAIT.
+- If EMPTY: choose from BUY / WAIT only. NEVER use ADD, REDUCE, SELL, or HOLD.""" if language == 'en' else """**建仓/加仓决策矩阵（空仓 → BUY 买入 / 持仓中 → ADD 加仓）**：
+| 催化剂 | 技术面 | 估值 | 决策 |
+|--------|--------|------|------|
+| 强     | 看涨   | 有吸引力 | 高信心（50-70%仓位）|
+| 强     | 看涨   | 合理     | 中等信心（30-50%仓位）|
+| 强     | 中性   | 有吸引力 | 中等信心（30-50%），等待技术面确认 |
+| 中等   | 看涨   | 有吸引力 | 中等信心（30-40%仓位）|
+| 强     | 看跌   | 任意     | WAIT/HOLD — 催化剂未被价格行动确认 |
+| 弱     | 看涨   | 任意     | WAIT/HOLD — 缺乏基本面支撑的上涨不可靠 |
+| 任意   | 任意   | 偏高     | 谨慎 — 上行空间有限，设置严格止损 |
+
+**减仓/平仓决策矩阵（仅在持仓时适用）**：
+- 催化剂恶化（财报不及预期、政策逆转）：SELL 平仓（清仓 100%）
+- 技术面破位（价格跌破 MA20、放量下跌）：REDUCE 减仓 30-50%
+- 估值偏高 + 动能衰减：REDUCE 减仓 25-50%，上移止损
+- 止盈：价格触及目标位或自入场以来涨幅 +20% 且动能放缓：REDUCE 减仓或 SELL 平仓
+
+**持仓状态感知**（通过工具调用确定）：
+- 调用 `get_portfolio_holdings` 后，判断用户对 {symbol} 是【持仓中】还是【空仓】。
+- 如果【持仓中】：只能从 ADD（加仓）/ REDUCE（减仓）/ SELL（平仓）/ HOLD（持有）中选择。绝不能使用 BUY 或 WAIT。
+- 如果【空仓】：只能从 BUY（买入建仓）/ WAIT（观望等待）中选择。绝不能使用 ADD、REDUCE、SELL 或 HOLD。"""}
 
 **LANGUAGE**: {lang_instruction}
+
+{SIGNAL_DEFINITIONS_ZH if language == 'zh' else SIGNAL_DEFINITIONS_EN}
 
 **OUTPUT FORMAT**: Provide your final answer as a JSON object:
 {{
     "thinking_process": [
-        "Step 1: I'll start by fetching the real-time price to understand current levels...",
-        "Step 2: Now I'll look at 3-month historical data for trend analysis...",
-        "Step 3: Technical indicators show RSI at 45, MA5 above MA20 — moderately bullish...",
-        "Step 4: Considering the user's portfolio context, this position is..."
+        "Step 1: ...",
+        "Step 2: ...",
+        "..."
     ],
-    "analysis_summary": "Comprehensive strategic summary referencing specific data from your tool calls.",
+    "analysis_summary": "...",
     "trades": [],
     "current_action": {{
-        "action": "BUY" | "SELL" | "HOLD" | "WAIT",
+        "action": "BUY" | "ADD" | "REDUCE" | "SELL" | "HOLD" | "WAIT",
         "price": <current price from tool>,
-        "quantity_percent": <20-60 for BUY, 25-100 for SELL>,
-        "reason": "Detailed reason referencing actual data from your tool calls."
+        "quantity_percent": <15-70 for BUY/ADD, 25-100 for REDUCE/SELL>,
+        "reason": "..."
     }}
 }}
 
-**IMPORTANT**: The "thinking_process" field is REQUIRED — it must capture your reasoning at EACH step (before/after each tool call). Base ALL recommendations on REAL DATA from tool calls. Return ONLY JSON.
+**IMPORTANT**:
+- "thinking_process" is REQUIRED — capture your reasoning at EACH step. Base ALL on REAL DATA from tool calls.
+- The "action" field MUST respect position state: use BUY/WAIT when empty, ADD/REDUCE/SELL/HOLD when holding.
+- Return ONLY JSON.
 """
 
         try:
             text, usage, elapsed = self._run_agent(
                 adapter, prompt, tool_executor, label="KlineAgent",
-                Symbol=symbol, Model=model_name, Asset=asset_type,
-                Position='HOLDING' if current_position else 'EMPTY'
+                Symbol=symbol, Model=model_name, Asset=asset_type
             )
 
             result = self._parse_json_response(text)
@@ -719,9 +456,12 @@ Data:
             # Extract signals from current_action
             signals = []
             current_action = result.get('current_action')
-            if current_action and current_action.get('action') in ['BUY', 'SELL']:
+            if current_action and current_action.get('action') in ['BUY', 'ADD', 'REDUCE', 'SELL']:
+                # Map action to chart signal type: BUY/ADD → BUY (green), REDUCE/SELL → SELL (red)
+                chart_type = 'BUY' if current_action['action'] in ['BUY', 'ADD'] else 'SELL'
                 signal = {
-                    "type": current_action['action'],
+                    "type": chart_type,
+                    "position_action": current_action['action'],  # Precise action for display
                     "date": datetime.now().strftime('%Y-%m-%d'),
                     "price": current_action.get('price'),
                     "reason": current_action.get('reason'),
@@ -738,29 +478,8 @@ Data:
             return result
 
         except Exception as e:
-            print(f"[KlineAgent] ❌ Failed: {e}, falling back to standard analyze")
-            # Fallback to standard analyze
-            try:
-                from app.services.data_provider import batch_fetcher
-                kline_data = batch_fetcher.get_cached_kline_data(
-                    symbol, period="3y", interval="1d",
-                    is_cn_fund=(asset_type == "FUND_CN")
-                )
-                if kline_data:
-                    fallback = self.analyze(
-                        symbol, kline_data, model_name=model_name, language=language,
-                        current_position=current_position, asset_type=asset_type,
-                        portfolio_context=portfolio_context, symbol_name=symbol_name
-                    )
-                    fallback['agent_fallback'] = True
-                    fallback['agent_error'] = str(e)
-                    fallback['tool_calls'] = tool_executor.tool_calls
-                    fallback['agent_trace'] = tool_executor.trace
-                    return fallback
-            except Exception as fallback_err:
-                print(f"[KlineAgent] Fallback also failed: {fallback_err}")
-
-            # Last resort: local strategy
+            print(f"[KlineAgent] ❌ Failed: {e}, falling back to local strategy")
+            # Fallback: local technical strategy
             enriched_data = []
             try:
                 from app.services.data_provider import batch_fetcher
@@ -770,8 +489,8 @@ Data:
                 )
                 if kline_data:
                     enriched_data = calculate_indicators(kline_data)
-            except:
-                pass
+            except Exception as fetch_err:
+                print(f"[KlineAgent] Data fetch also failed: {fetch_err}")
 
             if enriched_data:
                 result = TechnicalStrategy.analyze(
@@ -779,275 +498,22 @@ Data:
                     error_msg="AI Agent 服务暂时不可用" if language == 'zh' else "AI Agent unavailable",
                     language=language
                 )
+                result['agent_fallback'] = True
+                result['agent_error'] = str(e)
                 result['tool_calls'] = tool_executor.tool_calls
                 result['agent_trace'] = tool_executor.trace
                 return result
 
             return self._agent_error_result(str(e), tool_executor, language)
 
-    def analyze_incremental(self, symbol, kline_data, last_analyzed_date, model_name="gemini-3-flash-preview", language="zh"):
-        """
-        Analyze ONLY the new data points since last_analyzed_date.
-        Uses full history context but only outputs signals for new dates.
-        """
-        if not self.client:
-             self._configure_client()
-             
-        # Filter new data
-        # We need to provide enough context (e.g., 60 days) + new data
-        # But we only want signals for dates > last_analyzed_date
-        
-        # This implementation is tricky because the standard prompt asks for FULL history trades.
-        # To "patch" history, we can either:
-        # 1. Ask AI to analyze just the recent window and output signals for specific dates.
-        # 2. Run full analysis (as done in api.py currently) and filter.
-        
-        # Since I implemented the logic in api.py to call 'analyze' and filter, 
-        # this method might be redundant if we just reuse 'analyze'.
-        # However, for efficiency, a targeted prompt is better if the gap is small.
-        # But given 1M token context, sending full history is fine and more accurate for trends.
-        
-        # For now, we will rely on the `analyze` method to generate the full view, 
-        # and the API layer handles the persistence filtering.
-        # This avoids maintaining two different complex prompts.
-        pass
-
-
-    def recommend_stocks(self, criteria, model_name="gemini-3-flash-preview", language="zh"):
-        """
-        Recommend stocks based on criteria and live market data.
-        Uses Google Search for models that support it.
-        """
-        # Get model adapter
-        adapter = self._get_adapter(model_name)
-        if not adapter or not adapter.is_available():
-            return {"error": "API Key Unavailable", "recommendations": []}
-        
-        config = get_model_config(model_name)
-        
-        lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
-        
-        asset_type = criteria.get('asset_type', 'STOCK')
-        include_etf = criteria.get('include_etf', 'false') == 'true'
-        
-        # Asset Type Instruction
-        asset_instruction = ""
-        if asset_type == 'CRYPTO':
-            asset_instruction = """
-        **ASSET FOCUS: CRYPTOCURRENCIES**
-        - Recommend top cryptocurrencies or tokens (e.g., BTC-USD, ETH-USD, SOL-USD).
-        - Focus on On-chain activity, adoption trends, and technical breakouts.
-        - Consider market cap, liquidity, and regulatory environment.
-        - DO NOT recommend stocks or other asset types.
-        """
-        elif asset_type == 'COMMODITY':
-            asset_instruction = """
-        **ASSET FOCUS: COMMODITIES**
-        - Recommend commodities (Gold GC=F, Oil CL=F, Silver SI=F, etc.) or related ETFs/Futures.
-        - Focus on Supply/Demand imbalances, inventory levels, and Macro trends.
-        - Consider seasonal patterns, geopolitical risks, and currency impacts.
-        - DO NOT recommend stocks or other asset types.
-        """
-        elif asset_type == 'BOND':
-            asset_instruction = """
-        **ASSET FOCUS: BONDS / FIXED INCOME**
-        - Recommend Government Bonds (US Treasuries like ^TNX, ^IRX, ^TYX) or High-Grade Corporate Bond ETFs.
-        - Focus on Yield levels, Interest Rate Policy, and Economic Data.
-        - Consider duration risk, credit quality, and yield curve positioning.
-        - DO NOT recommend stocks or other asset types.
-        """
-        elif asset_type == 'FUND_CN':
-            asset_instruction = """
-        **ASSET FOCUS: CHINESE FUNDS (中国基金)**
-        - Recommend Chinese mutual funds or ETFs (e.g., 015283, 159941, 510300).
-        - Focus on fund performance, management quality, and investment themes.
-        - Consider fund type (equity, bond, hybrid), expense ratio, and historical returns.
-        - Provide 6-digit fund codes (e.g., 015283 for 恒生科技ETF联接).
-        - DO NOT recommend individual stocks, crypto, or other asset types.
-        """
-        else:
-            # Stock-specific instruction with ETF toggle
-            etf_instruction = ""
-            if include_etf:
-                etf_instruction = "\n        - You MAY include ETFs (Exchange-Traded Funds) alongside individual stocks.\n        - ETFs should be relevant to current market themes or sector opportunities."
-            else:
-                etf_instruction = "\n        - Focus ONLY on individual stocks. DO NOT recommend ETFs.\n        - Recommend specific company stocks, not index funds or ETFs."
-            
-            asset_instruction = f"""
-        **ASSET FOCUS: STOCKS (EQUITIES)**
-        - Recommend stocks from various sectors and market caps.
-        - Focus on earnings growth, valuation, and sector trends.
-        - Consider fundamental metrics like P/E, revenue growth, and profitability.
-        - DO NOT recommend crypto, commodities, or bonds.{etf_instruction}
-        """
-
-        # 处理市场选择
-        market = criteria.get('market', 'Any')
-        market_instruction = ""
-        if market == 'US':
-            market_instruction = """
-        **MARKET FOCUS: US MARKETS ONLY**
-        - Focus exclusively on US listed assets.
-        """
-        elif market == 'HK':
-            market_instruction = """
-        **MARKET FOCUS: HONG KONG MARKETS ONLY**
-        - Focus exclusively on Hong Kong listed assets.
-        """
-        elif market == 'A':
-            market_instruction = """
-        **MARKET FOCUS: A-SHARES (MAINLAND CHINA) ONLY**
-        - Focus exclusively on A-shares market.
-        """
-        else:
-            market_instruction = """
-        **MARKET FOCUS: ALL MARKETS**
-        - You can recommend assets from any major global market.
-        """
-        
-        # Get current date for prompt
-        now = datetime.now()
-        current_date = now.strftime('%Y-%m-%d')
-        current_date_full = now.strftime('%Y年%m月%d日') if language == 'zh' else now.strftime('%B %d, %Y')
-        outdated_year = now.year - 2
-        
-        search_instruction = f"""
-        1. **MANDATORY: Use built-in Web-Search tool or any other similar function to find real-time market trends, sector rotation, and breaking news affecting asset prices as of {current_date} (TODAY).
-        2. **CRITICAL**: For every recommended asset, you MUST use Search to find its **current real-time price** (or latest close as of {current_date}). Do NOT guess prices. Do NOT use prices from {outdated_year} or earlier.
-        3. **DATE VERIFICATION**: When searching for market data, ensure you are getting information from {current_date} or the most recent trading day. Reject any data that appears to be from {outdated_year} or earlier."""
-        prompt = f"""
-        You are a professional financial advisor and quantitative analyst.
-        
-        ═══════════════════════════════════════════════════════════════
-        ⚠️  CRITICAL INSTRUCTION - READ THIS FIRST ⚠️
-        ═══════════════════════════════════════════════════════════════
-        
-        📅 CURRENT DATE: {current_date} ({current_date_full})
-        ⚠️  IMPORTANT: Today is {current_date}. You MUST provide recommendations based on the LATEST market data as of {current_date}. 
-        ⚠️  DO NOT use outdated data from {outdated_year} or earlier. All prices, news, and market information MUST be current as of {current_date}.
-        
-        ASSET TYPE REQUIREMENT: {asset_type}
-        
-        You MUST recommend ONLY {asset_type} assets. 
-        
-        ❌ DO NOT recommend:
-        {self._get_forbidden_assets(asset_type)}
-        
-        ✅ ONLY recommend: {self._get_allowed_assets(asset_type)}
-        
-        If you recommend ANY asset that is NOT a {asset_type}, your response will be REJECTED.
-        
-        ═══════════════════════════════════════════════════════════════
-        
-        Task: Recommend 10 promising {asset_type} assets for purchase in the near future (next 1-4 weeks) based on market conditions as of {current_date}.
-        
-        {market_instruction}
-        {asset_instruction}
-        
-        User Criteria:
-        - Asset Type: {asset_type} (MANDATORY - DO NOT DEVIATE)
-        - Market: {criteria.get('market', 'Any (All markets)')}
-        - Capital Size: {criteria.get('capital', 'Not specified')}
-        - Risk Tolerance: {criteria.get('risk', 'Not specified')}
-        - Trading Frequency: {criteria.get('frequency', 'Not specified')}
-        
-        Instructions:
-        {search_instruction}
-        3. Analyze 10 {asset_type} assets based on current market conditions.
-        4. **VERIFY EACH RECOMMENDATION**: Before adding any asset to your list, confirm it is a {asset_type}.
-        5. **RATING SYSTEM** - Assign a recommendation level based on current market conditions:
-           - ⭐⭐⭐ (High Confidence): Strong buy signal, favorable conditions
-           - ⭐⭐ (Medium): Moderate opportunity, some risks
-           - ⭐ (Speculative): High risk, speculative play
-           - ⚠️ (Caution): Neutral/Wait, unclear direction
-           - 🔻 (Avoid): Negative outlook, recommend avoiding or selling
-           
-           **IMPORTANT**: You MUST provide exactly 10 assets, but they don't all need to be positive recommendations.
-           If market conditions are poor (bear market, black swan events, political instability), you SHOULD include
-           negative ratings (⚠️ or 🔻) to warn users about risks. This is MORE valuable than forcing positive ratings.
-        
-        6. **LANGUAGE**: {lang_instruction}
-        
-        ⚠️  FINAL REMINDER: Your recommendations MUST be 100% {asset_type} assets. No exceptions.
-        
-        Output Format (JSON):
-        {{
-            "market_overview": "Brief summary of current {asset_type} market sentiment and overall conditions.",
-            "recommendations": [
-                {{
-                    "symbol": "Ticker (e.g. {self._get_example_symbol(asset_type)})",
-                    "name": "Asset Name",
-                    "price": "Current Price (Approx)",
-                    "level": "⭐⭐⭐ or ⭐⭐ or ⭐ or ⚠️ or 🔻",
-                    "reason": "Detailed reason citing recent news, technical analysis, or risk factors. For negative ratings, explain why to avoid."
-                }}
-            ]
-        }}
-        """
-        
-        try:
-            # Start timing
-            start_time = time.time()
-            print(f"\n{'='*60}")
-            print(f"[LLM DEBUG] Starting stock recommendation")
-            print(f"  Model: {model_name}")
-            print(f"  Provider: {config.get('provider', 'unknown')}")
-            print(f"  Language: {language}")
-            print(f"  Asset Type: {asset_type}")
-            print(f"  Supports search: {True}")
-            print(f"  Criteria: market={criteria.get('market')}, asset_type={asset_type}, capital={criteria.get('capital')}, risk={criteria.get('risk')}, frequency={criteria.get('frequency')}")
-            
-            # Use unified adapter interface
-            text, usage = adapter.generate(prompt, use_search=True)
-            
-            # End timing
-            elapsed_time = time.time() - start_time
-            
-            if not text:
-                raise ValueError(f"Empty response from {model_name} (likely blocked or search-only output)")
-
-            # Robust JSON extraction using regex
-            json_match = re.search(r'\{.*\}', text, re.DOTALL)
-            if json_match:
-                text = json_match.group(0)
-            else:
-                text = text.replace('```json', '').replace('```', '').strip()
-
-            result = json.loads(text)
-            
-            # Print success log
-            print(f"[LLM DEBUG] ✅ Recommendation completed successfully")
-            print(f"  Total time: {elapsed_time:.2f}s")
-            print(f"  Recommendations: {len(result.get('recommendations', []))}")
-            print(f"  Response length: {len(text)} chars")
-            if usage:
-                print(f"  Token usage: input={usage.get('input_tokens', 'N/A')}, output={usage.get('output_tokens', 'N/A')}")
-            print(f"{'='*60}\n")
-            
-            return result
-        except Exception as e:
-            elapsed_time = time.time() - start_time if 'start_time' in locals() else 0
-            print(f"[LLM DEBUG] ❌ Recommendation failed")
-            print(f"  Total time: {elapsed_time:.2f}s")
-            print(f"  Error: {str(e)}")
-            print(f"{'='*60}\n")
-            # Fallback mock data if search fails or quota exceeded
-            return {
-                "market_overview": "Market data unavailable (Error). Showing sample data.",
-                "recommendations": [
-                    {"symbol": "MOCK", "name": "Sample Stock", "price": "100.00", "level": "⭐", "reason": f"Error: {str(e)}"}
-                ]
-            }
-
     def recommend_stocks_with_agent(self, criteria, model_name="gemini-3-flash-preview", language="zh"):
         """
         Agent-mode market recommendation using function calling.
         The AI proactively fetches real-time market data via tools to inform its picks.
-        Falls back to standard recommend_stocks() on failure.
         """
         supports, config, adapter = self._check_agent_support(model_name)
         if not supports:
-            return self.recommend_stocks(criteria, model_name=model_name, language=language)
+            raise ValueError(f"Model {model_name} does not support tool calling")
 
         asset_type = criteria.get('asset_type', 'STOCK')
         tool_executor = self._create_tool_executor(asset_type=asset_type, provider=config.get('provider'))
@@ -1058,10 +524,12 @@ Data:
         current_date = datetime.now().strftime('%Y-%m-%d')
         market = criteria.get('market', 'Any')
 
-        prompt = f"""You are a professional **{role}** and financial advisor with access to real-time market data tools AND web search.
+        prompt = f"""You are a professional **{role}** with access to real-time market data tools AND web search.
+
+{INVESTMENT_PHILOSOPHY}
 
 **DATE**: {current_date}
-**TASK**: Recommend 10 promising {asset_type} assets for purchase in the next 1-4 weeks.
+**TASK**: Recommend 10 promising {asset_type} assets for purchase in the next 2 weeks to 2 months.
 
 **CRITERIA**:
 - Asset Type: {asset_type} (MANDATORY — only recommend this type)
@@ -1074,78 +542,85 @@ Data:
 **YOUR AVAILABLE TOOLS**:
 {tool_descriptions}
 
-**⚠️ CRITICAL METHODOLOGY — "News-First, Data-Verified" (MANDATORY)**:
-You MUST follow a **top-down, news-driven** approach. Do NOT start by picking well-known blue-chip stocks and then looking for reasons to recommend them — that is "drawing the target after shooting the arrow" and produces biased, stale recommendations.
+**⚠️ CRITICAL METHODOLOGY — "Catalyst-First, Triple-Verified" (MANDATORY)**:
+You MUST follow a **top-down, catalyst-driven** approach with triple verification.
+Do NOT start by picking well-known blue-chip stocks — that is "drawing the target after shooting the arrow".
 
 **MANDATORY WORKFLOW** (follow this exact order):
-**Phase 1 — Market Intelligence Gathering (use `search_market_news` FIRST, BEFORE any price/kline tools)**:
-1. Call `search_market_news` with query: "{market} {asset_type} market news today {current_date}" — get the latest market headlines, policy changes, earnings surprises, sector rotations, and breaking news
-2. Call `search_market_news` again with query: "{market} {asset_type} hot stocks this week catalysts" — discover which specific assets are being talked about due to real catalysts (earnings beats, new contracts, policy tailwinds, sector momentum, analyst upgrades, etc.)
-3. Call `search_market_news` for sector/thematic trends, e.g., query: "AI stocks rally semiconductor EV sector news {current_date}" — identify 2-3 hot themes/sectors
 
-**Phase 2 — Candidate Identification (based on Phase 1 findings)**:
-4. From the news and trends discovered in Phase 1, compile a list of 15-20 candidate symbols that were **specifically mentioned in recent news** or belong to the hot sectors/themes you identified
-5. Use `batch_get_realtime_prices` to check current prices for these news-driven candidates
+**Phase 1 — Catalyst Discovery (use `search_market_news` FIRST)**:
+1. Call `search_market_news`: "{market} {asset_type} market news today {current_date}" — headlines, policy, earnings, sector rotation
+2. Call `search_market_news`: "{market} {asset_type} hot stocks this week catalysts" — specific assets with real catalysts
+3. Call `search_market_news`: sector/thematic trends, e.g., "AI semiconductor EV sector news {current_date}" — identify 2-3 hot themes
 
-**Phase 3 — Technical Verification (validate the news-driven picks)**:
-6. Use `batch_get_kline_data` to verify that the top candidates show favorable price trends (not just news hype)
-7. Use `calculate_technical_indicators` for your top 3-5 picks to confirm entry timing
-8. Use `get_exchange_rate` if recommending non-USD assets
+**Phase 2 — Candidate Screening (based on Phase 1)**:
+4. Compile 15-20 candidate symbols **specifically mentioned in news** or in hot sectors discovered
+5. Use `batch_get_realtime_prices` to check current prices
 
-**ANTI-PATTERN WARNING**: If you find yourself thinking "let me check some popular/well-known stocks like [blue chips]" WITHOUT first calling `search_market_news` — STOP. Go back to Phase 1. Every recommended asset MUST trace back to a specific recent catalyst or news-driven thesis discovered through `search_market_news`.
+**Phase 3 — Technical + Valuation Verification**:
+6. Use `batch_get_kline_data` (period="6mo") to assess trend AND price position within range
+7. Use `batch_calculate_technical_indicators` for top candidates to confirm entry timing (MUCH more efficient than calling calculate_technical_indicators repeatedly)
+8. For each candidate, evaluate:
+   - **Technical score**: trend direction, volume confirmation, momentum
+   - **Valuation position**: where is price vs 6-month high/low? (bottom 30% = attractive, top 20% = stretched)
+   - **Catalyst quality**: is it forward-looking or already priced in?
 
-**EFFICIENCY TIP**: Prefer `batch_get_realtime_prices` (up to 20 symbols) and `batch_get_kline_data` (up to 10 symbols) over single-symbol tools. This saves time and tool call budget.
+**ANTI-PATTERN WARNING**: Every recommended asset MUST trace back to a specific recent catalyst discovered through `search_market_news`. "Well-known company" is NOT a reason.
 
-**SYMBOL FORMAT GUIDE** (CRITICAL — use exact format or data fetch will fail):
-- US stocks: ticker only → AAPL, TSLA, MSFT, NVDA
-- HK stocks: 4-digit code + '.HK' → 0700.HK (Tencent), 9988.HK (Alibaba), 0005.HK (HSBC). ALWAYS use exactly 4 digits, pad with leading zeros if needed (e.g. 0005.HK, NOT 5.HK or 00005.HK)
-- A-shares Shanghai: 6-digit code + '.SS' → 600519.SS (Moutai), 601318.SS (Ping An)
-- A-shares Shenzhen: 6-digit code + '.SZ' → 000858.SZ (Wuliangye), 300750.SZ (CATL)
+**EFFICIENCY TIP**: Use batch tools — `batch_get_realtime_prices` (up to 20), `batch_get_kline_data` (up to 10), and `batch_calculate_technical_indicators` (up to 10).
+
+**SYMBOL FORMAT GUIDE** (use exact format or data fetch will fail):
+- US stocks: AAPL, TSLA, MSFT, NVDA
+- HK stocks: 4-digit + '.HK' → 0700.HK, 9988.HK (always 4 digits, pad zeros)
+- A-shares Shanghai: 6-digit + '.SS' → 600519.SS, 601318.SS
+- A-shares Shenzhen: 6-digit + '.SZ' → 000858.SZ, 300750.SZ
 - Crypto: symbol + '-USD' → BTC-USD, ETH-USD
-- Commodities: Yahoo Finance format → GC=F (gold), CL=F (crude oil), SI=F (silver)
-- Chinese funds: 6-digit code only → 015283, 000001
+- Commodities: GC=F (gold), CL=F (oil), SI=F (silver)
+- Chinese funds: 6-digit code → 015283, 000001
 
-**ANALYSIS FOCUS**: {focus}
+**MACRO & ASSET FOCUS**: {focus}
 
-**RATING SYSTEM**:
-- ⭐⭐⭐ (High Confidence): Strong catalyst + confirmed bullish technicals + favorable macro
-- ⭐⭐ (Medium): Solid catalyst but mixed technicals, or strong technicals but uncertain catalyst timeline
-- ⭐ (Speculative): Early-stage catalyst, high risk/reward, unconfirmed news
-- ⚠️ (Caution): Neutral/Wait — catalyst priced in or technicals unfavorable
-- 🔻 (Avoid): Negative news, deteriorating fundamentals
+{"""**RATING SYSTEM** (based on triple-confirmation strength):
+- ⭐⭐⭐ (High Conviction): Strong catalyst (not priced in) + bullish technicals + attractive valuation position → high win-rate AND high reward potential
+- ⭐⭐ (Medium): Two of three confirmations strong, one neutral → reasonable risk/reward
+- ⭐ (Speculative): Strong catalyst but early-stage or technically unconfirmed → high reward potential but lower win-rate
+- ⚠️ (Caution): Catalyst may be priced in, or valuation stretched, or technicals unfavorable
+- 🔻 (Avoid): Negative catalyst, bearish technicals, or valuation trap""" if language == 'en' else """**评级系统**（基于三重确认强度）：
+- ⭐⭐⭐（高信心）：强催化剂（尚未被定价）+ 技术面看涨 + 估值有吸引力 → 高胜率且高赔率
+- ⭐⭐（中等）：三项中两项强势、一项中性 → 风险回报合理
+- ⭐（投机）：催化剂强但处于早期阶段或技术面尚未确认 → 高赔率但胜率偏低
+- ⚠️（谨慎）：催化剂可能已被定价，或估值偏高，或技术面不利
+- 🔻（回避）：负面催化剂、技术面看跌、或估值陷阱"""}
 
 **LANGUAGE**: {lang_instruction}
 
 **OUTPUT FORMAT** (JSON):
 {{
     "thinking_process": [
-        "Step 1: Calling search_market_news to find latest {market} market news and catalysts...",
-        "Step 2: Found these key themes from news: [theme1], [theme2]...",
-        "Step 3: Identified candidate stocks mentioned in news: [list]...",
-        "Step 4: Verifying prices and trends for news-driven candidates...",
-        "Step 5: Technical analysis confirms/rejects the following picks..."
+        "Step 1: News search found these key catalysts and themes: [specifics]...",
+        "Step 2: Identified candidate assets from news: [list with catalyst for each]...",
+        "Step 3: Price screening — current prices and 6mo range positions...",
+        "Step 4: Technical verification — trend, volume, momentum assessment...",
+        "Step 5: Triple-check summary: which candidates pass Catalyst + Technicals + Valuation..."
     ],
-    "market_overview": "A comprehensive 3-5 paragraph market analysis covering: (1) Current market trend and sentiment — cite specific news headlines or events from your search; (2) Key drivers — recent policy changes, earnings season highlights, sector rotation based on actual news; (3) Risk factors and headwinds discovered from news; (4) Investment strategy recommendation grounded in the current news cycle. MUST reference specific news events, dates, and data points.",
+    "market_overview": "3-5 paragraph analysis: (1) Market regime and macro backdrop — cite news; (2) Key catalysts and sector themes — specific events and dates; (3) Risk factors and headwinds; (4) Strategy recommendation for this environment. MUST reference specific news. 200+ words.",
     "recommendations": [
         {{
             "symbol": "Ticker",
             "name": "Asset Name",
             "price": "Current Price (from tool)",
-            "level": "⭐⭐⭐ or ⭐⭐ or ⭐ or ⚠️ or 🔻",
-            "reason": "A thorough 3-5 sentence analysis that MUST include: (1) The specific NEWS CATALYST that brought this asset to attention — cite the actual news event, date, or development discovered during search; (2) Technical validation — cite price action, trend data, or technical signals from tools; (3) Clear explanation for the confidence level — how strong is the catalyst, is it already priced in, what is the risk/reward; (4) Specific risk factors and what could invalidate this thesis."
+            "level": "⭐⭐⭐ | ⭐⭐ | ⭐ | ⚠️ | 🔻",
+            "reason": "MUST include all three dimensions (80+ words): (1) CATALYST — the specific news event/development that surfaced this pick, with date; (2) TECHNICALS — trend direction, key levels, momentum status from tool data; (3) VALUATION — price position in range, upside potential, risk/reward estimate. End with: Catalyst=[STRONG/MODERATE/WEAK], Technicals=[BULLISH/NEUTRAL/BEARISH], Valuation=[ATTRACTIVE/FAIR/STRETCHED]."
         }}
     ]
 }}
 
 **CONTENT QUALITY REQUIREMENTS**:
-- "market_overview" MUST be substantial (200+ words) and grounded in actual news from your search
-- Each "reason" MUST be detailed (80+ words), cite actual news catalysts AND technical data
-- Each "reason" MUST explicitly explain: "I found this stock because [news from search_market_news], and technicals confirm/support because [data from tools]"
-- Each "reason" MUST justify the confidence level with evidence
-- Do NOT recommend stocks purely based on "it's a well-known company" — every pick needs a RECENT, SPECIFIC catalyst
-- Do NOT use vague language like "looks promising" — use specific data points and news references
+- Every "reason" must explicitly state all three dimensions: catalyst + technicals + valuation
+- No vague language — use specific prices, percentages, dates, and news references
+- "market_overview" must be grounded in actual search results, not generic commentary
 
-**IMPORTANT**: The "thinking_process" field is REQUIRED — capture your reasoning at each step. Recommendations MUST be driven by news/catalysts discovered through `search_market_news`, then validated by technical data from tools. Return ONLY JSON.
+**IMPORTANT**: "thinking_process" is REQUIRED. Return ONLY JSON.
 """
 
         try:
@@ -1163,160 +638,14 @@ You MUST follow a **top-down, news-driven** approach. Do NOT start by picking we
             return result
 
         except Exception as e:
-            print(f"[RecommendAgent] ❌ Failed: {e}, falling back to standard recommend_stocks")
-            fallback = self.recommend_stocks(criteria, model_name=model_name, language=language)
-            fallback['agent_fallback'] = True
-            fallback['agent_error'] = str(e)
-            fallback['tool_calls'] = tool_executor.tool_calls
-            fallback['agent_trace'] = tool_executor.trace
-            return fallback
-
-    def analyze_portfolio_item(self, holding_data, model_name="gemini-3-flash-preview", language="zh"):
-        """
-        Analyze a specific holding and provide advice (Buy/Sell/Hold).
-        """
-        # Get model adapter
-        adapter = self._get_adapter(model_name)
-        if not adapter or not adapter.is_available():
-            return {"error": "API Key Unavailable", "symbol": holding_data.get('symbol')}
-        
-        config = get_model_config(model_name)
-        supports_search = config.get('supports_search', False)
-            
-        symbol = holding_data.get('symbol')
-        avg_price = holding_data.get('avg_price', 'Unknown')
-        percentage_val = holding_data.get('percentage')
-        percentage_str = f"{percentage_val}%" if percentage_val is not None else "Unknown"
-        asset_type = holding_data.get('asset_type', 'STOCK')
-        
-        lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
-        
-        # Asset-specific analysis guidance
-        asset_guidance = ""
-        if asset_type == "CRYPTO":
-            asset_guidance = """
-        **CRYPTO ANALYSIS GUIDANCE**:
-        - Focus on on-chain metrics, adoption trends, and regulatory news.
-        - Consider market sentiment, whale movements, and exchange flows.
-        - Avoid traditional equity metrics (P/E, dividends, etc.).
-        - Assess volatility risk and correlation with Bitcoin.
-        """
-        elif asset_type == "COMMODITY":
-            asset_guidance = """
-        **COMMODITY ANALYSIS GUIDANCE**:
-        - Focus on supply/demand fundamentals and inventory levels.
-        - Consider geopolitical risks, weather patterns, and production data.
-        - Analyze dollar strength (DXY) impact on commodity prices.
-        - Assess seasonal trends and storage costs.
-        """
-        elif asset_type == "BOND":
-            asset_guidance = """
-        **BOND ANALYSIS GUIDANCE**:
-        - Focus on interest rate expectations and central bank policy.
-        - Consider inflation data (CPI/PPI) and economic growth indicators.
-        - Analyze yield curve positioning and duration risk.
-        - Assess credit quality and default risk (if corporate bonds).
-        """
-        else:  # STOCK
-            asset_guidance = """
-        **STOCK ANALYSIS GUIDANCE**:
-        - Focus on earnings growth, valuation metrics (P/E, P/S), and profitability.
-        - Consider sector trends, competitive positioning, and management quality.
-        - Analyze dividend yield and payout sustainability (if applicable).
-        - Assess technical levels and institutional ownership.
-        """
-        
-        search_instruction = ""
-        if supports_search:
-            search_instruction = f"1. **Use Google Search or Web Search** to check the latest price and news for this {asset_type} ({symbol})."
-        else:
-            search_instruction = f"1. Based on your knowledge, analyze the current situation for this {asset_type} ({symbol})."
-        
-        prompt = f"""
-        You are a portfolio manager analyzing a client's {asset_type} holding.
-        
-        **ASSET TYPE**: {asset_type}
-        **IMPORTANT**: Use {asset_type}-specific analysis framework. Do not apply stock-specific metrics to non-stock assets.
-        
-        Holding Details:
-        - Symbol: {symbol}
-        - Asset Type: {asset_type}
-        - Average Buy Price: {avg_price}
-        - Portfolio Weight: {percentage_str}
-        
-        {asset_guidance}
-        
-        Instructions:
-        {search_instruction}
-        2. Analyze if they should Hold, Buy More, or Sell based on:
-           - Current price vs average buy price
-           - Market outlook for this {asset_type}
-           - Risk/reward at current levels
-           - Portfolio weight appropriateness
-        3. Provide a rating: "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell".
-        4. **LANGUAGE**: {lang_instruction}
-        
-        Output Format (JSON):
-        {{
-            "symbol": "{symbol}",
-            "current_price": "Latest price found",
-            "rating": "Hold",
-            "action": "Detailed advice (e.g. 'Hold for recovery', 'Cut losses', 'Take profit').",
-            "analysis": "Reasoning based on news and valuation."
-        }}
-        """
-        
-        try:
-            # Start timing
-            start_time = time.time()
-            print(f"\n{'='*60}")
-            print(f"[LLM DEBUG] Starting portfolio diagnosis")
-            print(f"  Model: {model_name}")
-            print(f"  Provider: {config.get('provider', 'unknown')}")
-            print(f"  Language: {language}")
-            print(f"  Symbol: {symbol}")
-            print(f"  Avg Price: {avg_price}, Weight: {percentage_str}")
-            print(f"  Supports search: {supports_search}")
-            
-            # Use unified adapter interface
-            text, usage = adapter.generate(prompt, use_search=supports_search)
-            
-            # End timing
-            elapsed_time = time.time() - start_time
-            
-            if not text:
-                raise ValueError(f"Empty response from {model_name}")
-
-            # Robust JSON extraction
-            json_match = re.search(r'\{.*\}', text, re.DOTALL)
-            if json_match:
-                text = json_match.group(0)
-            else:
-                text = text.replace('```json', '').replace('```', '').strip()
-
-            result = json.loads(text)
-            
-            # Print success log
-            print(f"[LLM DEBUG] ✅ Portfolio diagnosis completed successfully")
-            print(f"  Total time: {elapsed_time:.2f}s")
-            print(f"  Rating: {result.get('rating', 'N/A')}")
-            print(f"  Response length: {len(text)} chars")
-            if usage:
-                print(f"  Token usage: input={usage.get('input_tokens', 'N/A')}, output={usage.get('output_tokens', 'N/A')}")
-            print(f"{'='*60}\n")
-            
-            return result
-        except Exception as e:
-            elapsed_time = time.time() - start_time if 'start_time' in locals() else 0
-            print(f"[LLM DEBUG] ❌ Portfolio diagnosis failed")
-            print(f"  Total time: {elapsed_time:.2f}s")
-            print(f"  Error: {str(e)}")
-            print(f"{'='*60}\n")
+            print(f"[RecommendAgent] ❌ Failed: {e}")
             return {
-                "symbol": symbol,
-                "rating": "Unknown",
-                "action": "Error analyzing position.",
-                "analysis": str(e)
+                "market_overview": f"Analysis failed: {str(e)}",
+                "recommendations": [],
+                "agent_fallback": True,
+                "agent_error": str(e),
+                "tool_calls": tool_executor.tool_calls,
+                "agent_trace": tool_executor.trace
             }
 
     def analyze_portfolio_item_with_agent(self, holding_data, model_name="gemini-3-flash-preview",
@@ -1324,14 +653,13 @@ You MUST follow a **top-down, news-driven** approach. Do NOT start by picking we
         """
         Agent-mode single-holding diagnosis using function calling.
         The AI fetches real-time data for the symbol before making its recommendation.
-        Falls back to standard analyze_portfolio_item() on failure.
         """
         symbol = holding_data.get('symbol', 'UNKNOWN')
         asset_type = holding_data.get('asset_type', 'STOCK')
 
         supports, config, adapter = self._check_agent_support(model_name)
         if not supports:
-            return self.analyze_portfolio_item(holding_data, model_name=model_name, language=language)
+            raise ValueError(f"Model {model_name} does not support tool calling")
 
         tool_executor = self._create_tool_executor(user_id, symbol, asset_type, provider=config.get('provider'))
         lang_instruction = "Respond in Chinese (Simplified)." if language == 'zh' else "Respond in English."
@@ -1342,9 +670,11 @@ You MUST follow a **top-down, news-driven** approach. Do NOT start by picking we
         percentage = holding_data.get('percentage')
         percentage_str = f"{percentage}%" if percentage is not None else "Unknown"
 
-        prompt = f"""You are a professional **{role}** and portfolio manager with access to real-time market data tools.
+        prompt = f"""You are a professional **{role}** with access to real-time market data tools.
 
-**TASK**: Analyze a client's {asset_type} holding and provide advice.
+{INVESTMENT_PHILOSOPHY}
+
+**TASK**: Evaluate a client's existing {asset_type} holding and advise: HOLD, SELL (full/partial), or BUY MORE.
 
 **HOLDING DETAILS**:
 - Symbol: {symbol}
@@ -1356,36 +686,104 @@ You MUST follow a **top-down, news-driven** approach. Do NOT start by picking we
 {tool_descriptions}
 
 **ANALYSIS WORKFLOW**:
-1. Call `get_realtime_price` to get the current price of {symbol}
-2. Call `get_kline_data` (period="1mo") to see recent price action
-3. Call `calculate_technical_indicators` to assess momentum and trend
-4. Call `get_portfolio_holdings` to see the full portfolio context
-5. If relevant, call `get_transaction_history` for {symbol}
+1. Call `search_market_news` to find recent news and catalysts for {symbol}
+2. Call `get_realtime_price` to get current price of {symbol}
+3. Call `get_kline_data` (period="6mo") to see price history and determine range position
+4. Call `calculate_technical_indicators` to assess trend and momentum
+5. Call `get_portfolio_holdings` to see full portfolio context and concentration risk
+6. If relevant, call `get_transaction_history` for {symbol}
 
-**EVALUATION CRITERIA** (use {asset_name}-specific metrics — {focus}):
-- Current price vs average buy price (P&L assessment)
-- Market outlook and technical momentum
-- Risk/reward at current levels
-- Portfolio weight appropriateness
+{"""**THREE-CHECKPOINT EVALUATION FOR EXISTING POSITIONS**:
+
+CHECK 1 — Catalyst Status:
+- Has the original investment thesis (catalyst) played out, or is it still unfolding?
+- Any NEW catalysts (positive or negative) since purchase?
+- Is there catalyst deterioration (earnings miss, policy reversal, competitive threat)?
+- Rate: POSITIVE (thesis intact + new tailwinds) / NEUTRAL (thesis intact, no change) / NEGATIVE (thesis broken or headwinds)
+
+CHECK 2 — Technical Health:
+- Is the trend still intact? (Price above key MAs? Momentum direction?)
+- Are there signs of distribution (price up on declining volume)?
+- Key support levels: where does the thesis get invalidated?
+- Rate: HEALTHY (uptrend intact) / WEAKENING (mixed signals) / DETERIORATING (breakdown imminent)
+
+CHECK 3 — Valuation & P&L Context:
+- Current price vs avg buy price: P&L status
+- Current price position in 6-month range: is it stretched or has room to run?
+- Risk/reward from current level: is asymmetry still favorable?
+- Portfolio weight: is it appropriate given current conviction level?
+- Rate: FAVORABLE (good risk/reward, room to run) / FAIR (balanced) / UNFAVORABLE (stretched, limited upside)
+
+**DECISION MATRIX FOR HOLDINGS** (IMPORTANT: user IS holding this asset — NEVER use BUY or WAIT):
+| Catalyst Status | Technical Health | Valuation | Decision |
+|----------------|-----------------|-----------|----------|
+| POSITIVE       | HEALTHY         | FAVORABLE | ADD — add to position (20-40%) |
+| POSITIVE       | HEALTHY         | FAIR      | ADD (small, 10-20%) or HOLD |
+| POSITIVE       | WEAKENING       | any       | HOLD — tighten stop, watch closely |
+| NEUTRAL        | HEALTHY         | FAVORABLE | HOLD — ride the trend |
+| NEUTRAL        | WEAKENING       | UNFAVORABLE| REDUCE 30-50% — reduce risk |
+| NEGATIVE       | any             | any       | SELL (close 100%) — thesis broken |
+| any            | DETERIORATING   | UNFAVORABLE| SELL (close 100%) or REDUCE (50-75%) — protect capital |""" if language == 'en' else """**持仓三维评估体系**：
+
+检查点 1 — 催化剂状态：
+- 最初的投资逻辑（催化剂）是否已兑现，还是仍在演绎中？
+- 买入后是否出现了新的催化剂（正面或负面）？
+- 是否存在催化剂恶化（财报不及预期、政策逆转、竞争威胁）？
+- 评级：积极（逻辑完好 + 新利好）/ 中性（逻辑完好，无变化）/ 消极（逻辑破坏或遇到逆风）
+
+检查点 2 — 技术面健康度：
+- 趋势是否仍然完好？（价格是否在关键均线上方？动能方向如何？）
+- 是否有出货迹象（价格上涨但成交量萎缩）？
+- 关键支撑位在哪里：跌破何处意味着逻辑失效？
+- 评级：健康（上升趋势完好）/ 走弱（信号混乱）/ 恶化（即将破位）
+
+检查点 3 — 估值与盈亏：
+- 当前价格 vs 平均买入价格：盈亏状况
+- 当前价格在 6 个月区间中的位置：是偏高还是有空间？
+- 当前水平的风险收益比：非对称性是否仍有利？
+- 持仓权重：在当前信心水平下，权重是否合适？
+- 评级：有利（风险回报好，有上涨空间）/ 合理（平衡）/ 不利（偏高，上行空间有限）
+
+**持仓决策矩阵**（重要：用户正在持有该资产 — 绝不能使用 BUY 或 WAIT）：
+| 催化剂状态 | 技术面健康度 | 估值 | 决策 |
+|-----------|------------|------|------|
+| 积极 | 健康 | 有利 | ADD 加仓（20-40%）|
+| 积极 | 健康 | 合理 | ADD 小幅加仓（10-20%）或 HOLD 持有 |
+| 积极 | 走弱 | 任意 | HOLD 持有 — 收紧止损，密切关注 |
+| 中性 | 健康 | 有利 | HOLD 持有 — 继续持有顺势而为 |
+| 中性 | 走弱 | 不利 | REDUCE 减仓 30-50% — 降低风险 |
+| 消极 | 任意 | 任意 | SELL 平仓（清仓 100%）— 投资逻辑已破坏 |
+| 任意 | 恶化 | 不利 | SELL 平仓 或 REDUCE 减仓（50-75%）— 保护本金 |"""}
 
 **LANGUAGE**: {lang_instruction}
 
 **OUTPUT FORMAT** (JSON):
 {{
     "thinking_process": [
-        "Step 1: Fetching current price to compare with average buy price...",
-        "Step 2: Recent trend data shows...",
-        "Step 3: Technical indicators suggest...",
-        "Step 4: Considering portfolio weight and risk, my recommendation is..."
+        "Step 1: News search — catalyst status for {symbol}: [findings]... Rating: POSITIVE/NEUTRAL/NEGATIVE",
+        "Step 2: Current price X vs avg buy price {avg_price} → P&L: X%",
+        "Step 3: 6mo range [low-high], current at Xth percentile → valuation position",
+        "Step 4: Technicals — MA alignment, RSI, momentum → Rating: HEALTHY/WEAKENING/DETERIORATING",
+        "Step 5: Portfolio weight {percentage_str} — appropriate given conviction? Concentration risk?",
+        "Step 6: Decision matrix → Catalyst(X) + Technicals(X) + Valuation(X) = [rating and action]"
     ],
     "symbol": "{symbol}",
     "current_price": "<from get_realtime_price>",
     "rating": "Strong Buy | Buy | Hold | Sell | Strong Sell",
-    "action": "Detailed advice referencing real data from your tool calls.",
-    "analysis": "Reasoning based on real-time data, technicals, and market context."
+    "current_action": {{
+        "action": "ADD" | "REDUCE" | "SELL" | "HOLD",
+        "price": <current price from tool>,
+        "quantity_percent": <10-40 for ADD, 25-100 for REDUCE/SELL>,
+        "reason": "..."
+    }},
+    "action": "Specific advice with position sizing (for backward compatibility).",
+    "analysis": "Comprehensive reasoning integrating all three checkpoints with data from tool calls. Include invalidation level (price where thesis breaks) and target (if holding/buying)."
 }}
 
-**IMPORTANT**: The "thinking_process" field is REQUIRED — capture your reasoning at each step. Base ALL analysis on REAL DATA from tool calls. Return ONLY JSON.
+**IMPORTANT**:
+- "thinking_process" is REQUIRED — show evaluation of each checkpoint. Base ALL on REAL DATA from tool calls.
+- The "action" in "current_action" MUST be one of: ADD, REDUCE, SELL, HOLD. NEVER use BUY or WAIT (user is already holding).
+- Return ONLY JSON.
 """
 
         try:
@@ -1402,13 +800,17 @@ You MUST follow a **top-down, news-driven** approach. Do NOT start by picking we
             return result
 
         except Exception as e:
-            print(f"[DiagnosisAgent] ❌ Failed: {e}, falling back to standard analyze_portfolio_item")
-            fallback = self.analyze_portfolio_item(holding_data, model_name=model_name, language=language)
-            fallback['agent_fallback'] = True
-            fallback['agent_error'] = str(e)
-            fallback['tool_calls'] = tool_executor.tool_calls
-            fallback['agent_trace'] = tool_executor.trace
-            return fallback
+            print(f"[DiagnosisAgent] ❌ Failed: {e}")
+            return {
+                "symbol": symbol,
+                "rating": "Unknown",
+                "action": "Error analyzing position.",
+                "analysis": str(e),
+                "agent_fallback": True,
+                "agent_error": str(e),
+                "tool_calls": tool_executor.tool_calls,
+                "agent_trace": tool_executor.trace
+            }
 
     def analyze_full_portfolio(self, portfolios_data, model_name="gemini-3-flash-preview", language="zh"):
         """
@@ -1510,8 +912,9 @@ You MUST follow a **top-down, news-driven** approach. Do NOT start by picking we
         else:
             search_instruction = "1. Based on your knowledge, analyze the current market status of these assets. Note: Asset names may not be accurate without search capability."
         
-        prompt = f"""
-You are an experienced investment master with decades of experience and deep market insight. A client has shown you their complete investment portfolio. Please act as a professional investment advisor to conduct a comprehensive analysis and evaluation of the entire holding.
+        prompt = f"""You are a senior portfolio strategist conducting a comprehensive portfolio review.
+
+{INVESTMENT_PHILOSOPHY}
 
 {portfolio_summary}
 
@@ -1528,40 +931,56 @@ You are an experienced investment master with decades of experience and deep mar
    - Different currencies have been converted to USD for accurate comparison
    - Use these weights as-is; they already account for exchange rates
 
-4. Evaluate comprehensively from the following dimensions:
-   - **Asset Allocation**: Evaluate if the allocation across different asset types is reasonable, or if it's too concentrated/diversified.
-   - **Risk Assessment**: Analyze the overall risk level, including market risk, concentration risk, liquidity risk, etc.
-   - **Performance**: Evaluate current P&L, identifying which positions are performing well and which need attention.
-   - **Market Adaptability**: Assess the portfolio's adaptability in the context of the current macro environment and market trends.
-   - **Optimization Suggestions**: Provide specific adjustment suggestions, including Buy More, Sell, Hold, or Close positions.
+4. **THREE-DIMENSIONAL PORTFOLIO EVALUATION**:
 
-5. Provide an Overall Rating:
-   - "Excellent": Reasonable allocation, controlled risk, good returns.
-   - "Good": Overall good, but room for improvement.
-   - "Fair": Obvious issues, needs adjustment.
-   - "Poor": Unreasonable allocation, high risk.
-   - "Critical": Serious issues, needs immediate adjustment.
+   **Dimension 1 — Catalyst Health Check** (for each position):
+   - Does each position still have an active, forward-looking catalyst?
+   - Are there NEW catalysts (positive or negative) that change the thesis?
+   - Which positions have "dead money" risk (no catalyst, sideways drift)?
 
-6. **Language Requirement**: {lang_instruction}
+   **Dimension 2 — Technical Portfolio Heat Map**:
+   - Which positions are in healthy uptrends (above key MAs, good momentum)?
+   - Which show technical deterioration (breaking support, fading momentum)?
+   - Overall portfolio momentum: is the portfolio trending up, sideways, or down?
+
+   **Dimension 3 — Allocation & Risk Architecture**:
+   - **Concentration risk**: Any single position > 30%? Any sector > 50%?
+   - **Correlation risk**: Are positions correlated (e.g., all tech, all China)?
+   - **P&L asymmetry**: Are winners getting bigger and losers getting trimmed, or the reverse?
+   - **Cash readiness**: Is the portfolio positioned to act on new opportunities?
+   - **Macro alignment**: Does the portfolio tilt match the current macro regime?
+
+5. **ACTIONABLE RECOMMENDATIONS** (for each position, use the Decision Matrix from Investment Philosophy):
+   - For each position, state: Catalyst=[POSITIVE/NEUTRAL/NEGATIVE], Technicals=[HEALTHY/WEAKENING/DETERIORATING], Valuation=[FAVORABLE/FAIR/UNFAVORABLE]
+   - Then recommend: ADD (加仓) / HOLD (持有) / REDUCE (减仓) / SELL (平仓) — with specific reasoning
+
+6. **Overall Rating**:
+   - "Excellent": Balanced allocation, active catalysts, good risk/reward, macro-aligned.
+   - "Good": Overall solid, minor adjustments needed.
+   - "Fair": Obvious issues — concentration, dead money, or macro misalignment.
+   - "Poor": Significant risk — high concentration, deteriorating positions, no catalysts.
+   - "Critical": Immediate action needed — capital at risk.
+
+7. **Language Requirement**: {lang_instruction}
 
 **Output Format (JSON):**
 {{
     "overall_rating": "Good",
     "total_score": 75,
     "risk_level": "Medium",
-    "asset_allocation_analysis": "Analysis of asset allocation...",
-    "performance_analysis": "Analysis of performance...",
-    "risk_analysis": "Risk assessment...",
-    "market_outlook": "Market outlook...",
+    "asset_allocation_analysis": "Detailed analysis of allocation, concentration, correlation, and macro alignment.",
+    "performance_analysis": "Analysis of P&L, which positions are performing and why (catalyst + technical status).",
+    "risk_analysis": "Concentration risk, correlation risk, catalyst health, technical deterioration signals.",
+    "market_outlook": "Current macro regime assessment and how the portfolio is positioned for it.",
     "recommendations": [
         {{
             "symbol": "Symbol (e.g., 015283)",
-            "asset_name": "REAL asset name found via search (e.g., 恒生科技ETF联接)",
-            "action": "Buy More/Sell/Hold/Close",
-            "reason": "Specific reason based on actual asset information"
+            "asset_name": "REAL asset name found via search",
+            "action": "ADD / HOLD / REDUCE / SELL",
+            "reason": "Catalyst=[X], Technicals=[X], Valuation=[X] → [specific action rationale with data]"
         }}
     ],
-    "summary": "Overall evaluation and core suggestions..."
+    "summary": "Overall evaluation: what's working, what's not, and the top 2-3 priority actions to take NOW."
 }}
 """
         

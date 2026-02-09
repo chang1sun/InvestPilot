@@ -303,14 +303,9 @@ def recommend():
             db.session.delete(cached)
             db.session.commit()
     
-    # 没有缓存，调用 AI 生成推荐 — 智能选择 Agent / Standard 模式
+    # 没有缓存，调用 AI 生成推荐（Agent 模式）
     print(f"[Recommend] No cache found, calling AI for {today}")
-    from app.services.model_config import get_model_config as _get_mc
-    _mc = _get_mc(model_name)
-    if _mc and _mc.get('supports_tools', False):
-        result = ai_analyzer.recommend_stocks_with_agent(criteria, model_name=model_name, language=language)
-    else:
-        result = ai_analyzer.recommend_stocks(criteria, model_name=model_name, language=language)
+    result = ai_analyzer.recommend_stocks_with_agent(criteria, model_name=model_name, language=language)
     
     # 保存到缓存（使用 upsert 模式：如果已存在则更新，否则插入）
     try:
@@ -352,9 +347,7 @@ def portfolio_advice():
     model_name = data.get('model', 'gemini-3-flash-preview')
     language = data.get('language', 'zh')
     
-    result = ai_analyzer.analyze_portfolio_item(data, model_name=model_name, language=language)
-    # Note: Single-item diagnosis via this sync endpoint doesn't use agent mode.
-    # For agent mode, use the async task endpoint which routes through task_service.
+    result = ai_analyzer.analyze_portfolio_item_with_agent(data, model_name=model_name, language=language)
     return jsonify(result)
 
 @api_bp.route('/translate', methods=['POST'])
@@ -448,12 +441,10 @@ def analyze():
     # Each model maintains its own separate trading history.
     
     latest_analyzed_date = get_analysis_status(symbol, model_name)
-    current_position_state = get_current_position(symbol, model_name)
     
-    # Get user information and portfolio context
+    # Get user information for agent mode
     user = User.query.filter_by(username='default_user').first()
     user_id = user.id if user else None
-    portfolio_context = get_user_portfolio_context(user_id, symbol, asset_type) if user_id else None
     
     analysis_result = {
         "analysis_summary": "AI Analysis based on historical data.",
@@ -476,8 +467,7 @@ def analyze():
             symbol, 
             kline_data, 
             model_name=model_name, 
-            language=language,
-            portfolio_context=portfolio_context
+            language=language
         )
         return jsonify({
             'symbol': symbol,
@@ -493,19 +483,16 @@ def analyze():
     
     if not latest_analyzed_date:
         print(f"[{symbol}] No history found. Running full initialization...")
-        # Run full analysis
-        # We use the existing 'analyze' method which generates a full report
-        # But we need to parse it into signals and save to DB
-        full_analysis = ai_analyzer.analyze(
+        # Agent mode: AI fetches its own data via tool calls
+        full_analysis = ai_analyzer.analyze_with_agent(
             symbol, 
-            kline_data, 
             model_name=model_name, 
             language=language,
-            current_position=current_position_state,
-            portfolio_context=portfolio_context
+            asset_type=asset_type,
+            user_id=user_id
         )
         
-        if full_analysis.get('source') == 'ai_model':
+        if full_analysis.get('source') == 'ai_agent':
             # AI 分析成功，保存信号到 DB（按模型分开存储）
             for sig in full_analysis.get('signals', []):
                 try:
@@ -556,24 +543,16 @@ def analyze():
         
         if latest_market_date > latest_analyzed_date:
             print(f"[{symbol}] Incremental update needed.")
-            # For the purpose of this task, we will re-run the analysis to get the "latest" view
-            # BUT we will only extract and save signals that are NEWer than latest_analyzed_date.
-            # This ensures we don't rewrite history, but we append new history.
-            
-            # Optimization: We could pass only recent data to AI context if the gap is small, 
-            # but the current 'analyze' prompt expects full context.
-            # Let's run 'analyze' (it takes ~5s) and filter results.
-            
-            fresh_analysis = ai_analyzer.analyze(
+            # Agent mode: AI fetches its own data via tool calls
+            fresh_analysis = ai_analyzer.analyze_with_agent(
                 symbol, 
-                kline_data, 
                 model_name=model_name, 
                 language=language,
-                current_position=current_position_state,
-                portfolio_context=portfolio_context
+                asset_type=asset_type,
+                user_id=user_id
             )
             
-            if fresh_analysis.get('source') == 'ai_model':
+            if fresh_analysis.get('source') == 'ai_agent':
                 # AI 分析成功，保存新信号到 DB（按模型分开存储）
                 for sig in fresh_analysis.get('signals', []):
                     sig_date = datetime.strptime(sig['date'], '%Y-%m-%d').date()

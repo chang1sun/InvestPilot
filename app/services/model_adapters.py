@@ -223,8 +223,9 @@ class GeminiAdapter(BaseModelAdapter):
         from app.services.agent_tools import get_gemini_tools
         
         gemini_tools = get_gemini_tools()
-        # Also add Google Search alongside custom tools
-        gemini_tools.append(types.Tool(google_search=types.GoogleSearch()))
+        # NOTE: Gemini 3 does NOT allow mixing function_declarations and
+        # google_search in the same tools list.  Our own search_market_news
+        # tool already wraps Gemini Search, so we don't need GoogleSearch here.
         
         config = types.GenerateContentConfig(tools=gemini_tools)
         

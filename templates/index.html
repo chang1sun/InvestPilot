@@ -827,6 +827,8 @@
                 <div v-if="analysisResult.analysis.current_action" class="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-lg border-2 p-5 animate-fade-in"
                      :class="{
                          'border-green-400 shadow-green-100': analysisResult.analysis.current_action.action === 'BUY',
+                         'border-teal-400 shadow-teal-100': analysisResult.analysis.current_action.action === 'ADD',
+                         'border-amber-400 shadow-amber-100': analysisResult.analysis.current_action.action === 'REDUCE',
                          'border-red-400 shadow-red-100': analysisResult.analysis.current_action.action === 'SELL',
                          'border-orange-400 shadow-orange-100': analysisResult.analysis.current_action.action === 'WAIT',
                          'border-indigo-400 shadow-indigo-100': analysisResult.analysis.current_action.action === 'HOLD'
@@ -837,12 +839,16 @@
                             <div class="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg"
                                  :class="{
                                      'bg-gradient-to-br from-green-400 to-green-600': analysisResult.analysis.current_action.action === 'BUY',
+                                     'bg-gradient-to-br from-teal-400 to-teal-600': analysisResult.analysis.current_action.action === 'ADD',
+                                     'bg-gradient-to-br from-amber-400 to-amber-600': analysisResult.analysis.current_action.action === 'REDUCE',
                                      'bg-gradient-to-br from-red-400 to-red-600': analysisResult.analysis.current_action.action === 'SELL',
                                      'bg-gradient-to-br from-orange-400 to-orange-600': analysisResult.analysis.current_action.action === 'WAIT',
                                      'bg-gradient-to-br from-indigo-400 to-indigo-600': analysisResult.analysis.current_action.action === 'HOLD'
                                  }">
                                 [[ analysisResult.analysis.current_action.action === 'BUY' ? (currentLanguage === 'zh' ? '买' : 'B') :
-                                   analysisResult.analysis.current_action.action === 'SELL' ? (currentLanguage === 'zh' ? '卖' : 'S') :
+                                   analysisResult.analysis.current_action.action === 'ADD' ? (currentLanguage === 'zh' ? '加' : 'A') :
+                                   analysisResult.analysis.current_action.action === 'REDUCE' ? (currentLanguage === 'zh' ? '减' : 'R') :
+                                   analysisResult.analysis.current_action.action === 'SELL' ? (currentLanguage === 'zh' ? '平' : 'S') :
                                    analysisResult.analysis.current_action.action === 'WAIT' ? (currentLanguage === 'zh' ? '等' : 'W') :
                                    (currentLanguage === 'zh' ? '持' : 'H') ]]
                             </div>
@@ -861,12 +867,16 @@
                             <div class="text-2xl font-bold mb-2"
                                  :class="{
                                      'text-green-600': analysisResult.analysis.current_action.action === 'BUY',
+                                     'text-teal-600': analysisResult.analysis.current_action.action === 'ADD',
+                                     'text-amber-600': analysisResult.analysis.current_action.action === 'REDUCE',
                                      'text-red-600': analysisResult.analysis.current_action.action === 'SELL',
                                      'text-orange-600': analysisResult.analysis.current_action.action === 'WAIT',
                                      'text-indigo-600': analysisResult.analysis.current_action.action === 'HOLD'
                                  }">
-                                [[ analysisResult.analysis.current_action.action === 'BUY' ? (currentLanguage === 'zh' ? '买入' : 'BUY') :
-                                   analysisResult.analysis.current_action.action === 'SELL' ? (currentLanguage === 'zh' ? '卖出' : 'SELL') :
+                                [[ analysisResult.analysis.current_action.action === 'BUY' ? (currentLanguage === 'zh' ? '买入建仓' : 'BUY') :
+                                   analysisResult.analysis.current_action.action === 'ADD' ? (currentLanguage === 'zh' ? '加仓' : 'ADD') :
+                                   analysisResult.analysis.current_action.action === 'REDUCE' ? (currentLanguage === 'zh' ? '减仓' : 'REDUCE') :
+                                   analysisResult.analysis.current_action.action === 'SELL' ? (currentLanguage === 'zh' ? '平仓清仓' : 'SELL') :
                                    analysisResult.analysis.current_action.action === 'WAIT' ? (currentLanguage === 'zh' ? '观望等待' : 'WAIT') :
                                    (currentLanguage === 'zh' ? '继续持有' : 'HOLD') ]]
                             </div>
@@ -874,8 +884,8 @@
                                 [[ analysisResult.analysis.current_action.reason ]]
                             </p>
                             
-                            <!-- Additional Details for BUY/SELL -->
-                            <div v-if="analysisResult.analysis.current_action.action === 'BUY' || analysisResult.analysis.current_action.action === 'SELL'" 
+                            <!-- Additional Details for actionable signals (BUY/ADD/REDUCE/SELL) -->
+                            <div v-if="['BUY','ADD','REDUCE','SELL'].includes(analysisResult.analysis.current_action.action)" 
                                  class="flex flex-wrap gap-3 text-xs">
                                 <div v-if="analysisResult.analysis.current_action.price" 
                                      class="bg-white px-3 py-1.5 rounded-lg border border-gray-200 font-semibold">
@@ -944,7 +954,7 @@
                                             <!-- Thinking block -->
                                             <div v-if="step.type === 'thinking'" class="bg-blue-50 rounded-lg p-3 border border-blue-200 text-xs">
                                                 <div class="flex items-center gap-1.5 mb-1.5">
-                                                    <span class="font-bold text-blue-700">[[ currentLanguage === 'zh' ? 'AI 思考' : 'AI Thinking' ]]</span>
+                                                    <span class="font-bold text-blue-700">[[ currentLanguage === 'zh' ? '思考' : 'Thinking' ]]</span>
                                                 </div>
                                                 <p class="text-gray-700 leading-relaxed whitespace-pre-wrap text-[11px]">[[ step.content ]]</p>
                                             </div>
@@ -1581,7 +1591,7 @@
                                     <!-- Thinking block -->
                                     <div v-if="step.type === 'thinking'" class="bg-blue-50 rounded-lg p-3 border border-blue-200 text-xs">
                                         <div class="flex items-center gap-1.5 mb-1.5">
-                                            <span class="font-bold text-blue-700">[[ currentLanguage === 'zh' ? 'AI 思考' : 'AI Thinking' ]]</span>
+                                            <span class="font-bold text-blue-700">[[ currentLanguage === 'zh' ? '思考' : 'Thinking' ]]</span>
                                         </div>
                                         <p class="text-gray-700 leading-relaxed whitespace-pre-wrap text-[11px]">[[ step.content ]]</p>
                                     </div>

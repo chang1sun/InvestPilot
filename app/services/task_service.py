@@ -118,209 +118,151 @@ class TaskService:
                 self._task_stop_flags.pop(task_id, None)
     
     def _execute_kline_analysis(self, params, stop_flag, user_id=None):
-        """执行K线分析任务（基于真实持仓）"""
+        """执行K线分析任务（Agent 模式，AI 自行拉取所需数据）"""
         from app.models.analysis import Portfolio, Transaction, AnalysisLog
         from datetime import datetime
         
         symbol = params.get('symbol')
-        asset_type = params.get('asset_type', 'STOCK')  # 获取资产类型
-        is_cn_fund = params.get('is_cn_fund', False)  #  新增：是否为中国基金
+        asset_type = params.get('asset_type', 'STOCK')
+        is_cn_fund = params.get('is_cn_fund', False)
         model_name = params.get('model', 'gemini-3-flash-preview')
         language = params.get('language', 'zh')
         
-        # 获取资产名称（特别是基金名称）
+        # 获取资产名称（特别是基金名称，用于 prompt 中的标识）
         symbol_name = None
         if is_cn_fund or asset_type == 'FUND_CN':
             symbol_name = DataProvider.get_symbol_name(symbol, asset_type='FUND_CN')
             if symbol_name:
                 print(f"📝 Found fund name: {symbol_name} for {symbol}")
         
-        # 检查停止标志
         if stop_flag.is_set():
             return None
         
-        # 获取K线数据
-        kline_data = DataProvider.get_kline_data(symbol, is_cn_fund=is_cn_fund)
+        # Agent mode: AI will fetch kline, portfolio, and position data via tool calls
+        print(f"🤖 [Agent Mode] Using agent mode for {symbol} with {model_name}")
+        analysis_result = self.ai_analyzer.analyze_with_agent(
+            symbol,
+            model_name=model_name,
+            language=language,
+            asset_type=asset_type,
+            symbol_name=symbol_name,
+            user_id=user_id
+        )
+        
+        # Fetch kline data for frontend chart rendering (AI already fetched its own via tools)
+        from app.services.data_provider import batch_fetcher
+        kline_data = batch_fetcher.get_cached_kline_data(
+            symbol, period="3y", interval="1d",
+            is_cn_fund=(asset_type == 'FUND_CN')
+        )
         if not kline_data:
-            raise ValueError(f"Could not fetch data for symbol {symbol}")
+            kline_data = []
         
-        # 检查停止标志
-        if stop_flag.is_set():
-            return None
-            
-        # 获取用户真实持仓和交易记录
-        real_portfolio = None
-        real_transactions = []
+        # Build user transaction history for frontend display
+        reconstructed_trades = []
+        user_transactions = []
         if user_id:
             real_portfolio = Portfolio.query.filter_by(user_id=user_id, symbol=symbol).first()
             if real_portfolio:
-                real_transactions = Transaction.query.filter_by(portfolio_id=real_portfolio.id).order_by(Transaction.trade_date.asc()).all()
-        
-        # 构建 current_position_state 给 AI
-        current_position_state = None
-        if real_portfolio and real_portfolio.total_quantity > 0:
-            # 查找最后一次买入
-            last_buy = None
-            for t in real_transactions:
-                if t.transaction_type == 'BUY':
-                    last_buy = t
-            
-            if last_buy:
-                current_position_state = {
-                    'date': last_buy.trade_date.strftime('%Y-%m-%d'),
-                    'price': float(last_buy.price),
-                    'reason': 'User Real Position',
-                    'quantity': float(real_portfolio.total_quantity),
-                    'avg_cost': float(real_portfolio.avg_cost)
-                }
-            else:
-                current_position_state = {
-                    'date': real_portfolio.created_at.strftime('%Y-%m-%d'),
-                    'price': float(real_portfolio.avg_cost),
-                    'reason': 'User Real Position',
-                    'quantity': float(real_portfolio.total_quantity),
-                    'avg_cost': float(real_portfolio.avg_cost)
-                }
-        
-        # 调用 AI 分析 — 优先使用 Agent 模式（function calling）
-        from app.services.model_config import get_model_config
-        model_config = get_model_config(model_name)
-        use_agent = model_config and model_config.get('supports_tools', False) and model_name != 'local-strategy'
-        
-        if use_agent:
-            print(f"🤖 [Agent Mode] Using agent mode for {symbol} with {model_name}")
-            analysis_result = self.ai_analyzer.analyze_with_agent(
-                symbol,
-                model_name=model_name,
-                language=language,
-                current_position=current_position_state,
-                asset_type=asset_type,
-                symbol_name=symbol_name,
-                user_id=user_id
-            )
-        else:
-            print(f"📝 [Standard Mode] Using standard prompt for {symbol} with {model_name}")
-            analysis_result = self.ai_analyzer.analyze(
-                symbol,
-                kline_data,
-                model_name=model_name,
-                language=language,
-                current_position=current_position_state,
-                asset_type=asset_type,
-                symbol_name=symbol_name
-            )
-        
-        # 构建返回给前端的数据
-        reconstructed_trades = []
-        user_transactions = []  #  用户真实交易（不是 AI 建议）
-        
-        # 配对交易逻辑
-        buy_queue = []
-        
-        for t in real_transactions:
-            date_str = t.trade_date.strftime('%Y-%m-%d')
-            #  用户真实交易单独存储，不混入 AI 建议
-            user_transactions.append({
-                "type": t.transaction_type,
-                "date": date_str,
-                "price": float(t.price),
-                "reason": t.notes or 'Manual Trade'
-            })
-            
-            if t.transaction_type == 'BUY':
-                buy_queue.append({
-                    'date': date_str,
-                    'price': float(t.price),
-                    'quantity': float(t.quantity),
-                    'reason': t.notes or 'Manual Buy'
-                })
-            elif t.transaction_type == 'SELL':
-                sell_qty = float(t.quantity)
-                while sell_qty > 0 and buy_queue:
-                    buy_record = buy_queue[0]
-                    matched_qty = min(sell_qty, buy_record['quantity'])
-                    
-                    buy_price = buy_record['price']
-                    sell_price = float(t.price)
-                    ret_pct = ((sell_price - buy_price) / buy_price) * 100
-                    
-                    d1 = datetime.strptime(buy_record['date'], '%Y-%m-%d')
-                    d2 = t.trade_date
-                    days = (datetime.combine(d2, datetime.min.time()) - d1).days
-                    
-                    reconstructed_trades.append({
-                        "buy_date": buy_record['date'],
-                        "buy_price": buy_price,
-                        "sell_date": date_str,
-                        "sell_price": sell_price,
-                        "status": "CLOSED",
-                        "holding_period": f"{days} days",
-                        "return_rate": f"{ret_pct:+.2f}%",
-                        "reason": buy_record['reason'],
-                        "sell_reason": t.notes or 'Manual Sell'
+                real_transactions = Transaction.query.filter_by(
+                    portfolio_id=real_portfolio.id
+                ).order_by(Transaction.trade_date.asc()).all()
+                
+                buy_queue = []
+                for t in real_transactions:
+                    date_str = t.trade_date.strftime('%Y-%m-%d')
+                    user_transactions.append({
+                        "type": t.transaction_type,
+                        "date": date_str,
+                        "price": float(t.price),
+                        "reason": t.notes or 'Manual Trade'
                     })
                     
-                    sell_qty -= matched_qty
-                    buy_record['quantity'] -= matched_qty
-                    
-                    if buy_record['quantity'] <= 0.000001:
-                        buy_queue.pop(0)
+                    if t.transaction_type == 'BUY':
+                        buy_queue.append({
+                            'date': date_str,
+                            'price': float(t.price),
+                            'quantity': float(t.quantity),
+                            'reason': t.notes or 'Manual Buy'
+                        })
+                    elif t.transaction_type == 'SELL':
+                        sell_qty = float(t.quantity)
+                        while sell_qty > 0 and buy_queue:
+                            buy_record = buy_queue[0]
+                            matched_qty = min(sell_qty, buy_record['quantity'])
+                            buy_price = buy_record['price']
+                            sell_price = float(t.price)
+                            ret_pct = ((sell_price - buy_price) / buy_price) * 100
+                            d1 = datetime.strptime(buy_record['date'], '%Y-%m-%d')
+                            d2 = t.trade_date
+                            days = (datetime.combine(d2, datetime.min.time()) - d1).days
+                            reconstructed_trades.append({
+                                "buy_date": buy_record['date'],
+                                "buy_price": buy_price,
+                                "sell_date": date_str,
+                                "sell_price": sell_price,
+                                "status": "CLOSED",
+                                "holding_period": f"{days} days",
+                                "return_rate": f"{ret_pct:+.2f}%",
+                                "reason": buy_record['reason'],
+                                "sell_reason": t.notes or 'Manual Sell'
+                            })
+                            sell_qty -= matched_qty
+                            buy_record['quantity'] -= matched_qty
+                            if buy_record['quantity'] <= 0.000001:
+                                buy_queue.pop(0)
+                
+                # Process open positions
+                if kline_data:
+                    latest_close = kline_data[-1]['close']
+                    latest_date_str = kline_data[-1]['date']
+                    for b in buy_queue:
+                        buy_price = b['price']
+                        curr_ret = ((latest_close - buy_price) / buy_price) * 100
+                        d1 = datetime.strptime(b['date'], '%Y-%m-%d')
+                        d2 = datetime.strptime(latest_date_str, '%Y-%m-%d')
+                        days = (d2 - d1).days
+                        reconstructed_trades.append({
+                            "buy_date": b['date'],
+                            "buy_price": b['price'],
+                            "sell_date": None,
+                            "sell_price": None,
+                            "status": "HOLDING",
+                            "holding_period": f"{days} days",
+                            "return_rate": f"{curr_ret:+.2f}% (Open)",
+                            "reason": b['reason']
+                        })
+                
+                reconstructed_trades.sort(key=lambda x: x['buy_date'], reverse=True)
         
-        # 处理持仓中
-        latest_close = kline_data[-1]['close']
-        latest_date_str = kline_data[-1]['date']
-        
-        for b in buy_queue:
-            buy_price = b['price']
-            curr_ret = ((latest_close - buy_price) / buy_price) * 100
-            
-            d1 = datetime.strptime(b['date'], '%Y-%m-%d')
-            d2 = datetime.strptime(latest_date_str, '%Y-%m-%d')
-            days = (d2 - d1).days
-            
-            reconstructed_trades.append({
-                "buy_date": b['date'],
-                "buy_price": b['price'],
-                "sell_date": None,
-                "sell_price": None,
-                "status": "HOLDING",
-                "holding_period": f"{days} days",
-                "return_rate": f"{curr_ret:+.2f}% (Open)",
-                "reason": b['reason']
-            })
-            
-        reconstructed_trades.sort(key=lambda x: x['buy_date'], reverse=True)
-        
-        #  标记哪些 AI 建议被用户采纳了
-        # 逻辑：如果 AI 建议的日期和价格与用户真实交易接近，则认为被采纳
+        # Mark AI signals adopted by user
         ai_signals = analysis_result.get('signals', [])
         for signal in ai_signals:
-            signal['adopted'] = False  # 默认未采纳
-            
-            # 检查是否有匹配的用户交易
+            signal['adopted'] = False
             for user_trans in user_transactions:
-                # 同类型、同日期（或相近日期）、价格接近
-                if (signal['type'] == user_trans['type'] and 
-                    signal['date'] == user_trans['date']):
-                    # 价格相差在 5% 以内认为是同一笔交易
-                    price_diff = abs(signal['price'] - user_trans['price']) / user_trans['price']
-                    if price_diff < 0.05:
-                        signal['adopted'] = True
-                        break
+                if (signal.get('type') == user_trans['type'] and
+                        signal.get('date') == user_trans['date']):
+                    try:
+                        price_diff = abs(signal['price'] - user_trans['price']) / user_trans['price']
+                        if price_diff < 0.05:
+                            signal['adopted'] = True
+                            break
+                    except (TypeError, ZeroDivisionError):
+                        pass
         
         final_result = {
             "analysis_summary": analysis_result.get('analysis_summary', ''),
             "trades": reconstructed_trades,
-            "signals": ai_signals,  #  AI 建议信号（已标记 adopted）
-            "user_transactions": user_transactions,  #  用户真实交易（独立字段）
+            "signals": ai_signals,
+            "user_transactions": user_transactions,
             "source": "user_real_data",
-            "ai_suggestion": ai_signals,  # 保持兼容性
+            "ai_suggestion": ai_signals,
             "current_action": analysis_result.get('current_action'),
             "is_fallback": analysis_result.get('is_fallback', False),
             "fallback_reason": analysis_result.get('fallback_reason', ''),
-                "tool_calls": analysis_result.get('tool_calls', []),  # Agent tool call log
-                "agent_trace": analysis_result.get('agent_trace', []),  # Thinking + tool call timeline
-                "agent_mode": analysis_result.get('source') == 'ai_agent',
+            "tool_calls": analysis_result.get('tool_calls', []),
+            "agent_trace": analysis_result.get('agent_trace', []),
+            "agent_mode": analysis_result.get('source') == 'ai_agent',
             "agent_fallback": analysis_result.get('agent_fallback', False)
         }
         
@@ -332,43 +274,30 @@ class TaskService:
             'source': 'user_real_data'
         }
     def _execute_portfolio_diagnosis(self, params, stop_flag):
-        """执行持仓诊断任务 — 支持 Agent 模式"""
+        """执行持仓诊断任务（Agent 模式）"""
         if stop_flag.is_set():
             return None
         
         model_name = params.get('model', 'gemini-3-flash-preview')
         language = params.get('language', 'zh')
 
-        # Check if model supports agent mode
-        from app.services.model_config import get_model_config
-        model_config = get_model_config(model_name)
-        use_agent = model_config and model_config.get('supports_tools', False)
-
-        # Check if this is a full portfolio analysis or single item
+        # Full portfolio analysis or single item
         portfolios = params.get('portfolios')
         if portfolios and isinstance(portfolios, list):
-            # Full portfolio analysis (not agent-ified yet — uses search)
             result = self.ai_analyzer.analyze_full_portfolio(
                 portfolios, model_name=model_name, language=language
             )
         else:
-            # Single item analysis
-            if use_agent:
-                print(f"🤖 [Agent Mode] Using agent mode for portfolio diagnosis with {model_name}")
-                result = self.ai_analyzer.analyze_portfolio_item_with_agent(
-                    params, model_name=model_name, language=language,
-                    user_id=params.get('user_id')
-                )
-            else:
-                print(f"📝 [Standard Mode] Using standard prompt for portfolio diagnosis")
-                result = self.ai_analyzer.analyze_portfolio_item(
-                    params, model_name=model_name, language=language
-                )
+            print(f"🤖 [Agent Mode] Using agent mode for portfolio diagnosis with {model_name}")
+            result = self.ai_analyzer.analyze_portfolio_item_with_agent(
+                params, model_name=model_name, language=language,
+                user_id=params.get('user_id')
+            )
         
         return result
     
     def _execute_stock_recommendation(self, params, stop_flag):
-        """执行股票推荐任务 — 支持 Agent 模式"""
+        """执行股票推荐任务（Agent 模式）"""
         if stop_flag.is_set():
             return None
         
@@ -384,21 +313,10 @@ class TaskService:
             'frequency': params.get('frequency', 'Any')
         }
 
-        # Check if model supports agent mode
-        from app.services.model_config import get_model_config
-        model_config = get_model_config(model_name)
-        use_agent = model_config and model_config.get('supports_tools', False)
-
-        if use_agent:
-            print(f"🤖 [Agent Mode] Using agent mode for stock recommendation with {model_name}")
-            result = self.ai_analyzer.recommend_stocks_with_agent(
-                criteria, model_name=model_name, language=language
-            )
-        else:
-            print(f"📝 [Standard Mode] Using standard prompt for stock recommendation")
-            result = self.ai_analyzer.recommend_stocks(
-                criteria, model_name=model_name, language=language
-            )
+        print(f"🤖 [Agent Mode] Using agent mode for stock recommendation with {model_name}")
+        result = self.ai_analyzer.recommend_stocks_with_agent(
+            criteria, model_name=model_name, language=language
+        )
         
         return result
     

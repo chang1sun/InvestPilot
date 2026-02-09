@@ -1699,15 +1699,29 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                     tradeInfo = trades.find(t => t.sell_date === sig.date);
                 }
                 
-                // Only BUY and SELL are shown on chart
+                // BUY/ADD shown as green, SELL/REDUCE shown as red on chart
+                // Use position_action for precise label when available
                 let displayValue, displayColor, displaySymbol;
+                const posAction = sig.position_action || sig.type;
                 if (sig.type === 'BUY') {
-                    displayValue = currentLanguage.value === 'zh' ? 'AI买' : 'AI-B';
-                    displayColor = '#34D399';  // 更清新的绿色（原 #10B981）
+                    // BUY (new position) or ADD (increase existing)
+                    if (posAction === 'ADD') {
+                        displayValue = currentLanguage.value === 'zh' ? 'AI加仓' : 'AI-Add';
+                        displayColor = '#2DD4BF';  // teal for ADD
+                    } else {
+                        displayValue = currentLanguage.value === 'zh' ? 'AI买' : 'AI-B';
+                        displayColor = '#34D399';  // green for BUY
+                    }
                     displaySymbol = 'pin';
                 } else if (sig.type === 'SELL') {
-                    displayValue = currentLanguage.value === 'zh' ? 'AI卖' : 'AI-S';
-                    displayColor = '#F87171';  // 更清新的红色（原 #EF4444）
+                    // SELL (close all) or REDUCE (partial sell)
+                    if (posAction === 'REDUCE') {
+                        displayValue = currentLanguage.value === 'zh' ? 'AI减仓' : 'AI-Rd';
+                        displayColor = '#FBBF24';  // amber for REDUCE
+                    } else {
+                        displayValue = currentLanguage.value === 'zh' ? 'AI平仓' : 'AI-S';
+                        displayColor = '#F87171';  // red for SELL/CLOSE
+                    }
                     displaySymbol = 'pin';
                 } else {
                     // Unknown type, skip
@@ -2799,9 +2813,11 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
             // 如果有position_action字段，优先使用
             if (record.position_action) {
                 const actionMap = {
+                    'BUY': currentLanguage.value === 'zh' ? 'AI建仓' : 'AI Open',
                     'OPEN': currentLanguage.value === 'zh' ? 'AI建仓' : 'AI Open',
                     'ADD': currentLanguage.value === 'zh' ? 'AI加仓' : 'AI Add',
                     'REDUCE': currentLanguage.value === 'zh' ? 'AI减仓' : 'AI Reduce',
+                    'SELL': currentLanguage.value === 'zh' ? 'AI平仓' : 'AI Close',
                     'CLOSE': currentLanguage.value === 'zh' ? 'AI平仓' : 'AI Close'
                 };
                 return actionMap[record.position_action] || (record.type === 'BUY' ? 
