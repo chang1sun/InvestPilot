@@ -1,65 +1,36 @@
 services:
-  # 数据库初始化服务（仅运行一次）
-  init-db:
-    build: .
-    command: python tools/init_db.py
-    environment:
-      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-user}:${MYSQL_PASSWORD:-password}@db/${MYSQL_DATABASE:-investpilot_db}
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: "no"  # 只运行一次，不自动重启
-    env_file:
-      - .env
-
   web:
     build: .
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-user}:${MYSQL_PASSWORD:-password}@db/${MYSQL_DATABASE:-investpilot_db}
+      - DATABASE_URL=sqlite:////data/db/investpilot.db
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - QWEN_API_KEY=${QWEN_API_KEY}
-    depends_on:
-      - db
-      - redis
-      - init-db  # 等待数据库初始化完成
-    env_file:
-      - .env
-
-  db:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-investpilot_db}
-      MYSQL_USER: ${MYSQL_USER:-user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
+      - ENABLE_STOCK_TRACKING_CRON=${ENABLE_STOCK_TRACKING_CRON:-false}
+      - TRACKING_MODEL=${TRACKING_MODEL:-gemini-3-flash-preview}
+      - TRACKING_CRON_HOUR_UTC=${TRACKING_CRON_HOUR_UTC:-22}
     volumes:
-      - db_data:/var/lib/mysql
+      - db_data:/data/db
+      - backup_data:/data/backups
+    depends_on:
+      - redis
     env_file:
       - .env
-    healthcheck:
-      # 使用环境变量，如果未设置则使用默认值 rootpassword
-      test: >
-        mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD:-rootpassword} || exit 1
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
+    restart: unless-stopped
+    entrypoint: ["sh", "-c", "python tools/init_db.py && gunicorn -w 2 -b 0.0.0.0:5000 --timeout 300 --graceful-timeout 30 wsgi:app"]
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     command: >
       sh -c "if [ -n \"$$REDIS_PASSWORD\" ]; then
-        redis-server --requirepass $$REDIS_PASSWORD --appendonly yes;
+        redis-server --requirepass $$REDIS_PASSWORD --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru;
       else
-        redis-server --appendonly yes;
+        redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru;
       fi"
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
@@ -67,8 +38,12 @@ services:
       - .env
     volumes:
       - redis_data:/data
+    restart: unless-stopped
 
 volumes:
   db_data:
+    driver: local
+  backup_data:
+    driver: local
   redis_data:
-
+    driver: local

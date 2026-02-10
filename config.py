@@ -1,9 +1,12 @@
 import os
 
+basedir = os.path.abspath(os.path.dirname(__file__))
+
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'hard-to-guess-string'
+    # Default: SQLite in local instance/ directory; Docker overrides via DATABASE_URL env
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'sqlite:///investpilot.db'
+        'sqlite:///' + os.path.join(basedir, 'instance', 'investpilot.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     REDIS_URL = os.environ.get('REDIS_URL') or 'redis://localhost:6379/0'
     
