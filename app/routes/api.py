@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, current_app
 from app.services.data_provider import DataProvider
 from app.services.ai_analyzer import AIAnalyzer
 from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Task, Portfolio, Transaction, Account, CashFlow
@@ -11,6 +11,7 @@ import hashlib
 import re
 import uuid
 import math
+import os
 import pandas as pd
 from datetime import datetime, timedelta
 
@@ -2599,3 +2600,160 @@ def tracking_take_snapshot():
         return jsonify(snapshot) if snapshot else jsonify({'message': 'Snapshot already exists for today'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# Data Backup & Restore API (Binary SQLite file transfer)
+# ============================================================
+
+@api_bp.route('/backup', methods=['GET'])
+def backup_data():
+    """
+    Download a consistent binary copy of the SQLite database.
+    Uses SQLite Online Backup API via VACUUM INTO to produce a
+    point-in-time snapshot without blocking writers.
+    Returns the .db file as an octet-stream attachment.
+    """
+    import sqlite3
+    import tempfile
+    import shutil
+    from flask import send_file
+
+    db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if not db_uri.startswith('sqlite'):
+        return jsonify({'error': 'Binary backup only supported for SQLite databases'}), 400
+
+    # Resolve the physical file path
+    db_path = db_uri.replace('sqlite:///', '')
+    if not os.path.isabs(db_path):
+        db_path = os.path.join(current_app.instance_path, db_path)
+    db_path = os.path.abspath(db_path)
+
+    if not os.path.exists(db_path):
+        return jsonify({'error': f'Database file not found: {db_path}'}), 404
+
+    try:
+        # Create a temporary file for the backup snapshot
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.db')
+        os.close(tmp_fd)
+
+        # Use VACUUM INTO for a clean, consistent, WAL-merged copy
+        conn = sqlite3.connect(db_path)
+        conn.execute(f"VACUUM INTO '{tmp_path}'")
+        conn.close()
+
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f'investpilot_backup_{timestamp}.db'
+
+        # send_file will handle streaming; delete tmp file after send
+        return send_file(
+            tmp_path,
+            mimetype='application/octet-stream',
+            as_attachment=True,
+            download_name=filename,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Backup failed: {str(e)}'}), 500
+
+
+@api_bp.route('/restore', methods=['POST'])
+def restore_data():
+    """
+    Restore the SQLite database from an uploaded binary .db file.
+    Accepts multipart form upload with field name "file".
+    WARNING: This replaces the entire database.
+
+    Steps:
+      1. Save uploaded file to a temp location
+      2. Validate it is a valid SQLite database (integrity_check)
+      3. Close all current DB connections
+      4. Replace the live .db file (and remove WAL/SHM files)
+      5. Reconnect
+    """
+    import sqlite3
+    import tempfile
+    import shutil
+
+    db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if not db_uri.startswith('sqlite'):
+        return jsonify({'error': 'Binary restore only supported for SQLite databases'}), 400
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided. Use multipart form field name "file".'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'Empty filename'}), 400
+
+    # Resolve the physical file path
+    db_path = db_uri.replace('sqlite:///', '')
+    if not os.path.isabs(db_path):
+        db_path = os.path.join(current_app.instance_path, db_path)
+    db_path = os.path.abspath(db_path)
+
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix='.db')
+    os.close(tmp_fd)
+
+    try:
+        # Step 1: Save uploaded file
+        file.save(tmp_path)
+        file_size = os.path.getsize(tmp_path)
+        print(f"📦 [Restore] Received file: {file.filename} ({file_size} bytes)")
+
+        # Step 2: Validate it's a real SQLite database
+        try:
+            check_conn = sqlite3.connect(tmp_path)
+            result = check_conn.execute("PRAGMA integrity_check").fetchone()
+            check_conn.close()
+            if result[0] != 'ok':
+                return jsonify({'error': f'Uploaded file failed integrity check: {result[0]}'}), 400
+        except sqlite3.DatabaseError as e:
+            return jsonify({'error': f'Uploaded file is not a valid SQLite database: {str(e)}'}), 400
+
+        # Step 3: Dispose current engine connections
+        db.session.remove()
+        db.engine.dispose()
+
+        # Step 4: Replace the database file
+        # Remove WAL and SHM journal files if they exist
+        for suffix in ('-wal', '-shm'):
+            journal = db_path + suffix
+            if os.path.exists(journal):
+                os.remove(journal)
+                print(f"🗑️  [Restore] Removed {journal}")
+
+        # Backup the current db just in case (as .bak)
+        if os.path.exists(db_path):
+            bak_path = db_path + '.bak'
+            shutil.copy2(db_path, bak_path)
+            print(f"💾 [Restore] Current DB backed up to {bak_path}")
+
+        # Move the new db into place
+        shutil.move(tmp_path, db_path)
+        tmp_path = None  # Mark as moved so cleanup doesn't remove it
+        print(f"✅ [Restore] Database replaced successfully ({file_size} bytes)")
+
+        # Step 5: Re-establish WAL mode on new database
+        new_conn = sqlite3.connect(db_path)
+        new_conn.execute("PRAGMA journal_mode=WAL")
+        new_conn.execute("PRAGMA synchronous=NORMAL")
+        new_conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Database restored successfully',
+            'file_name': file.filename,
+            'file_size_bytes': file_size,
+            'note': 'Server may need a restart for full effect on pooled connections.'
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Restore failed: {str(e)}'}), 500
+    finally:
+        # Clean up temp file if it wasn't moved
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)

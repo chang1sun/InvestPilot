@@ -277,17 +277,13 @@ class TrackingService:
     # ------------------------------------------------------------------
 
     def take_daily_snapshot(self, snapshot_date: date = None) -> Optional[Dict]:
-        """Take a daily portfolio value snapshot."""
+        """
+        Take (or update) a daily portfolio value snapshot.
+        If a snapshot already exists for the given date, it will be updated
+        with the latest prices to ensure accuracy (e.g. post-market refresh).
+        """
         if snapshot_date is None:
             snapshot_date = date.today()
-
-        # Avoid duplicate snapshots
-        existing = TrackingDailySnapshot.query.filter_by(date=snapshot_date).first()
-        if existing:
-            return existing.to_dict()
-
-        # Refresh prices first
-        self.refresh_prices()
 
         holdings = TrackingStock.query.all()
 
@@ -323,6 +319,18 @@ class TrackingService:
         cash = INITIAL_CAPITAL - (num_current * PER_STOCK_ALLOCATION) + total_sell_returns
         portfolio_value = cash + total_holdings_value
         total_return_pct = ((portfolio_value - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100
+
+        # Update existing snapshot or create a new one
+        existing = TrackingDailySnapshot.query.filter_by(date=snapshot_date).first()
+        if existing:
+            existing.portfolio_value = round(portfolio_value, 2)
+            existing.cash = round(cash, 2)
+            existing.holdings_value = round(total_holdings_value, 2)
+            existing.total_return_pct = round(total_return_pct, 4)
+            existing.realized_pnl = round(total_realized_pnl, 2)
+            existing.holdings_json = json.dumps(holdings_snapshot)
+            db.session.commit()
+            return existing.to_dict()
 
         snapshot = TrackingDailySnapshot(
             date=snapshot_date,
