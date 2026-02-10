@@ -2665,16 +2665,19 @@ def restore_data():
     Accepts multipart form upload with field name "file".
     WARNING: This replaces the entire database.
 
+    Uses SQLite Online Backup API to overwrite the live database
+    through an open connection, avoiding "database is locked" errors
+    that occur when trying to replace the file on disk while other
+    connections (e.g. other workers, health checks) hold locks.
+
     Steps:
       1. Save uploaded file to a temp location
       2. Validate it is a valid SQLite database (integrity_check)
-      3. Close all current DB connections
-      4. Replace the live .db file (and remove WAL/SHM files)
-      5. Reconnect
+      3. Use SQLite backup API to copy source -> live DB
+      4. Re-establish WAL mode
     """
     import sqlite3
     import tempfile
-    import shutil
 
     db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
     if not db_uri.startswith('sqlite'):
@@ -2712,41 +2715,38 @@ def restore_data():
         except sqlite3.DatabaseError as e:
             return jsonify({'error': f'Uploaded file is not a valid SQLite database: {str(e)}'}), 400
 
-        # Step 3: Dispose current engine connections
+        # Step 3: Use SQLite Backup API to overwrite the live database
+        # This works even when other connections exist, as SQLite's backup API
+        # handles locking internally with retries.
         db.session.remove()
+
+        src_conn = sqlite3.connect(tmp_path)
+        dst_conn = sqlite3.connect(db_path)
+
+        # Set a generous busy timeout so backup waits for any transient locks
+        dst_conn.execute("PRAGMA busy_timeout=10000")
+
+        print(f"🔄 [Restore] Starting SQLite backup API transfer...")
+        with dst_conn:
+            src_conn.backup(dst_conn)
+        print(f"✅ [Restore] Backup API transfer completed ({file_size} bytes)")
+
+        src_conn.close()
+
+        # Step 4: Re-establish WAL mode on restored database
+        dst_conn.execute("PRAGMA journal_mode=WAL")
+        dst_conn.execute("PRAGMA synchronous=NORMAL")
+        dst_conn.close()
+        print(f"✅ [Restore] WAL mode re-established")
+
+        # Dispose engine pool so new connections pick up restored data
         db.engine.dispose()
-
-        # Step 4: Replace the database file
-        # Remove WAL and SHM journal files if they exist
-        for suffix in ('-wal', '-shm'):
-            journal = db_path + suffix
-            if os.path.exists(journal):
-                os.remove(journal)
-                print(f"🗑️  [Restore] Removed {journal}")
-
-        # Backup the current db just in case (as .bak)
-        if os.path.exists(db_path):
-            bak_path = db_path + '.bak'
-            shutil.copy2(db_path, bak_path)
-            print(f"💾 [Restore] Current DB backed up to {bak_path}")
-
-        # Move the new db into place
-        shutil.move(tmp_path, db_path)
-        tmp_path = None  # Mark as moved so cleanup doesn't remove it
-        print(f"✅ [Restore] Database replaced successfully ({file_size} bytes)")
-
-        # Step 5: Re-establish WAL mode on new database
-        new_conn = sqlite3.connect(db_path)
-        new_conn.execute("PRAGMA journal_mode=WAL")
-        new_conn.execute("PRAGMA synchronous=NORMAL")
-        new_conn.close()
 
         return jsonify({
             'success': True,
             'message': 'Database restored successfully',
             'file_name': file.filename,
             'file_size_bytes': file_size,
-            'note': 'Server may need a restart for full effect on pooled connections.'
         })
 
     except Exception as e:
@@ -2754,6 +2754,6 @@ def restore_data():
         traceback.print_exc()
         return jsonify({'error': f'Restore failed: {str(e)}'}), 500
     finally:
-        # Clean up temp file if it wasn't moved
-        if tmp_path and os.path.exists(tmp_path):
+        # Clean up temp file
+        if os.path.exists(tmp_path):
             os.remove(tmp_path)
