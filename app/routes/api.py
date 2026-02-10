@@ -17,6 +17,12 @@ from datetime import datetime, timedelta
 api_bp = Blueprint('api', __name__)
 ai_analyzer = AIAnalyzer()
 
+
+@api_bp.route('/health', methods=['GET'])
+def health_check():
+    """Lightweight health check endpoint to keep the service alive"""
+    return jsonify({'status': 'ok', 'timestamp': datetime.utcnow().isoformat()}), 200
+
 def update_cash_balance(user_id, currency, amount, transaction_type, trade_date, notes=''):
     """
     更新现金余额
