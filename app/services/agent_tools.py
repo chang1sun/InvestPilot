@@ -451,7 +451,7 @@ class AgentToolExecutor:
         })
 
     def _get_portfolio_holdings(self):
-        """Get user's portfolio holdings"""
+        """Get user's portfolio holdings with USD-normalized allocation percentages."""
         if not self.user_id:
             return json.dumps({"error": "No user context available", "holdings": []})
 
@@ -462,22 +462,38 @@ class AgentToolExecutor:
             return json.dumps({"holdings": [], "total_positions": 0})
 
         holdings = []
-        total_value = 0
+        total_value_usd = 0  # All values normalized to USD for fair allocation calc
+
+        # Cache exchange rates to avoid repeated lookups
+        exchange_rate_cache = {"USD": 1.0}
+
+        def get_usd_rate(currency):
+            """Get exchange rate from currency to USD, with caching."""
+            if currency in exchange_rate_cache:
+                return exchange_rate_cache[currency]
+            try:
+                rate = batch_fetcher.get_cached_exchange_rate(currency, "USD")
+                exchange_rate_cache[currency] = rate
+            except Exception:
+                rate = 1.0  # Fallback: assume 1:1 if rate unavailable
+            exchange_rate_cache[currency] = rate
+            return rate
 
         for p in portfolios:
             if p.total_quantity <= 0 and p.asset_type != "CASH":
                 continue
 
+            currency = p.currency if p.currency else "USD"
             current_price = None
             if p.asset_type != "CASH":
                 try:
-                    currency = p.currency if p.currency else "USD"
                     current_price = batch_fetcher.get_cached_current_price(
                         p.symbol, asset_type=p.asset_type, currency=currency
                     )
-                except:
+                except Exception:
                     pass
 
+            # Position value in original currency
             if p.asset_type == "CASH":
                 position_value = p.total_quantity
             elif current_price:
@@ -485,16 +501,20 @@ class AgentToolExecutor:
             else:
                 position_value = p.total_cost
 
-            total_value += position_value
+            # Convert to USD for unified total
+            usd_rate = get_usd_rate(currency)
+            position_value_usd = position_value * usd_rate
+            total_value_usd += position_value_usd
 
             holding = {
                 "symbol": p.symbol,
                 "asset_type": p.asset_type,
-                "currency": p.currency or "USD",
+                "currency": currency,
                 "quantity": float(p.total_quantity),
                 "avg_cost": float(p.avg_cost),
                 "current_price": float(current_price) if current_price else None,
                 "position_value": round(position_value, 2),
+                "position_value_usd": round(position_value_usd, 2),
                 "unrealized_pnl": round(position_value - p.total_cost, 2) if p.asset_type != "CASH" else 0,
                 "unrealized_pnl_pct": round(
                     (position_value - p.total_cost) / p.total_cost * 100, 2
@@ -502,15 +522,15 @@ class AgentToolExecutor:
             }
             holdings.append(holding)
 
-        # Calculate allocation percentages
+        # Calculate allocation percentages based on USD-normalized values
         for h in holdings:
-            h["allocation_pct"] = round(h["position_value"] / total_value * 100, 1) if total_value > 0 else 0
+            h["allocation_pct"] = round(h["position_value_usd"] / total_value_usd * 100, 1) if total_value_usd > 0 else 0
 
-        # Sort by position value
-        holdings.sort(key=lambda x: x["position_value"], reverse=True)
+        # Sort by USD value for consistent ordering
+        holdings.sort(key=lambda x: x["position_value_usd"], reverse=True)
 
         return json.dumps({
-            "total_value": round(total_value, 2),
+            "total_value_usd": round(total_value_usd, 2),
             "total_positions": len(holdings),
             "holdings": holdings
         })

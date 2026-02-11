@@ -13,6 +13,26 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from app import create_app, db
 from app.models.analysis import AnalysisLog, StockTradeSignal, RecommendationCache, User, Account, CashFlow, Task, Portfolio, Transaction, TrackingStock, TrackingTransaction, TrackingDailySnapshot, TrackingDecisionLog
 
+def _upgrade_tracking_decision_logs(inspector, db):
+    """Add missing columns to tracking_decision_logs table (deep report fields)."""
+    if 'tracking_decision_logs' not in inspector.get_table_names():
+        return
+
+    existing_columns = {col['name'] for col in inspector.get_columns('tracking_decision_logs')}
+    new_columns = {
+        'report_json': 'TEXT',
+        'market_regime': 'VARCHAR(20)',
+        'confidence_level': 'VARCHAR(20)',
+    }
+
+    for col_name, col_type in new_columns.items():
+        if col_name not in existing_columns:
+            print(f"  ↳ Adding column '{col_name}' to tracking_decision_logs...")
+            db.session.execute(db.text(f'ALTER TABLE tracking_decision_logs ADD COLUMN {col_name} {col_type}'))
+
+    db.session.commit()
+
+
 def init_database():
     """初始化数据库表（幂等性：如果表已存在则跳过）"""
     app = create_app()
@@ -36,6 +56,9 @@ def init_database():
             print("✓ Database tables created successfully!")
         else:
             print("✓ All database tables already exist. Skipping table creation.")
+        
+        # Auto-upgrade: add missing columns to existing tables (SQLite does not do this via create_all)
+        _upgrade_tracking_decision_logs(inspector, db)
         
         # 显示已创建的表
         print("\nExisting tables:")

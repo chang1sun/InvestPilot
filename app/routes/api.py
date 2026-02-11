@@ -178,11 +178,24 @@ def get_user_portfolio_context(user_id, current_symbol, asset_type):
     if not portfolios:
         return None
     
-    # Calculate total portfolio value
-    total_value = 0
+    # Calculate total portfolio value (normalized to USD)
+    total_value_usd = 0
     holdings = []
     current_symbol_portfolio = None
-    
+
+    # Cache exchange rates to avoid repeated lookups
+    exchange_rate_cache = {"USD": 1.0}
+
+    def get_usd_rate(currency):
+        if currency in exchange_rate_cache:
+            return exchange_rate_cache[currency]
+        try:
+            rate = batch_fetcher.get_cached_exchange_rate(currency, "USD")
+        except Exception:
+            rate = 1.0
+        exchange_rate_cache[currency] = rate
+        return rate
+
     for portfolio in portfolios:
         if portfolio.quantity > 0:
             # Get current price
@@ -194,15 +207,20 @@ def get_user_portfolio_context(user_id, current_symbol, asset_type):
             
             if current_price:
                 position_value = portfolio.quantity * current_price
-                total_value += position_value
+                currency = portfolio.currency or "USD"
+                usd_rate = get_usd_rate(currency)
+                position_value_usd = position_value * usd_rate
+                total_value_usd += position_value_usd
                 
                 holding_info = {
                     'symbol': portfolio.symbol,
                     'asset_type': portfolio.asset_type,
+                    'currency': currency,
                     'quantity': portfolio.quantity,
                     'avg_cost': portfolio.avg_cost,
                     'current_price': current_price,
                     'position_value': position_value,
+                    'position_value_usd': position_value_usd,
                     'unrealized_pnl': (current_price - portfolio.avg_cost) * portfolio.quantity,
                     'unrealized_pnl_pct': ((current_price - portfolio.avg_cost) / portfolio.avg_cost * 100) if portfolio.avg_cost > 0 else 0
                 }
@@ -213,16 +231,16 @@ def get_user_portfolio_context(user_id, current_symbol, asset_type):
                 if portfolio.symbol == current_symbol and portfolio.asset_type == asset_type:
                     current_symbol_portfolio = portfolio
     
-    # Calculate percentages
+    # Calculate percentages based on USD-normalized values
     for holding in holdings:
-        holding['percentage'] = (holding['position_value'] / total_value * 100) if total_value > 0 else 0
+        holding['percentage'] = (holding['position_value_usd'] / total_value_usd * 100) if total_value_usd > 0 else 0
     
-    # Sort by position value (descending)
-    holdings.sort(key=lambda x: x['position_value'], reverse=True)
+    # Sort by USD value for consistent ordering
+    holdings.sort(key=lambda x: x['position_value_usd'], reverse=True)
     
     # Build context structure
     context = {
-        'total_value': total_value,
+        'total_value': total_value_usd,
         'holdings_count': len(holdings),
         'holdings_summary': [
             {

@@ -207,6 +207,8 @@ class TrackingService:
         sp500_series = []
         nasdaq_series = []
 
+        last_portfolio_value = None  # For forward-filling gaps between snapshots
+
         for d in all_dates:
             dates.append(d)
             sp500_series.append(sp500_data.get(d))
@@ -215,10 +217,17 @@ class TrackingService:
             snap = snapshot_map.get(d)
             if snap:
                 # Portfolio return aligned: actual return + spy_offset at inception
-                portfolio_series.append(round(snap.total_return_pct + spy_offset, 2))
+                val = round(snap.total_return_pct + spy_offset, 2)
+                portfolio_series.append(val)
+                last_portfolio_value = val
                 if portfolio_start_index is None:
                     portfolio_start_index = len(dates) - 1
+            elif last_portfolio_value is not None:
+                # Forward-fill: carry the last known portfolio value for dates without a snapshot
+                # This prevents null gaps that break the chart line
+                portfolio_series.append(last_portfolio_value)
             else:
+                # Before the first snapshot, no data
                 portfolio_series.append(None)
 
         return {
@@ -351,7 +360,8 @@ class TrackingService:
 
     def run_daily_decision(self, model_name: str = "gemini-3-flash-preview") -> Dict:
         """
-        Run the AI daily decision to potentially update the tracking portfolio.
+        Run the AI daily deep-research decision to potentially update the tracking portfolio.
+        Produces a structured daily research report with three-phase analysis.
         Returns the decision log entry.
         """
         today = date.today()
@@ -400,6 +410,9 @@ class TrackingService:
         cash = INITIAL_CAPITAL - (num_current * PER_STOCK_ALLOCATION) + total_sell_returns
         portfolio_value = cash + holdings_value
 
+        # Build decision retrospective from recent decision logs
+        decision_retrospective = self._build_decision_retrospective()
+
         # Build the AI prompt
         prompt_result = self._build_decision_prompt(
             holdings_info=holdings_info,
@@ -409,10 +422,11 @@ class TrackingService:
             total_realized_pnl=total_realized_pnl,
             available_slots=available_slots,
             num_current=num_current,
-            today=today
+            today=today,
+            decision_retrospective=decision_retrospective
         )
 
-        # Run AI agent
+        # Run AI agent with higher iteration limit for deep analysis
         start_time = time.time()
         try:
             supports, config, adapter = self.ai_analyzer._check_agent_support(model_name)
@@ -427,7 +441,7 @@ class TrackingService:
             text, usage, elapsed = self.ai_analyzer._run_agent(
                 adapter, prompt_result, tool_executor,
                 label="TrackingDecisionAgent",
-                max_iterations=25,
+                max_iterations=45,
                 Model=model_name
             )
 
@@ -477,7 +491,19 @@ class TrackingService:
                         'reason': reason, 'success': True
                     })
 
-        # Log the decision
+        # Extract structured report fields
+        market_regime_data = result.get('market_regime', {})
+        market_regime = market_regime_data.get('assessment', 'UNKNOWN') if isinstance(market_regime_data, dict) else str(market_regime_data)
+        confidence_level = result.get('confidence_level', 'UNKNOWN')
+
+        # Build the full report JSON (exclude raw actions/summary to avoid duplication)
+        report_data = {}
+        for key in ['market_regime', 'holdings_review', 'opportunity_scan',
+                     'portfolio_risk_assessment', 'confidence_level']:
+            if key in result:
+                report_data[key] = result[key]
+
+        # Log the decision with full report
         log = TrackingDecisionLog(
             date=today,
             model_name=model_name,
@@ -485,7 +511,10 @@ class TrackingService:
             summary=summary,
             actions_json=json.dumps(executed_actions),
             raw_response=text[:10000] if text else None,
-            elapsed_seconds=elapsed_seconds
+            elapsed_seconds=elapsed_seconds,
+            report_json=json.dumps(report_data, ensure_ascii=False) if report_data else None,
+            market_regime=market_regime[:20] if market_regime else None,
+            confidence_level=confidence_level[:20] if confidence_level else None
         )
         db.session.add(log)
 
@@ -576,10 +605,67 @@ class TrackingService:
         print(f"[Tracking] ✅ SELL {symbol} @ ${price:.2f} (return: {realized_pct:+.2f}%)")
         return True
 
+    def _build_decision_retrospective(self) -> str:
+        """
+        Build a retrospective of recent decisions to provide feedback loop.
+        Shows what was decided and what actually happened afterwards,
+        so the AI can learn from past accuracy.
+        """
+        recent_logs = TrackingDecisionLog.query.order_by(
+            TrackingDecisionLog.date.desc()
+        ).limit(5).all()
+
+        if not recent_logs:
+            return ""
+
+        # Get current holdings for price comparison
+        current_holdings = {s.symbol: s for s in TrackingStock.query.all()}
+
+        # Get recent sell transactions for outcome tracking
+        recent_sells = TrackingTransaction.query.filter_by(action='SELL').order_by(
+            TrackingTransaction.date.desc()
+        ).limit(10).all()
+        sell_outcomes = {}
+        for tx in recent_sells:
+            sell_outcomes[tx.symbol] = {
+                'sell_date': tx.date.strftime('%Y-%m-%d'),
+                'sell_price': tx.price,
+                'buy_price': tx.buy_price,
+                'realized_pct': tx.realized_pct
+            }
+
+        lines = []
+        for log in recent_logs:
+            entry = f"- **{log.date.strftime('%Y-%m-%d')}** (regime: {log.market_regime or 'N/A'}, confidence: {log.confidence_level or 'N/A'}):"
+            if log.has_changes:
+                actions = []
+                if log.actions_json:
+                    try:
+                        actions = json.loads(log.actions_json)
+                    except Exception:
+                        pass
+                for act in actions:
+                    symbol = act.get('symbol', '?')
+                    action_type = act.get('action', '?')
+                    if action_type == 'BUY' and symbol in current_holdings:
+                        stock = current_holdings[symbol]
+                        current_ret = round(((stock.current_price - stock.buy_price) / stock.buy_price) * 100, 2) if stock.current_price and stock.buy_price else 0
+                        entry += f"\n    {action_type} {symbol} → Currently {current_ret:+.2f}% since buy"
+                    elif action_type == 'SELL' and symbol in sell_outcomes:
+                        outcome = sell_outcomes[symbol]
+                        entry += f"\n    {action_type} {symbol} → Realized {outcome['realized_pct']:+.2f}%"
+                    else:
+                        entry += f"\n    {action_type} {symbol}"
+            else:
+                entry += "\n    No changes made"
+            lines.append(entry)
+
+        return "Recent decision history and outcomes:\n" + "\n".join(lines)
+
     def _build_decision_prompt(self, holdings_info, txn_history, portfolio_value,
                                 cash, total_realized_pnl, available_slots,
-                                num_current, today) -> str:
-        """Build the AI prompt for daily decision making."""
+                                num_current, today, decision_retrospective="") -> str:
+        """Build the AI prompt for daily deep-research decision making."""
         current_date = today.strftime('%Y-%m-%d')
 
         holdings_text = "No current holdings." if not holdings_info else json.dumps(holdings_info, indent=2)
@@ -589,13 +675,22 @@ class TrackingService:
 
         tool_descriptions = self.ai_analyzer._get_tool_descriptions_text()
 
-        return f"""You are a professional US stock portfolio manager with access to real-time market data tools AND web search.
+        # Build sector distribution text for concentration awareness
+        sector_symbols = {}
+        if holdings_info:
+            for h in holdings_info:
+                sym = h.get('symbol', 'UNKNOWN')
+                sector_symbols.setdefault('holdings', []).append(sym)
+
+        return f"""You are a **senior US equity portfolio strategist** producing a comprehensive Daily Research Report.
+You have access to real-time market data tools AND web search. Your report must be thorough, data-driven, and actionable.
 
 {INVESTMENT_PHILOSOPHY}
 
 **DATE**: {current_date}
 
-**TASK**: You manage a curated US stock tracking portfolio. Review the current holdings and market conditions, then decide whether to make any changes (BUY new stocks or SELL existing ones).
+**TASK**: Produce a structured Daily Research Report for the curated US stock tracking portfolio.
+The report follows a THREE-PHASE deep analysis pipeline. Execute ALL phases in order.
 
 **PORTFOLIO STATE**:
 - Initial Capital: ${INITIAL_CAPITAL:,.0f}
@@ -612,45 +707,152 @@ class TrackingService:
 **RECENT TRANSACTION HISTORY** (last 10):
 {txn_text}
 
+{f'''**DECISION RETROSPECTIVE** (review of recent past decisions):
+{decision_retrospective}
+''' if decision_retrospective else ''}
+
 **YOUR AVAILABLE TOOLS**:
 {tool_descriptions}
 
-**MANDATORY WORKFLOW**:
-1. Use `search_market_news` to check latest market news, macro conditions, sector rotations
-2. For each current holding, check if there are any negative catalysts or significant changes
-3. Use `batch_get_realtime_prices` to update prices for all current holdings
-4. Use `batch_get_kline_data` (period="3mo") for current holdings to check technical trends
-5. If you see sell candidates, use `batch_calculate_technical_indicators` to confirm
-6. If there are open slots and you find strong new opportunities, research them with tools
-7. ONLY recommend changes when you have HIGH CONVICTION — it's perfectly fine to make NO changes
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 1 — MARKET REGIME & MACRO ASSESSMENT (DO THIS FIRST)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. `search_market_news` with query: "US stock market macro outlook Fed policy {current_date}"
+2. `search_market_news` with query: "US stock market sector rotation hot sectors {current_date}"
+3. `search_market_news` with query: "VIX market volatility risk sentiment {current_date}"
+4. Synthesize findings into a **Market Regime Assessment**:
+   - Classify regime: **RISK-ON** (broad risk appetite, uptrend) / **NEUTRAL** (mixed signals) / **RISK-OFF** (defensive, downtrend)
+   - Identify **Sector Leadership**: which sectors are leading vs lagging
+   - Note key macro events upcoming (FOMC, CPI, earnings season, etc.)
+5. THIS REGIME ASSESSMENT GATES ALL SUBSEQUENT DECISIONS:
+   - RISK-OFF → bias toward SELL/REDUCE, raise stop-loss levels, NO new BUY unless extreme conviction
+   - NEUTRAL → selective, only high-conviction changes
+   - RISK-ON → more open to new opportunities, consider adding to winners
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 2 — HOLDINGS DEEP REVIEW (Score Card for EACH holding)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For EACH stock in current holdings, perform these steps:
+1. `search_market_news` for the specific stock's recent news and catalysts
+2. `batch_get_kline_data` (period="3mo") for all holdings — check price trends
+3. `batch_calculate_technical_indicators` (period="3mo") for all holdings — MA, RSI, momentum
+4. Score each holding on THREE dimensions (1-5 scale):
+
+   **Catalyst Score** (Weight: 40%):
+   - 5 = Strong new positive catalyst (earnings beat, major contract, sector tailwind)
+   - 4 = Moderate positive catalyst or thesis intact
+   - 3 = No significant news, thesis unchanged
+   - 2 = Minor negative news or headwinds emerging
+   - 1 = Thesis broken (earnings miss, regulatory risk, competitive loss)
+
+   **Technical Score** (Weight: 35%):
+   - 5 = Strong uptrend, MA5 > MA20 > MA60, RSI 50-65, volume confirming
+   - 4 = Uptrend intact, minor pullback to support
+   - 3 = Consolidation, no clear direction
+   - 2 = Breaking below key moving averages, weakening momentum
+   - 1 = Breakdown confirmed, death cross, RSI < 30 on high volume
+
+   **Valuation Score** (Weight: 25%):
+   - 5 = Near 6-month low, deeply attractive vs peers
+   - 4 = Below average valuation, reasonable entry
+   - 3 = Fair value, in-line with historical range
+   - 2 = Stretched, near top of range
+   - 1 = Extremely overvalued, speculative premium
+
+5. Calculate **Composite Score** = Catalyst × 0.40 + Technical × 0.35 + Valuation × 0.25
+6. Flag holdings with Composite < 2.5 as **SELL CANDIDATES**
+7. Flag holdings with Composite > 4.0 as **STRONG HOLD / ADD candidates**
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 3 — OPPORTUNITY SCAN & FINAL DECISION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. If there are available slots ({available_slots} open) AND market regime is NOT RISK-OFF:
+   a. `search_market_news` for "US stock market best opportunities strong momentum catalysts {current_date}"
+   b. For any promising candidates, verify with `get_kline_data` and `calculate_technical_indicators`
+   c. Only recommend BUY with **triple confirmation**: catalyst + technical setup + reasonable valuation
+2. Cross-validate: Compare any BUY candidate against worst-performing current holding
+   - If new candidate scores higher → consider SELL weakest + BUY new (rotation)
+3. Portfolio Risk Check:
+   - Sector concentration: are too many holdings in the same sector?
+   - Correlation risk: would adding this stock increase portfolio correlation?
+   - Overall exposure level appropriate for current market regime?
 
 **DECISION RULES**:
-- SELL a holding if: (a) negative catalyst / deteriorating fundamentals, (b) technical breakdown confirmed, (c) better opportunity available, or (d) target price reached
-- BUY a new stock if: (a) strong catalyst not yet priced in, (b) favorable technical setup, (c) attractive valuation, AND (d) there is an available slot
-- You are NOT required to fill all {MAX_HOLDINGS} slots. Quality over quantity.
-- Do NOT churn the portfolio unnecessarily — trading costs matter
+- SELL: Composite Score < 2.5 OR thesis broken OR technical breakdown confirmed
+- BUY: Triple confirmation (catalyst + technicals + valuation), Composite Score > 3.5, AND available slot
+- HOLD: Composite Score 2.5-4.0 with no urgent action needed
+- Do NOT churn — only trade when conviction is HIGH
 - Each position is allocated exactly ${PER_STOCK_ALLOCATION:,.0f}
+- Quality over quantity: you are NOT required to fill all {MAX_HOLDINGS} slots
 
 **SYMBOL FORMAT**: US stocks only — use standard tickers like AAPL, TSLA, NVDA, etc.
 
-**OUTPUT FORMAT** (JSON):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT (JSON)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Return a SINGLE valid JSON object with this structure:
 {{
-    "summary": "2-3 paragraph market analysis and portfolio review. Explain your reasoning for any changes or why you chose not to make changes. Reference specific news and data.",
+    "market_regime": {{
+        "assessment": "RISK-ON" or "NEUTRAL" or "RISK-OFF",
+        "reasoning": "2-3 sentences explaining the regime classification based on macro data",
+        "key_events": ["event1", "event2", "..."],
+        "sector_leaders": ["Sector1", "Sector2"],
+        "sector_laggards": ["Sector3", "Sector4"]
+    }},
+    "holdings_review": [
+        {{
+            "symbol": "TICKER",
+            "catalyst_score": 4,
+            "catalyst_notes": "Brief explanation of catalyst assessment",
+            "technical_score": 3,
+            "technical_notes": "Brief explanation of technical assessment",
+            "valuation_score": 3,
+            "valuation_notes": "Brief explanation of valuation assessment",
+            "composite_score": 3.45,
+            "recommendation": "HOLD" or "SELL" or "STRONG_HOLD",
+            "key_levels": {{
+                "support": 150.0,
+                "resistance": 180.0
+            }}
+        }}
+    ],
+    "opportunity_scan": [
+        {{
+            "symbol": "TICKER",
+            "name": "Company Name",
+            "catalyst": "Description of the catalyst",
+            "technical_setup": "Description of technical setup",
+            "valuation": "Description of valuation",
+            "composite_score": 4.1,
+            "conviction": "HIGH" or "MEDIUM"
+        }}
+    ],
+    "portfolio_risk_assessment": {{
+        "sector_concentration": "Description of sector exposure",
+        "correlation_risk": "LOW" or "MODERATE" or "HIGH",
+        "regime_alignment": "Description of how portfolio aligns with current market regime",
+        "overall_health": 7
+    }},
+    "confidence_level": "HIGH" or "MEDIUM" or "LOW",
+    "summary": "3-5 paragraph comprehensive daily research report covering market conditions, portfolio health, and rationale for all decisions. This should read like a professional research note.",
     "actions": [
         {{
             "action": "BUY" or "SELL",
             "symbol": "TICKER",
             "name": "Company Name",
-            "reason": "Detailed reasoning (50+ words) citing specific catalysts, technical levels, and valuation."
+            "reason": "Detailed reasoning (80+ words) citing specific catalysts, technical levels, valuation metrics, and composite score."
         }}
     ]
 }}
 
-**IMPORTANT**:
+**CRITICAL RULES**:
+- Execute ALL three phases before making decisions — do NOT skip Phase 1 or Phase 2
+- The "holdings_review" array MUST contain an entry for EVERY current holding
 - If no changes are needed, return an empty "actions" array: "actions": []
-- The "summary" field is ALWAYS required even if no actions are taken
+- The "summary" and "market_regime" fields are ALWAYS required
 - Return ONLY valid JSON, no additional text
 - NEVER exceed {MAX_HOLDINGS} total holdings after your actions
+- Base ALL scores and assessments on REAL DATA from tool calls — never fabricate numbers
 """
 
     # ------------------------------------------------------------------

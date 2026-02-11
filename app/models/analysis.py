@@ -456,6 +456,11 @@ class TrackingDecisionLog(db.Model):
     raw_response = db.Column(db.Text, nullable=True)  # Full AI response for debugging
     elapsed_seconds = db.Column(db.Float, nullable=True)
 
+    # Deep report fields
+    report_json = db.Column(db.Text, nullable=True)  # Full structured daily report (JSON)
+    market_regime = db.Column(db.String(20), nullable=True)  # RISK-ON / NEUTRAL / RISK-OFF
+    confidence_level = db.Column(db.String(20), nullable=True)  # HIGH / MEDIUM / LOW
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -463,6 +468,12 @@ class TrackingDecisionLog(db.Model):
         if self.actions_json:
             try:
                 actions = json.loads(self.actions_json)
+            except Exception:
+                pass
+        report = None
+        if self.report_json:
+            try:
+                report = json.loads(self.report_json)
             except Exception:
                 pass
         return {
@@ -473,5 +484,8 @@ class TrackingDecisionLog(db.Model):
             'summary': self.summary,
             'actions': actions,
             'elapsed_seconds': self.elapsed_seconds,
+            'market_regime': self.market_regime,
+            'confidence_level': self.confidence_level,
+            'report': report,
             'created_at': self.created_at.isoformat()
         }

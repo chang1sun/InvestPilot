@@ -71,7 +71,7 @@ createApp({
         const trackingBenchmark = ref(null);
         const trackingChartRef = ref(null);
         let trackingChartInstance = null;
-        const expandedDecisionId = ref(null);
+        const selectedDecision = ref(null);
         const expandedHoldingId = ref(null);
         
         // 从 sessionStorage 恢复会话数据（刷新页面时保留）
@@ -1763,7 +1763,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                     symbolSize: sig.is_current ? 35 : 28,  // 更小巧的尺寸（原 60/50 → 35/28）
                     itemStyle: {
                         color: displayColor,
-                        borderColor: sig.adopted ? '#374151' : (sig.is_current ? '#F59E0B' : '#E5E7EB'),  // 更柔和的边框色
+                        borderColor: sig.adopted ? '#374151' : (sig.is_current ? '#F59E0B' : '#475569'),  // 深色主题边框
                         borderWidth: sig.is_current ? 2 : (sig.adopted ? 1.5 : 1),  // 更细的边框
                         opacity: 0.85  // 添加透明度，不完全遮挡 K 线
                     },
@@ -1849,10 +1849,13 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
             console.log('🔍 Debug - allTransactionRecords.value:', allTransactionRecords.value);
 
             const option = {
-                title: { text: `${data.symbol} ${currentLanguage.value === 'zh' ? (isFundCN ? '净值趋势分析' : 'K线趋势分析') : 'Trend'}`, left: 'center' },
+title: { text: `${data.symbol} ${currentLanguage.value === 'zh' ? (isFundCN ? '净值趋势分析' : 'K线趋势分析') : 'Trend'}`, left: 'center', textStyle: { color: '#E2E8F0', fontSize: 14 } },
                 tooltip: {
                     trigger: 'axis',
                     axisPointer: { type: 'cross' },
+                    backgroundColor: 'rgba(15,23,42,0.9)',
+                    borderColor: '#334155',
+                    textStyle: { color: '#E2E8F0' },
                     formatter: function (params) {
                         let result = params[0].name + '<br/>';
                         params.forEach(item => {
@@ -1875,13 +1878,14 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                     { left: '8%', right: '5%', top: '12%', height: '58%' },
                     { left: '8%', right: '5%', top: '75%', height: '15%' }
                 ],
-                xAxis: [
+xAxis: [
                     { 
                         type: 'category', 
                         data: dates, 
                         scale: true, 
                         boundaryGap: true,
-                        axisLine: { onZero: false }, 
+                        axisLine: { onZero: false, lineStyle: { color: '#475569' } }, 
+                        axisLabel: { color: '#94A3B8' },
                         splitLine: { show: false }, 
                         min: 'dataMin', 
                         max: 'dataMax'
@@ -1890,15 +1894,19 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                         type: 'category', 
                         gridIndex: 1, 
                         data: dates, 
+                        axisLine: { lineStyle: { color: '#475569' } },
                         axisLabel: { show: false } 
                     }
                 ],
                 yAxis: [
                     { 
                         scale: true, 
-                        splitArea: { show: true },
+                        splitArea: { show: true, areaStyle: { color: ['rgba(30,41,59,0.5)', 'rgba(15,23,42,0.5)'] } },
                         splitNumber: 5,
+                        splitLine: { lineStyle: { color: '#334155', type: 'dashed' } },
+                        axisLine: { lineStyle: { color: '#475569' } },
                         axisLabel: {
+                            color: '#94A3B8',
                             formatter: function (value) {
                                 if (Math.abs(value) < 1 && value !== 0) {
                                     return value.toFixed(4);
@@ -1912,7 +1920,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                         gridIndex: 1, 
                         splitNumber: 2, 
                         axisLabel: { show: false }, 
-                        axisLine: { show: false }, 
+                        axisLine: { show: false },
                         axisTick: { show: false }, 
                         splitLine: { show: false } 
                     }
@@ -1927,7 +1935,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                         moveOnMouseWheel: false,
                         moveOnMouseMove: true
                     },
-                    { show: true, xAxisIndex: [0, 1], type: 'slider', top: '92%', height: 20, start: 50, end: 100 }
+{ show: true, xAxisIndex: [0, 1], type: 'slider', top: '92%', height: 20, start: 50, end: 100, borderColor: '#334155', backgroundColor: 'rgba(30,41,59,0.5)', fillerColor: 'rgba(99,102,241,0.2)', handleStyle: { color: '#6366F1' }, textStyle: { color: '#94A3B8' }, dataBackground: { lineStyle: { color: '#475569' }, areaStyle: { color: 'rgba(71,85,105,0.3)' } } }
                 ],
                 series: [
                     // Main chart: Line for FUND_CN, Candlestick for others
@@ -1980,7 +1988,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                                         html += `<div>${isZh ? '价格' : 'Price'}: <b>${transInfo.price}</b></div>`;
                         html += `<div>${isZh ? '数量' : 'Quantity'}: ${transInfo.quantity}</div>`;
                                         if (transInfo.notes) {
-                                            html += `<div style="margin-top: 4px; font-size: 10px; color: #999;">${transInfo.notes}</div>`;
+                                            html += `<div style="margin-top: 4px; font-size: 10px; color: #94A3B8;">${transInfo.notes}</div>`;
                                         }
                                     } else if (signalInfo) {
                                         // AI signal (only BUY/SELL shown on chart)
@@ -2067,7 +2075,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                                         html += `<div>${isZh ? '价格' : 'Price'}: <b>${transInfo.price}</b></div>`;
                                         html += `<div>${isZh ? '数量' : 'Quantity'}: ${transInfo.quantity}</div>`;
                                         if (transInfo.notes) {
-                                            html += `<div style="margin-top: 4px; font-size: 10px; color: #999;">${transInfo.notes}</div>`;
+                                            html += `<div style="margin-top: 4px; font-size: 10px; color: #94A3B8;">${transInfo.notes}</div>`;
                                         }
                                     } else if (signalInfo) {
                                         // AI signal (only BUY/SELL shown on chart)
@@ -2995,7 +3003,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                     },
                     itemStyle: {
                         color: '#2563eb',
-                        borderColor: '#fff',
+                        borderColor: '#1E293B',
                         borderWidth: 2,
                         shadowColor: 'rgba(37,99,235,0.4)',
                         shadowBlur: 6
@@ -3017,8 +3025,11 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
             const option = {
                 tooltip: {
                     trigger: 'axis',
+                    backgroundColor: 'rgba(15,23,42,0.9)',
+                    borderColor: '#334155',
+                    textStyle: { color: '#E2E8F0' },
                     formatter: function(params) {
-                        let html = `<div style="font-size:12px"><strong>${params[0].axisValue}</strong>`;
+                        let html = `<div style="font-size:12px;color:#E2E8F0"><strong>${params[0].axisValue}</strong>`;
                         params.forEach(p => {
                             if (p.value !== null && p.value !== undefined) {
                                 const color = p.value >= 0 ? '#16a34a' : '#dc2626';
@@ -3029,11 +3040,11 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                         return html;
                     }
                 },
-                legend: {
+legend: {
                     show: true,
                     top: 0,
                     right: 0,
-                    textStyle: { fontSize: 10 },
+                    textStyle: { fontSize: 10, color: '#CBD5E1' },
                     itemWidth: 16,
                     itemHeight: 2
                 },
@@ -3041,12 +3052,14 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                 xAxis: {
                     type: 'category',
                     data: data.dates,
-                    axisLabel: { fontSize: 10, interval: Math.floor(data.dates.length / 6) }
+                    axisLabel: { fontSize: 10, color: '#94A3B8', interval: Math.floor(data.dates.length / 6) },
+                    axisLine: { lineStyle: { color: '#475569' } }
                 },
                 yAxis: {
                     type: 'value',
-                    axisLabel: { fontSize: 10, formatter: '{value}%' },
-                    splitLine: { lineStyle: { type: 'dashed' } }
+                    axisLabel: { fontSize: 10, color: '#94A3B8', formatter: '{value}%' },
+                    splitLine: { lineStyle: { type: 'dashed', color: '#334155' } },
+                    axisLine: { lineStyle: { color: '#475569' } }
                 },
                 series: [
                     portfolioSeries,
@@ -3250,7 +3263,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
             trackingDecisions,
             trackingBenchmark,
             trackingChartRef,
-            expandedDecisionId,
+            selectedDecision,
             expandedHoldingId,
             loadTrackingData,
             refreshTrackingPrices,
