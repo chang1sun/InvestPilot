@@ -14,6 +14,14 @@ class TaskService:
         self.ai_analyzer = AIAnalyzer()
         self._running_tasks = {}  # {task_id: thread}
         self._task_stop_flags = {}  # {task_id: stop_flag}
+        self._app = None  # Reusable app reference to avoid repeated create_app()
+    
+    def _get_app(self):
+        """Get or create Flask app instance for background tasks (reuse to save memory)."""
+        if self._app is None:
+            from app import create_app
+            self._app = create_app()
+        return self._app
     
     def create_task(self, user_id, task_type, task_params):
         """创建新任务"""
@@ -49,8 +57,7 @@ class TaskService:
     
     def _execute_task(self, task_id, task_type, task_params, stop_flag):
         """执行任务（后台线程）"""
-        from app import create_app
-        app = create_app()
+        app = self._get_app()
         with app.app_context():
             try:
                 task = Task.query.filter_by(task_id=task_id).first()

@@ -4,25 +4,72 @@ from flask_cors import CORS
 from config import Config
 import redis
 import os
+import time as _time
 
 db = SQLAlchemy()
 r = None
 
 class MockRedis:
-    """Simple in-memory cache fallback when Redis is unavailable"""
+    """Simple in-memory cache fallback when Redis is unavailable, with TTL support."""
+    MAX_SIZE = 100  # Maximum number of entries to prevent unbounded growth
+
     def __init__(self):
-        self.store = {}
+        self.store = {}       # key -> value
+        self.expiry = {}      # key -> expiry timestamp (None = no expiry)
         print("Warning: Redis unavailable. Using in-memory MockRedis.")
 
+    def _is_expired(self, key):
+        """Check if a key has expired."""
+        exp = self.expiry.get(key)
+        if exp is not None and _time.time() > exp:
+            # Clean up expired entry
+            self.store.pop(key, None)
+            self.expiry.pop(key, None)
+            return True
+        return False
+
+    def _evict_expired(self):
+        """Remove all expired entries to free memory."""
+        now = _time.time()
+        expired_keys = [k for k, exp in self.expiry.items() if exp is not None and now > exp]
+        for k in expired_keys:
+            self.store.pop(k, None)
+            self.expiry.pop(k, None)
+
+    def _enforce_max_size(self):
+        """Evict oldest entries if store exceeds MAX_SIZE."""
+        if len(self.store) > self.MAX_SIZE:
+            # First evict expired
+            self._evict_expired()
+            # If still over limit, remove entries with earliest expiry
+            if len(self.store) > self.MAX_SIZE:
+                # Sort by expiry time (None = no expiry, treat as infinity)
+                sorted_keys = sorted(
+                    self.expiry.keys(),
+                    key=lambda k: self.expiry.get(k) or float('inf')
+                )
+                # Remove oldest entries until within limit
+                to_remove = len(self.store) - self.MAX_SIZE
+                for k in sorted_keys[:to_remove]:
+                    self.store.pop(k, None)
+                    self.expiry.pop(k, None)
+
     def get(self, key):
+        if self._is_expired(key):
+            return None
         return self.store.get(key)
 
     def set(self, key, value):
         self.store[key] = value
+        self.expiry[key] = None  # No expiry
+        self._enforce_max_size()
         return True
 
-    def setex(self, key, time, value):
+    def setex(self, key, ttl_seconds, value):
+        """Set a key with TTL (time-to-live) in seconds."""
         self.store[key] = value
+        self.expiry[key] = _time.time() + ttl_seconds
+        self._enforce_max_size()
         return True
 
 def create_app(config_class=Config):

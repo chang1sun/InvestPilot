@@ -155,20 +155,32 @@ class DataProvider:
     _cn_fund_list_cache_time = None
 
     @staticmethod
+    def _release_cn_fund_cache():
+        """Release the CN fund list cache to free memory."""
+        DataProvider._cn_fund_list_cache = None
+        DataProvider._cn_fund_list_cache_time = None
+        import gc
+        gc.collect()
+
+    @staticmethod
     def search_cn_fund(query):
         """
         Search for Chinese funds using akshare.
         """
         try:
-            # Check cache (valid for 24 hours)
+            # Check cache (valid for 1 hour, reduced from 24h to limit memory)
             now = time.time()
             if (DataProvider._cn_fund_list_cache is None or 
                 DataProvider._cn_fund_list_cache_time is None or 
-                now - DataProvider._cn_fund_list_cache_time > 86400):
+                now - DataProvider._cn_fund_list_cache_time > 3600):
                 
                 print("Fetching CN fund list from akshare...")
                 # ak.fund_name_em() returns: 基金代码, 拼音缩写, 基金简称, 基金类型, 拼音全称
                 df = ak.fund_name_em()
+                # Only keep columns we need to save memory (drop 基金类型, 拼音全称, etc.)
+                needed_cols = ['基金代码', '拼音缩写', '基金简称']
+                available_cols = [c for c in needed_cols if c in df.columns]
+                df = df[available_cols].copy()
                 DataProvider._cn_fund_list_cache = df
                 DataProvider._cn_fund_list_cache_time = now
             
@@ -707,10 +719,12 @@ class BatchFetcher:
     """
     Batch data fetcher for yfinance API calls.
     Reduces rate limit issues by fetching multiple symbols efficiently.
+    Memory-bounded cache with automatic eviction of expired entries.
     """
     
     _instance = None
     _lock = threading.Lock()
+    MAX_CACHE_ENTRIES = 50  # Maximum number of cache entries to prevent unbounded memory growth
     
     def __new__(cls):
         """Singleton pattern to ensure only one fetcher instance"""
@@ -718,31 +732,64 @@ class BatchFetcher:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
-                    cls._instance._cache = {}
-                    cls._instance._cache_timestamps = {}
+                    cls._instance._cache = {}            # key -> data
+                    cls._instance._cache_timestamps = {}  # key -> (timestamp, ttl_seconds)
                     cls._instance._cache_lock = threading.Lock()
                     # Rate limiter: allow 5 requests per 1 second (yfinance is more lenient)
                     cls._instance._rate_limiter = RateLimiter(max_calls=5, time_window=1)
         return cls._instance
     
-    def _is_cache_valid(self, cache_key, ttl_seconds: int = 300) -> bool:
-        """Check if cache entry is still valid"""
+    def _is_cache_valid(self, cache_key) -> bool:
+        """Check if cache entry is still valid based on its stored TTL"""
         if cache_key not in self._cache_timestamps:
             return False
-        age = (datetime.now(timezone.utc) - self._cache_timestamps[cache_key]).total_seconds()
-        return age < ttl_seconds
+        timestamp, ttl = self._cache_timestamps[cache_key]
+        age = (datetime.now(timezone.utc) - timestamp).total_seconds()
+        return age < ttl
     
-    def _update_cache(self, cache_key, data):
-        """Update cache with timestamp"""
+    def _evict_expired(self):
+        """Remove all expired entries from cache to free memory."""
+        expired_keys = [k for k in list(self._cache_timestamps.keys()) if not self._is_cache_valid(k)]
+        for k in expired_keys:
+            self._cache.pop(k, None)
+            self._cache_timestamps.pop(k, None)
+        if expired_keys:
+            print(f"🧹 Evicted {len(expired_keys)} expired cache entries, {len(self._cache)} remaining")
+    
+    def _enforce_max_size(self):
+        """Evict oldest/expired entries if cache exceeds MAX_CACHE_ENTRIES."""
+        if len(self._cache) <= self.MAX_CACHE_ENTRIES:
+            return
+        # First, evict expired
+        self._evict_expired()
+        # If still over limit, remove oldest entries
+        if len(self._cache) > self.MAX_CACHE_ENTRIES:
+            sorted_keys = sorted(
+                self._cache_timestamps.keys(),
+                key=lambda k: self._cache_timestamps[k][0]  # Sort by timestamp
+            )
+            to_remove = len(self._cache) - self.MAX_CACHE_ENTRIES
+            for k in sorted_keys[:to_remove]:
+                self._cache.pop(k, None)
+                self._cache_timestamps.pop(k, None)
+            print(f"🧹 LRU evicted {to_remove} cache entries, {len(self._cache)} remaining")
+    
+    def _update_cache(self, cache_key, data, ttl_seconds: int = 300):
+        """Update cache with timestamp and TTL"""
         with self._cache_lock:
             self._cache[cache_key] = data
-            self._cache_timestamps[cache_key] = datetime.now(timezone.utc)
+            self._cache_timestamps[cache_key] = (datetime.now(timezone.utc), ttl_seconds)
+            self._enforce_max_size()
     
     def _get_from_cache(self, cache_key):
-        """Get data from cache if valid"""
+        """Get data from cache if valid, auto-evict if expired"""
         with self._cache_lock:
             if self._is_cache_valid(cache_key):
                 return self._cache[cache_key]
+            # Auto-evict expired entry on access
+            if cache_key in self._cache:
+                self._cache.pop(cache_key, None)
+                self._cache_timestamps.pop(cache_key, None)
         return None
     
     @retry_on_rate_limit(max_retries=3, initial_delay=2.0, backoff_factor=2.0)
@@ -842,8 +889,8 @@ class BatchFetcher:
                     # Let's try to match columns if possible, or just log warning
                     print("    ⚠️ Unexpected data format from yfinance batch download")
             
-            # Update cache
-            self._update_cache(cache_key, results)
+            # Update cache (5 minutes for batch data)
+            self._update_cache(cache_key, results, ttl_seconds=cache_ttl)
             
             return results
             
@@ -885,9 +932,9 @@ class BatchFetcher:
         # Fetch data
         result = DataProvider.get_kline_data(symbol, period, interval, is_cn_fund=is_cn_fund)
         
-        # Update cache
+        # Update cache with appropriate TTL
         if result:
-            self._update_cache(cache_key, result)
+            self._update_cache(cache_key, result, ttl_seconds=ttl)
         return result
     
     @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
@@ -921,9 +968,9 @@ class BatchFetcher:
         else:
             result = DataProvider.get_current_price(symbol)
         
-        # Update cache
+        # Update cache (1 minute TTL for price data)
         if result is not None:
-            self._update_cache(cache_key, result)
+            self._update_cache(cache_key, result, ttl_seconds=60)
         return result
     
     @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
@@ -958,9 +1005,9 @@ class BatchFetcher:
         else:
             result = DataProvider.get_daily_change_percent(symbol)
         
-        # Update cache
+        # Update cache (1 minute TTL for daily change data)
         if result is not None:
-            self._update_cache(cache_key, result)
+            self._update_cache(cache_key, result, ttl_seconds=60)
         return result
     
     @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
@@ -991,8 +1038,8 @@ class BatchFetcher:
         # Fetch data
         result = DataProvider.get_exchange_rate(from_currency, to_currency)
         
-        # Update cache
-        self._update_cache(cache_key, result)
+        # Update cache (1 hour TTL for exchange rate)
+        self._update_cache(cache_key, result, ttl_seconds=3600)
         
         return result
 
