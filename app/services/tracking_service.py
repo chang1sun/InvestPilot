@@ -1024,7 +1024,7 @@ The report follows a THREE-PHASE deep analysis pipeline. Execute ALL phases in o
 {tool_descriptions}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHASE 1 — MARKET REGIME & MACRO ASSESSMENT (DO THIS FIRST)
+PHASE 1 -- MARKET REGIME & MACRO ASSESSMENT (DO THIS FIRST)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. `search_market_news` with query: "US stock market macro outlook Fed policy {current_date}"
 2. `search_market_news` with query: "US stock market sector rotation hot sectors {current_date}"
@@ -1039,12 +1039,12 @@ PHASE 1 — MARKET REGIME & MACRO ASSESSMENT (DO THIS FIRST)
    - RISK-ON → more open to new opportunities, consider adding to winners
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHASE 2 — HOLDINGS DEEP REVIEW (Score Card for EACH holding)
+PHASE 2 -- HOLDINGS DEEP REVIEW (Score Card for EACH holding)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 For EACH stock in current holdings, perform these steps:
 1. `search_market_news` for the specific stock's recent news and catalysts
-2. `batch_get_kline_data` (period="3mo") for all holdings — check price trends
-3. `batch_calculate_technical_indicators` (period="3mo") for all holdings — MA, RSI, momentum
+2. `batch_get_kline_data` (period="3mo") for all holdings -- check price trends
+3. `batch_calculate_technical_indicators` (period="3mo") for all holdings -- MA, RSI, momentum
 4. Score each holding on THREE dimensions (1-5 scale):
 
    **Catalyst Score** (Weight: 40%):
@@ -1073,7 +1073,7 @@ For EACH stock in current holdings, perform these steps:
 7. Flag holdings with Composite > 4.0 as **STRONG HOLD / ADD candidates**
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHASE 3 — OPPORTUNITY SCAN & FINAL DECISION
+PHASE 3 -- OPPORTUNITY SCAN & FINAL DECISION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. If there are available slots ({available_slots} open) AND market regime is NOT RISK-OFF:
    a. `search_market_news` for "US stock market best opportunities strong momentum catalysts {current_date}"
@@ -1090,11 +1090,11 @@ PHASE 3 — OPPORTUNITY SCAN & FINAL DECISION
 - SELL: Composite Score < 2.5 OR thesis broken OR technical breakdown confirmed
 - BUY: Triple confirmation (catalyst + technicals + valuation), Composite Score > 3.5, AND available slot
 - HOLD: Composite Score 2.5-4.0 with no urgent action needed
-- Do NOT churn — only trade when conviction is HIGH
+- Do NOT churn -- only trade when conviction is HIGH
 - Fresh positions are allocated ${PER_STOCK_ALLOCATION:,.0f}; replacement buys (after selling) use actual sell proceeds
 - Quality over quantity: you are NOT required to fill all {MAX_HOLDINGS} slots
 
-**SYMBOL FORMAT**: US stocks only — use standard tickers like AAPL, TSLA, NVDA, etc.
+**SYMBOL FORMAT**: US stocks only -- use standard tickers like AAPL, TSLA, NVDA, etc.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT (JSON)
@@ -1155,13 +1155,13 @@ Return a SINGLE valid JSON object with this structure:
 }}
 
 **CRITICAL RULES**:
-- Execute ALL three phases before making decisions — do NOT skip Phase 1 or Phase 2
+- Execute ALL three phases before making decisions -- do NOT skip Phase 1 or Phase 2
 - The "holdings_review" array MUST contain an entry for EVERY current holding
 - If no changes are needed, return an empty "actions" array: "actions": []
 - The "summary" and "market_regime" fields are ALWAYS required
 - Return ONLY valid JSON, no additional text
 - NEVER exceed {MAX_HOLDINGS} total holdings after your actions
-- Base ALL scores and assessments on REAL DATA from tool calls — never fabricate numbers
+- Base ALL scores and assessments on REAL DATA from tool calls -- never fabricate numbers
 """
 
     # ------------------------------------------------------------------

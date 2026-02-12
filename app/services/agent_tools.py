@@ -22,7 +22,7 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "symbol": {
                     "type": "string",
-                    "description": "Ticker symbol. IMPORTANT — format varies by market: US stocks: ticker only (e.g. AAPL, TSLA, MSFT); HK stocks: 4-digit code + '.HK' (e.g. 0700.HK, 9988.HK, 0005.HK — always 4 digits, pad with leading zeros); A-shares Shanghai: 6-digit code + '.SS' (e.g. 600519.SS, 601318.SS); A-shares Shenzhen: 6-digit code + '.SZ' (e.g. 000858.SZ, 300750.SZ); Crypto: symbol + '-USD' (e.g. BTC-USD, ETH-USD); Commodities: Yahoo Finance format (e.g. GC=F for gold, CL=F for oil); Chinese funds: 6-digit fund code only (e.g. 015283)."
+                    "description": "Ticker symbol. IMPORTANT -- format varies by market: US stocks: ticker only (e.g. AAPL, TSLA, MSFT); HK stocks: 4-digit code + '.HK' (e.g. 0700.HK, 9988.HK, 0005.HK -- always 4 digits, pad with leading zeros); A-shares Shanghai: 6-digit code + '.SS' (e.g. 600519.SS, 601318.SS); A-shares Shenzhen: 6-digit code + '.SZ' (e.g. 000858.SZ, 300750.SZ); Crypto: symbol + '-USD' (e.g. BTC-USD, ETH-USD); Commodities: Yahoo Finance format (e.g. GC=F for gold, CL=F for oil); Chinese funds: 6-digit fund code only (e.g. 015283)."
                 },
                 "asset_type": {
                     "type": "string",

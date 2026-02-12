@@ -152,7 +152,7 @@ class BaseModelAdapter(ABC):
                     "content": result_str
                 })
 
-        # Exhausted iterations — final call without tools
+        # Exhausted iterations -- final call without tools
         response = self.client.chat.completions.create(
             model=self.model_id,
             messages=messages

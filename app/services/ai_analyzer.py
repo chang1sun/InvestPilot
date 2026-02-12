@@ -18,20 +18,20 @@ from app.services.model_config import get_model_config
 # Unified Investment Philosophy (shared across all prompts)
 # ============================================================
 INVESTMENT_PHILOSOPHY = """
-**INVESTMENT PHILOSOPHY — Catalyst-Driven Trend Following with Macro Timing**
+**INVESTMENT PHILOSOPHY -- Catalyst-Driven Trend Following with Macro Timing**
 
 You pursue **high win-rate AND high reward-to-risk** trades by requiring triple confirmation before entry:
 
-1. **Catalyst (WHY now?)** — A concrete, recent event or structural shift that can move the price:
+1. **Catalyst (WHY now?)** -- A concrete, recent event or structural shift that can move the price:
    news, earnings, policy, sector rotation, fund flows, or macro regime change.
    A trade without a catalyst is a gamble.
 
-2. **Technicals (WHEN to act?)** — Price-volume structure confirms the catalyst is being priced in:
+2. **Technicals (WHEN to act?)** -- Price-volume structure confirms the catalyst is being priced in:
    trend alignment (MA5 > MA20 > MA60 for longs), volume expansion on breakout,
    momentum (RSI 40-70 for entries, divergence for exits), and key support/resistance levels.
    A catalyst without technical confirmation is premature.
 
-3. **Valuation & Macro Anchor (HOW MUCH upside?)** — Valuation percentile, historical range,
+3. **Valuation & Macro Anchor (HOW MUCH upside?)** -- Valuation percentile, historical range,
    sector comps, or macro positioning provides the margin of safety and defines the reward target.
    Overvalued assets with catalysts are traps; undervalued assets with catalysts are opportunities.
 
@@ -58,8 +58,8 @@ SIGNAL_DEFINITIONS_EN = """
 ⚠️ CRITICAL RULES:
 - If user is EMPTY (no position): only BUY or WAIT are valid.
 - If user is HOLDING: only ADD, REDUCE, SELL, or HOLD are valid.
-- NEVER output BUY when user already holds the asset — use ADD instead.
-- NEVER output WAIT when user already holds the asset — use HOLD instead.
+- NEVER output BUY when user already holds the asset -- use ADD instead.
+- NEVER output WAIT when user already holds the asset -- use HOLD instead.
 """
 
 SIGNAL_DEFINITIONS_ZH = """
@@ -74,8 +74,8 @@ SIGNAL_DEFINITIONS_ZH = """
 ⚠️ 关键规则：
 - 如果用户当前空仓（无持仓）：只能输出 BUY 或 WAIT。
 - 如果用户当前持仓中：只能输出 ADD、REDUCE、SELL 或 HOLD。
-- 用户已持有时，绝不能输出 BUY —— 应使用 ADD。
-- 用户已持有时，绝不能输出 WAIT —— 应使用 HOLD。
+- 用户已持有时，绝不能输出 BUY ---- 应使用 ADD。
+- 用户已持有时，绝不能输出 WAIT ---- 应使用 HOLD。
 """
 
 # Asset type → (role, asset_name, macro_focus)
@@ -209,7 +209,7 @@ class AIAnalyzer:
                 except json.JSONDecodeError:
                     pass
 
-        # Step 5: All attempts failed — raise with the original error for clarity
+        # Step 5: All attempts failed -- raise with the original error for clarity
         raise first_err
 
     @staticmethod
@@ -263,7 +263,7 @@ class AIAnalyzer:
                 depth -= 1
                 if depth == 0:
                     return text[start:i + 1]
-        # Unbalanced — try closing the remaining braces
+        # Unbalanced -- try closing the remaining braces
         if depth > 0:
             return text[start:] + '}' * depth
         return None
@@ -344,11 +344,11 @@ class AIAnalyzer:
         existing_thinking = [e for e in tool_executor.trace if e.get('type') == 'thinking']
 
         if existing_thinking:
-            # Native thinking already captured — add JSON thinking as a final summary
+            # Native thinking already captured -- add JSON thinking as a final summary
             # only if it has materially different content
             return
 
-        # No native thinking was captured — weave JSON thinking into the trace
+        # No native thinking was captured -- weave JSON thinking into the trace
         # Strategy: interleave thinking steps before tool_call entries
         old_trace = list(tool_executor._trace)
         new_trace = []
@@ -407,7 +407,7 @@ class AIAnalyzer:
         Agent-mode K-line analysis using function calling.
         The AI model actively calls tools to fetch real-time price, kline,
         technical indicators, and portfolio/position data on its own.
-        No data is pre-fetched or pre-passed — all context comes from tool calls.
+        No data is pre-fetched or pre-passed -- all context comes from tool calls.
         """
         supports, config, adapter = self._check_agent_support(model_name)
         if not supports:
@@ -441,36 +441,36 @@ class AIAnalyzer:
 
 **THREE-CHECKPOINT DECISION FRAMEWORK** (all three must be evaluated):
 
-CHECK 1 — Catalyst (from `search_market_news`):
+CHECK 1 -- Catalyst (from `search_market_news`):
 - What recent event, news, or structural shift affects {symbol}?
 - Is the catalyst forward-looking (not yet priced in) or backward-looking (already reflected)?
 - Rate catalyst strength: STRONG (earnings beat, major policy, sector breakout) / MODERATE (analyst upgrade, sector tailwind) / WEAK (no clear catalyst) / NEGATIVE (headwinds)
 
-CHECK 2 — Technicals (from kline + indicators):
+CHECK 2 -- Technicals (from kline + indicators):
 - Trend: Is MA5 > MA20? Is price above/below key moving averages?
 - Momentum: RSI position (40-70 = healthy uptrend zone), momentum direction
 - Volume: Is volume confirming the price move? Expansion on breakout? Contraction on pullback?
 - Structure: Key support/resistance levels, chart patterns
 - Rate technicals: BULLISH / NEUTRAL / BEARISH
 
-CHECK 3 — Valuation & Macro Anchor (from price history + fundamentals + news):
+CHECK 3 -- Valuation & Macro Anchor (from price history + fundamentals + news):
 - Where is the current price relative to its 6-month range? (bottom 20% = cheap, top 20% = expensive)
 - {focus}
 - What is the macro backdrop? (risk-on vs risk-off, sector cycle position)
 - Rate valuation: ATTRACTIVE / FAIR / STRETCHED
 
-{"""**ENTRY DECISION MATRIX (for BUY/ADD — when EMPTY or adding to HOLDING)**:
+{"""**ENTRY DECISION MATRIX (for BUY/ADD -- when EMPTY or adding to HOLDING)**:
 | Catalyst | Technicals | Valuation | Decision (EMPTY → BUY / HOLDING → ADD) |
 |----------|------------|-----------|----------|
 | STRONG   | BULLISH    | ATTRACTIVE| HIGH conviction (50-70%) |
 | STRONG   | BULLISH    | FAIR      | MEDIUM conviction (30-50%) |
 | STRONG   | NEUTRAL    | ATTRACTIVE| MEDIUM conviction (30-50%), wait for technical trigger |
 | MODERATE | BULLISH    | ATTRACTIVE| MEDIUM conviction (30-40%) |
-| STRONG   | BEARISH    | any       | WAIT/HOLD — catalyst not confirmed by price action |
-| WEAK     | BULLISH    | any       | WAIT/HOLD — rally without fundamental support is fragile |
-| any      | any        | STRETCHED | CAUTION — limited upside, define tight stop |
+| STRONG   | BEARISH    | any       | WAIT/HOLD -- catalyst not confirmed by price action |
+| WEAK     | BULLISH    | any       | WAIT/HOLD -- rally without fundamental support is fragile |
+| any      | any        | STRETCHED | CAUTION -- limited upside, define tight stop |
 
-**EXIT DECISION MATRIX (for REDUCE/SELL — only when HOLDING)**:
+**EXIT DECISION MATRIX (for REDUCE/SELL -- only when HOLDING)**:
 - Catalyst deterioration (earnings miss, policy reversal): SELL (close 100%)
 - Technical breakdown (price < MA20, rising volume on decline): REDUCE 30-50%
 - Valuation stretched + momentum fading: REDUCE 25-50%, raise stop
@@ -486,9 +486,9 @@ CHECK 3 — Valuation & Macro Anchor (from price history + fundamentals + news):
 | 强     | 看涨   | 合理     | 中等信心（30-50%仓位）|
 | 强     | 中性   | 有吸引力 | 中等信心（30-50%），等待技术面确认 |
 | 中等   | 看涨   | 有吸引力 | 中等信心（30-40%仓位）|
-| 强     | 看跌   | 任意     | WAIT/HOLD — 催化剂未被价格行动确认 |
-| 弱     | 看涨   | 任意     | WAIT/HOLD — 缺乏基本面支撑的上涨不可靠 |
-| 任意   | 任意   | 偏高     | 谨慎 — 上行空间有限，设置严格止损 |
+| 强     | 看跌   | 任意     | WAIT/HOLD -- 催化剂未被价格行动确认 |
+| 弱     | 看涨   | 任意     | WAIT/HOLD -- 缺乏基本面支撑的上涨不可靠 |
+| 任意   | 任意   | 偏高     | 谨慎 -- 上行空间有限，设置严格止损 |
 
 **减仓/平仓决策矩阵（仅在持仓时适用）**：
 - 催化剂恶化（财报不及预期、政策逆转）：SELL 平仓（清仓 100%）
@@ -523,7 +523,7 @@ CHECK 3 — Valuation & Macro Anchor (from price history + fundamentals + news):
 }}
 
 **IMPORTANT**:
-- "thinking_process" is REQUIRED — capture your reasoning at EACH step. Base ALL on REAL DATA from tool calls.
+- "thinking_process" is REQUIRED -- capture your reasoning at EACH step. Base ALL on REAL DATA from tool calls.
 - The "action" field MUST respect position state: use BUY/WAIT when empty, ADD/REDUCE/SELL/HOLD when holding.
 - Return ONLY JSON.
 """
@@ -616,7 +616,7 @@ CHECK 3 — Valuation & Macro Anchor (from price history + fundamentals + news):
 **TASK**: Recommend 10 promising {asset_type} assets for purchase in the next 2 weeks to 2 months.
 
 **CRITERIA**:
-- Asset Type: {asset_type} (MANDATORY — only recommend this type)
+- Asset Type: {asset_type} (MANDATORY -- only recommend this type)
 - Market: {market}
 - Capital Size: {criteria.get('capital', 'Not specified')}
 - Risk Tolerance: {criteria.get('risk', 'Not specified')}
@@ -626,22 +626,22 @@ CHECK 3 — Valuation & Macro Anchor (from price history + fundamentals + news):
 **YOUR AVAILABLE TOOLS**:
 {tool_descriptions}
 
-**⚠️ CRITICAL METHODOLOGY — "Catalyst-First, Triple-Verified" (MANDATORY)**:
+**⚠️ CRITICAL METHODOLOGY -- "Catalyst-First, Triple-Verified" (MANDATORY)**:
 You MUST follow a **top-down, catalyst-driven** approach with triple verification.
-Do NOT start by picking well-known blue-chip stocks — that is "drawing the target after shooting the arrow".
+Do NOT start by picking well-known blue-chip stocks -- that is "drawing the target after shooting the arrow".
 
 **MANDATORY WORKFLOW** (follow this exact order):
 
-**Phase 1 — Catalyst Discovery (use `search_market_news` FIRST)**:
-1. Call `search_market_news`: "{market} {asset_type} market news today {current_date}" — headlines, policy, earnings, sector rotation
-2. Call `search_market_news`: "{market} {asset_type} hot stocks this week catalysts" — specific assets with real catalysts
-3. Call `search_market_news`: sector/thematic trends, e.g., "AI semiconductor EV sector news {current_date}" — identify 2-3 hot themes
+**Phase 1 -- Catalyst Discovery (use `search_market_news` FIRST)**:
+1. Call `search_market_news`: "{market} {asset_type} market news today {current_date}" -- headlines, policy, earnings, sector rotation
+2. Call `search_market_news`: "{market} {asset_type} hot stocks this week catalysts" -- specific assets with real catalysts
+3. Call `search_market_news`: sector/thematic trends, e.g., "AI semiconductor EV sector news {current_date}" -- identify 2-3 hot themes
 
-**Phase 2 — Candidate Screening (based on Phase 1)**:
+**Phase 2 -- Candidate Screening (based on Phase 1)**:
 4. Compile 15-20 candidate symbols **specifically mentioned in news** or in hot sectors discovered
 5. Use `batch_get_realtime_prices` to check current prices
 
-**Phase 3 — Technical + Valuation Verification**:
+**Phase 3 -- Technical + Valuation Verification**:
 6. Use `batch_get_kline_data` (period="6mo") to assess trend AND price position within range
 7. Use `batch_calculate_technical_indicators` for top candidates to confirm entry timing (MUCH more efficient than calling calculate_technical_indicators repeatedly)
 8. For each candidate, evaluate:
@@ -651,7 +651,7 @@ Do NOT start by picking well-known blue-chip stocks — that is "drawing the tar
 
 **ANTI-PATTERN WARNING**: Every recommended asset MUST trace back to a specific recent catalyst discovered through `search_market_news`. "Well-known company" is NOT a reason.
 
-**EFFICIENCY TIP**: Use batch tools — `batch_get_realtime_prices` (up to 20), `batch_get_kline_data` (up to 10), and `batch_calculate_technical_indicators` (up to 10).
+**EFFICIENCY TIP**: Use batch tools -- `batch_get_realtime_prices` (up to 20), `batch_get_kline_data` (up to 10), and `batch_calculate_technical_indicators` (up to 10).
 
 **SYMBOL FORMAT GUIDE** (use exact format or data fetch will fail):
 - US stocks: AAPL, TSLA, MSFT, NVDA
@@ -683,25 +683,25 @@ Do NOT start by picking well-known blue-chip stocks — that is "drawing the tar
     "thinking_process": [
         "Step 1: News search found these key catalysts and themes: [specifics]...",
         "Step 2: Identified candidate assets from news: [list with catalyst for each]...",
-        "Step 3: Price screening — current prices and 6mo range positions...",
-        "Step 4: Technical verification — trend, volume, momentum assessment...",
+        "Step 3: Price screening -- current prices and 6mo range positions...",
+        "Step 4: Technical verification -- trend, volume, momentum assessment...",
         "Step 5: Triple-check summary: which candidates pass Catalyst + Technicals + Valuation..."
     ],
-    "market_overview": "3-5 paragraph analysis: (1) Market regime and macro backdrop — cite news; (2) Key catalysts and sector themes — specific events and dates; (3) Risk factors and headwinds; (4) Strategy recommendation for this environment. MUST reference specific news. 200+ words.",
+    "market_overview": "3-5 paragraph analysis: (1) Market regime and macro backdrop -- cite news; (2) Key catalysts and sector themes -- specific events and dates; (3) Risk factors and headwinds; (4) Strategy recommendation for this environment. MUST reference specific news. 200+ words.",
     "recommendations": [
         {{
             "symbol": "Ticker",
             "name": "Asset Name",
             "price": "Current Price (from tool)",
             "level": "⭐⭐⭐ | ⭐⭐ | ⭐ | ⚠️ | 🔻",
-            "reason": "MUST include all three dimensions (80+ words): (1) CATALYST — the specific news event/development that surfaced this pick, with date; (2) TECHNICALS — trend direction, key levels, momentum status from tool data; (3) VALUATION — price position in range, upside potential, risk/reward estimate. End with: Catalyst=[STRONG/MODERATE/WEAK], Technicals=[BULLISH/NEUTRAL/BEARISH], Valuation=[ATTRACTIVE/FAIR/STRETCHED]."
+            "reason": "MUST include all three dimensions (80+ words): (1) CATALYST -- the specific news event/development that surfaced this pick, with date; (2) TECHNICALS -- trend direction, key levels, momentum status from tool data; (3) VALUATION -- price position in range, upside potential, risk/reward estimate. End with: Catalyst=[STRONG/MODERATE/WEAK], Technicals=[BULLISH/NEUTRAL/BEARISH], Valuation=[ATTRACTIVE/FAIR/STRETCHED]."
         }}
     ]
 }}
 
 **CONTENT QUALITY REQUIREMENTS**:
 - Every "reason" must explicitly state all three dimensions: catalyst + technicals + valuation
-- No vague language — use specific prices, percentages, dates, and news references
+- No vague language -- use specific prices, percentages, dates, and news references
 - "market_overview" must be grounded in actual search results, not generic commentary
 
 **IMPORTANT**: "thinking_process" is REQUIRED. Return ONLY JSON.
@@ -779,76 +779,76 @@ Do NOT start by picking well-known blue-chip stocks — that is "drawing the tar
 
 {"""**THREE-CHECKPOINT EVALUATION FOR EXISTING POSITIONS**:
 
-CHECK 1 — Catalyst Status:
+CHECK 1 -- Catalyst Status:
 - Has the original investment thesis (catalyst) played out, or is it still unfolding?
 - Any NEW catalysts (positive or negative) since purchase?
 - Is there catalyst deterioration (earnings miss, policy reversal, competitive threat)?
 - Rate: POSITIVE (thesis intact + new tailwinds) / NEUTRAL (thesis intact, no change) / NEGATIVE (thesis broken or headwinds)
 
-CHECK 2 — Technical Health:
+CHECK 2 -- Technical Health:
 - Is the trend still intact? (Price above key MAs? Momentum direction?)
 - Are there signs of distribution (price up on declining volume)?
 - Key support levels: where does the thesis get invalidated?
 - Rate: HEALTHY (uptrend intact) / WEAKENING (mixed signals) / DETERIORATING (breakdown imminent)
 
-CHECK 3 — Valuation & P&L Context:
+CHECK 3 -- Valuation & P&L Context:
 - Current price vs avg buy price: P&L status
 - Current price position in 6-month range: is it stretched or has room to run?
 - Risk/reward from current level: is asymmetry still favorable?
 - Portfolio weight: is it appropriate given current conviction level?
 - Rate: FAVORABLE (good risk/reward, room to run) / FAIR (balanced) / UNFAVORABLE (stretched, limited upside)
 
-**DECISION MATRIX FOR HOLDINGS** (IMPORTANT: user IS holding this asset — NEVER use BUY or WAIT):
+**DECISION MATRIX FOR HOLDINGS** (IMPORTANT: user IS holding this asset -- NEVER use BUY or WAIT):
 | Catalyst Status | Technical Health | Valuation | Decision |
 |----------------|-----------------|-----------|----------|
-| POSITIVE       | HEALTHY         | FAVORABLE | ADD — add to position (20-40%) |
+| POSITIVE       | HEALTHY         | FAVORABLE | ADD -- add to position (20-40%) |
 | POSITIVE       | HEALTHY         | FAIR      | ADD (small, 10-20%) or HOLD |
-| POSITIVE       | WEAKENING       | any       | HOLD — tighten stop, watch closely |
-| NEUTRAL        | HEALTHY         | FAVORABLE | HOLD — ride the trend |
-| NEUTRAL        | WEAKENING       | UNFAVORABLE| REDUCE 30-50% — reduce risk |
-| NEGATIVE       | any             | any       | SELL (close 100%) — thesis broken |
-| any            | DETERIORATING   | UNFAVORABLE| SELL (close 100%) or REDUCE (50-75%) — protect capital |""" if language == 'en' else """**持仓三维评估体系**：
+| POSITIVE       | WEAKENING       | any       | HOLD -- tighten stop, watch closely |
+| NEUTRAL        | HEALTHY         | FAVORABLE | HOLD -- ride the trend |
+| NEUTRAL        | WEAKENING       | UNFAVORABLE| REDUCE 30-50% -- reduce risk |
+| NEGATIVE       | any             | any       | SELL (close 100%) -- thesis broken |
+| any            | DETERIORATING   | UNFAVORABLE| SELL (close 100%) or REDUCE (50-75%) -- protect capital |""" if language == 'en' else """**持仓三维评估体系**：
 
-检查点 1 — 催化剂状态：
+检查点 1 -- 催化剂状态：
 - 最初的投资逻辑（催化剂）是否已兑现，还是仍在演绎中？
 - 买入后是否出现了新的催化剂（正面或负面）？
 - 是否存在催化剂恶化（财报不及预期、政策逆转、竞争威胁）？
 - 评级：积极（逻辑完好 + 新利好）/ 中性（逻辑完好，无变化）/ 消极（逻辑破坏或遇到逆风）
 
-检查点 2 — 技术面健康度：
+检查点 2 -- 技术面健康度：
 - 趋势是否仍然完好？（价格是否在关键均线上方？动能方向如何？）
 - 是否有出货迹象（价格上涨但成交量萎缩）？
 - 关键支撑位在哪里：跌破何处意味着逻辑失效？
 - 评级：健康（上升趋势完好）/ 走弱（信号混乱）/ 恶化（即将破位）
 
-检查点 3 — 估值与盈亏：
+检查点 3 -- 估值与盈亏：
 - 当前价格 vs 平均买入价格：盈亏状况
 - 当前价格在 6 个月区间中的位置：是偏高还是有空间？
 - 当前水平的风险收益比：非对称性是否仍有利？
 - 持仓权重：在当前信心水平下，权重是否合适？
 - 评级：有利（风险回报好，有上涨空间）/ 合理（平衡）/ 不利（偏高，上行空间有限）
 
-**持仓决策矩阵**（重要：用户正在持有该资产 — 绝不能使用 BUY 或 WAIT）：
+**持仓决策矩阵**（重要：用户正在持有该资产 -- 绝不能使用 BUY 或 WAIT）：
 | 催化剂状态 | 技术面健康度 | 估值 | 决策 |
 |-----------|------------|------|------|
 | 积极 | 健康 | 有利 | ADD 加仓（20-40%）|
 | 积极 | 健康 | 合理 | ADD 小幅加仓（10-20%）或 HOLD 持有 |
-| 积极 | 走弱 | 任意 | HOLD 持有 — 收紧止损，密切关注 |
-| 中性 | 健康 | 有利 | HOLD 持有 — 继续持有顺势而为 |
-| 中性 | 走弱 | 不利 | REDUCE 减仓 30-50% — 降低风险 |
-| 消极 | 任意 | 任意 | SELL 平仓（清仓 100%）— 投资逻辑已破坏 |
-| 任意 | 恶化 | 不利 | SELL 平仓 或 REDUCE 减仓（50-75%）— 保护本金 |"""}
+| 积极 | 走弱 | 任意 | HOLD 持有 -- 收紧止损，密切关注 |
+| 中性 | 健康 | 有利 | HOLD 持有 -- 继续持有顺势而为 |
+| 中性 | 走弱 | 不利 | REDUCE 减仓 30-50% -- 降低风险 |
+| 消极 | 任意 | 任意 | SELL 平仓（清仓 100%）-- 投资逻辑已破坏 |
+| 任意 | 恶化 | 不利 | SELL 平仓 或 REDUCE 减仓（50-75%）-- 保护本金 |"""}
 
 **LANGUAGE**: {lang_instruction}
 
 **OUTPUT FORMAT** (JSON):
 {{
     "thinking_process": [
-        "Step 1: News search — catalyst status for {symbol}: [findings]... Rating: POSITIVE/NEUTRAL/NEGATIVE",
+        "Step 1: News search -- catalyst status for {symbol}: [findings]... Rating: POSITIVE/NEUTRAL/NEGATIVE",
         "Step 2: Current price X vs avg buy price {avg_price} → P&L: X%",
         "Step 3: 6mo range [low-high], current at Xth percentile → valuation position",
-        "Step 4: Technicals — MA alignment, RSI, momentum → Rating: HEALTHY/WEAKENING/DETERIORATING",
-        "Step 5: Portfolio weight {percentage_str} — appropriate given conviction? Concentration risk?",
+        "Step 4: Technicals -- MA alignment, RSI, momentum → Rating: HEALTHY/WEAKENING/DETERIORATING",
+        "Step 5: Portfolio weight {percentage_str} -- appropriate given conviction? Concentration risk?",
         "Step 6: Decision matrix → Catalyst(X) + Technicals(X) + Valuation(X) = [rating and action]"
     ],
     "symbol": "{symbol}",
@@ -865,7 +865,7 @@ CHECK 3 — Valuation & P&L Context:
 }}
 
 **IMPORTANT**:
-- "thinking_process" is REQUIRED — show evaluation of each checkpoint. Base ALL on REAL DATA from tool calls.
+- "thinking_process" is REQUIRED -- show evaluation of each checkpoint. Base ALL on REAL DATA from tool calls.
 - The "action" in "current_action" MUST be one of: ADD, REDUCE, SELL, HOLD. NEVER use BUY or WAIT (user is already holding).
 - Return ONLY JSON.
 """
@@ -1017,17 +1017,17 @@ CHECK 3 — Valuation & P&L Context:
 
 4. **THREE-DIMENSIONAL PORTFOLIO EVALUATION**:
 
-   **Dimension 1 — Catalyst Health Check** (for each position):
+   **Dimension 1 -- Catalyst Health Check** (for each position):
    - Does each position still have an active, forward-looking catalyst?
    - Are there NEW catalysts (positive or negative) that change the thesis?
    - Which positions have "dead money" risk (no catalyst, sideways drift)?
 
-   **Dimension 2 — Technical Portfolio Heat Map**:
+   **Dimension 2 -- Technical Portfolio Heat Map**:
    - Which positions are in healthy uptrends (above key MAs, good momentum)?
    - Which show technical deterioration (breaking support, fading momentum)?
    - Overall portfolio momentum: is the portfolio trending up, sideways, or down?
 
-   **Dimension 3 — Allocation & Risk Architecture**:
+   **Dimension 3 -- Allocation & Risk Architecture**:
    - **Concentration risk**: Any single position > 30%? Any sector > 50%?
    - **Correlation risk**: Are positions correlated (e.g., all tech, all China)?
    - **P&L asymmetry**: Are winners getting bigger and losers getting trimmed, or the reverse?
@@ -1036,14 +1036,14 @@ CHECK 3 — Valuation & P&L Context:
 
 5. **ACTIONABLE RECOMMENDATIONS** (for each position, use the Decision Matrix from Investment Philosophy):
    - For each position, state: Catalyst=[POSITIVE/NEUTRAL/NEGATIVE], Technicals=[HEALTHY/WEAKENING/DETERIORATING], Valuation=[FAVORABLE/FAIR/UNFAVORABLE]
-   - Then recommend: ADD (加仓) / HOLD (持有) / REDUCE (减仓) / SELL (平仓) — with specific reasoning
+   - Then recommend: ADD (加仓) / HOLD (持有) / REDUCE (减仓) / SELL (平仓) -- with specific reasoning
 
 6. **Overall Rating**:
    - "Excellent": Balanced allocation, active catalysts, good risk/reward, macro-aligned.
    - "Good": Overall solid, minor adjustments needed.
-   - "Fair": Obvious issues — concentration, dead money, or macro misalignment.
-   - "Poor": Significant risk — high concentration, deteriorating positions, no catalysts.
-   - "Critical": Immediate action needed — capital at risk.
+   - "Fair": Obvious issues -- concentration, dead money, or macro misalignment.
+   - "Poor": Significant risk -- high concentration, deteriorating positions, no catalysts.
+   - "Critical": Immediate action needed -- capital at risk.
 
 7. **Language Requirement**: {lang_instruction}
 

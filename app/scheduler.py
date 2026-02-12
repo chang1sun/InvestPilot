@@ -60,8 +60,8 @@ def start_tracking_scheduler(app):
             replace_existing=True
         )
         scheduler.start()
-        print(f"✅ Stock tracking cron ENABLED — runs at {cron_hour}:00 UTC (Mon-Fri) with model: {model}")
-        print(f"✅ Price refresh cron ENABLED — runs at {cron_hour}:30 UTC (Mon-Fri)")
+        print(f"✅ Stock tracking cron ENABLED -- runs at {cron_hour}:00 UTC (Mon-Fri) with model: {model}")
+        print(f"✅ Price refresh cron ENABLED -- runs at {cron_hour}:30 UTC (Mon-Fri)")
 
     except ImportError:
         print("⚠️  APScheduler not installed. Run: pip install apscheduler")
