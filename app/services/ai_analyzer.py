@@ -418,6 +418,51 @@ class AIAnalyzer:
         role, asset_name, focus = ASSET_ROLE_MAP.get(asset_type, ASSET_ROLE_MAP['STOCK'])
         tool_descriptions = self._get_tool_descriptions_text()
 
+        if language == 'en':
+            decision_matrix_text = """**ENTRY DECISION MATRIX (for BUY/ADD -- when EMPTY or adding to HOLDING)**:
+| Catalyst | Technicals | Valuation | Decision (EMPTY → BUY / HOLDING → ADD) |
+|----------|------------|-----------|----------|
+| STRONG   | BULLISH    | ATTRACTIVE| HIGH conviction (50-70%) |
+| STRONG   | BULLISH    | FAIR      | MEDIUM conviction (30-50%) |
+| STRONG   | NEUTRAL    | ATTRACTIVE| MEDIUM conviction (30-50%), wait for technical trigger |
+| MODERATE | BULLISH    | ATTRACTIVE| MEDIUM conviction (30-40%) |
+| STRONG   | BEARISH    | any       | WAIT/HOLD -- catalyst not confirmed by price action |
+| WEAK     | BULLISH    | any       | WAIT/HOLD -- rally without fundamental support is fragile |
+| any      | any        | STRETCHED | CAUTION -- limited upside, define tight stop |
+
+**EXIT DECISION MATRIX (for REDUCE/SELL -- only when HOLDING)**:
+- Catalyst deterioration (earnings miss, policy reversal): SELL (close 100%)
+- Technical breakdown (price < MA20, rising volume on decline): REDUCE 30-50%
+- Valuation stretched + momentum fading: REDUCE 25-50%, raise stop
+- Take profit: Price reached target or +20% from entry with momentum slowing: REDUCE or SELL
+
+**POSITION AWARENESS** (determine from tool calls):
+- After calling `get_portfolio_holdings`, determine if user is HOLDING or EMPTY for {symbol}.
+- If HOLDING: choose from ADD / REDUCE / SELL / HOLD only. NEVER use BUY or WAIT.
+- If EMPTY: choose from BUY / WAIT only. NEVER use ADD, REDUCE, SELL, or HOLD.""".format(symbol=symbol)
+        else:
+            decision_matrix_text = """**建仓/加仓决策矩阵（空仓 → BUY 买入 / 持仓中 → ADD 加仓）**：
+| 催化剂 | 技术面 | 估值 | 决策 |
+|--------|--------|------|------|
+| 强     | 看涨   | 有吸引力 | 高信心（50-70%仓位）|
+| 强     | 看涨   | 合理     | 中等信心（30-50%仓位）|
+| 强     | 中性   | 有吸引力 | 中等信心（30-50%），等待技术面确认 |
+| 中等   | 看涨   | 有吸引力 | 中等信心（30-40%仓位）|
+| 强     | 看跌   | 任意     | WAIT/HOLD -- 催化剂未被价格行动确认 |
+| 弱     | 看涨   | 任意     | WAIT/HOLD -- 缺乏基本面支撑的上涨不可靠 |
+| 任意   | 任意   | 偏高     | 谨慎 -- 上行空间有限，设置严格止损 |
+
+**减仓/平仓决策矩阵（仅在持仓时适用）**：
+- 催化剂恶化（财报不及预期、政策逆转）：SELL 平仓（清仓 100%）
+- 技术面破位（价格跌破 MA20、放量下跌）：REDUCE 减仓 30-50%
+- 估值偏高 + 动能衰减：REDUCE 减仓 25-50%，上移止损
+- 止盈：价格触及目标位或自入场以来涨幅 +20% 且动能放缓：REDUCE 减仓或 SELL 平仓
+
+**持仓状态感知**（通过工具调用确定）：
+- 调用 `get_portfolio_holdings` 后，判断用户对 {symbol} 是【持仓中】还是【空仓】。
+- 如果【持仓中】：只能从 ADD（加仓）/ REDUCE（减仓）/ SELL（平仓）/ HOLD（持有）中选择。绝不能使用 BUY 或 WAIT。
+- 如果【空仓】：只能从 BUY（买入建仓）/ WAIT（观望等待）中选择。绝不能使用 ADD、REDUCE、SELL 或 HOLD。""".format(symbol=symbol)
+
         prompt = f"""You are a professional **{role}** with access to real-time market data tools.
 
 {INVESTMENT_PHILOSOPHY}
@@ -459,47 +504,7 @@ CHECK 3 -- Valuation & Macro Anchor (from price history + fundamentals + news):
 - What is the macro backdrop? (risk-on vs risk-off, sector cycle position)
 - Rate valuation: ATTRACTIVE / FAIR / STRETCHED
 
-{"""**ENTRY DECISION MATRIX (for BUY/ADD -- when EMPTY or adding to HOLDING)**:
-| Catalyst | Technicals | Valuation | Decision (EMPTY → BUY / HOLDING → ADD) |
-|----------|------------|-----------|----------|
-| STRONG   | BULLISH    | ATTRACTIVE| HIGH conviction (50-70%) |
-| STRONG   | BULLISH    | FAIR      | MEDIUM conviction (30-50%) |
-| STRONG   | NEUTRAL    | ATTRACTIVE| MEDIUM conviction (30-50%), wait for technical trigger |
-| MODERATE | BULLISH    | ATTRACTIVE| MEDIUM conviction (30-40%) |
-| STRONG   | BEARISH    | any       | WAIT/HOLD -- catalyst not confirmed by price action |
-| WEAK     | BULLISH    | any       | WAIT/HOLD -- rally without fundamental support is fragile |
-| any      | any        | STRETCHED | CAUTION -- limited upside, define tight stop |
-
-**EXIT DECISION MATRIX (for REDUCE/SELL -- only when HOLDING)**:
-- Catalyst deterioration (earnings miss, policy reversal): SELL (close 100%)
-- Technical breakdown (price < MA20, rising volume on decline): REDUCE 30-50%
-- Valuation stretched + momentum fading: REDUCE 25-50%, raise stop
-- Take profit: Price reached target or +20% from entry with momentum slowing: REDUCE or SELL
-
-**POSITION AWARENESS** (determine from tool calls):
-- After calling `get_portfolio_holdings`, determine if user is HOLDING or EMPTY for {symbol}.
-- If HOLDING: choose from ADD / REDUCE / SELL / HOLD only. NEVER use BUY or WAIT.
-- If EMPTY: choose from BUY / WAIT only. NEVER use ADD, REDUCE, SELL, or HOLD.""" if language == 'en' else """**建仓/加仓决策矩阵（空仓 → BUY 买入 / 持仓中 → ADD 加仓）**：
-| 催化剂 | 技术面 | 估值 | 决策 |
-|--------|--------|------|------|
-| 强     | 看涨   | 有吸引力 | 高信心（50-70%仓位）|
-| 强     | 看涨   | 合理     | 中等信心（30-50%仓位）|
-| 强     | 中性   | 有吸引力 | 中等信心（30-50%），等待技术面确认 |
-| 中等   | 看涨   | 有吸引力 | 中等信心（30-40%仓位）|
-| 强     | 看跌   | 任意     | WAIT/HOLD -- 催化剂未被价格行动确认 |
-| 弱     | 看涨   | 任意     | WAIT/HOLD -- 缺乏基本面支撑的上涨不可靠 |
-| 任意   | 任意   | 偏高     | 谨慎 -- 上行空间有限，设置严格止损 |
-
-**减仓/平仓决策矩阵（仅在持仓时适用）**：
-- 催化剂恶化（财报不及预期、政策逆转）：SELL 平仓（清仓 100%）
-- 技术面破位（价格跌破 MA20、放量下跌）：REDUCE 减仓 30-50%
-- 估值偏高 + 动能衰减：REDUCE 减仓 25-50%，上移止损
-- 止盈：价格触及目标位或自入场以来涨幅 +20% 且动能放缓：REDUCE 减仓或 SELL 平仓
-
-**持仓状态感知**（通过工具调用确定）：
-- 调用 `get_portfolio_holdings` 后，判断用户对 {symbol} 是【持仓中】还是【空仓】。
-- 如果【持仓中】：只能从 ADD（加仓）/ REDUCE（减仓）/ SELL（平仓）/ HOLD（持有）中选择。绝不能使用 BUY 或 WAIT。
-- 如果【空仓】：只能从 BUY（买入建仓）/ WAIT（观望等待）中选择。绝不能使用 ADD、REDUCE、SELL 或 HOLD。"""}
+{decision_matrix_text}
 
 **LANGUAGE**: {lang_instruction}
 
@@ -608,6 +613,21 @@ CHECK 3 -- Valuation & Macro Anchor (from price history + fundamentals + news):
         current_date = datetime.now().strftime('%Y-%m-%d')
         market = criteria.get('market', 'Any')
 
+        if language == 'en':
+            rating_system_text = """**RATING SYSTEM** (based on triple-confirmation strength):
+- ⭐⭐⭐ (High Conviction): Strong catalyst (not priced in) + bullish technicals + attractive valuation position → high win-rate AND high reward potential
+- ⭐⭐ (Medium): Two of three confirmations strong, one neutral → reasonable risk/reward
+- ⭐ (Speculative): Strong catalyst but early-stage or technically unconfirmed → high reward potential but lower win-rate
+- ⚠️ (Caution): Catalyst may be priced in, or valuation stretched, or technicals unfavorable
+- 🔻 (Avoid): Negative catalyst, bearish technicals, or valuation trap"""
+        else:
+            rating_system_text = """**评级系统**（基于三重确认强度）：
+- ⭐⭐⭐（高信心）：强催化剂（尚未被定价）+ 技术面看涨 + 估值有吸引力 → 高胜率且高赔率
+- ⭐⭐（中等）：三项中两项强势、一项中性 → 风险回报合理
+- ⭐（投机）：催化剂强但处于早期阶段或技术面尚未确认 → 高赔率但胜率偏低
+- ⚠️（谨慎）：催化剂可能已被定价，或估值偏高，或技术面不利
+- 🔻（回避）：负面催化剂、技术面看跌、或估值陷阱"""
+
         prompt = f"""You are a professional **{role}** with access to real-time market data tools AND web search.
 
 {INVESTMENT_PHILOSOPHY}
@@ -664,17 +684,7 @@ Do NOT start by picking well-known blue-chip stocks -- that is "drawing the targ
 
 **MACRO & ASSET FOCUS**: {focus}
 
-{"""**RATING SYSTEM** (based on triple-confirmation strength):
-- ⭐⭐⭐ (High Conviction): Strong catalyst (not priced in) + bullish technicals + attractive valuation position → high win-rate AND high reward potential
-- ⭐⭐ (Medium): Two of three confirmations strong, one neutral → reasonable risk/reward
-- ⭐ (Speculative): Strong catalyst but early-stage or technically unconfirmed → high reward potential but lower win-rate
-- ⚠️ (Caution): Catalyst may be priced in, or valuation stretched, or technicals unfavorable
-- 🔻 (Avoid): Negative catalyst, bearish technicals, or valuation trap""" if language == 'en' else """**评级系统**（基于三重确认强度）：
-- ⭐⭐⭐（高信心）：强催化剂（尚未被定价）+ 技术面看涨 + 估值有吸引力 → 高胜率且高赔率
-- ⭐⭐（中等）：三项中两项强势、一项中性 → 风险回报合理
-- ⭐（投机）：催化剂强但处于早期阶段或技术面尚未确认 → 高赔率但胜率偏低
-- ⚠️（谨慎）：催化剂可能已被定价，或估值偏高，或技术面不利
-- 🔻（回避）：负面催化剂、技术面看跌、或估值陷阱"""}
+{rating_system_text}
 
 **LANGUAGE**: {lang_instruction}
 
@@ -754,30 +764,8 @@ Do NOT start by picking well-known blue-chip stocks -- that is "drawing the targ
         percentage = holding_data.get('percentage')
         percentage_str = f"{percentage}%" if percentage is not None else "Unknown"
 
-        prompt = f"""You are a professional **{role}** with access to real-time market data tools.
-
-{INVESTMENT_PHILOSOPHY}
-
-**TASK**: Evaluate a client's existing {asset_type} holding and advise: HOLD, SELL (full/partial), or BUY MORE.
-
-**HOLDING DETAILS**:
-- Symbol: {symbol}
-- Asset Type: {asset_type}
-- Average Buy Price: {avg_price}
-- Portfolio Weight: {percentage_str}
-
-**YOUR AVAILABLE TOOLS**:
-{tool_descriptions}
-
-**ANALYSIS WORKFLOW**:
-1. Call `search_market_news` to find recent news and catalysts for {symbol}
-2. Call `get_realtime_price` to get current price of {symbol}
-3. Call `get_kline_data` (period="6mo") to see price history and determine range position
-4. Call `calculate_technical_indicators` to assess trend and momentum
-5. Call `get_portfolio_holdings` to see full portfolio context and concentration risk
-6. If relevant, call `get_transaction_history` for {symbol}
-
-{"""**THREE-CHECKPOINT EVALUATION FOR EXISTING POSITIONS**:
+        if language == 'en':
+            holdings_eval_text = """**THREE-CHECKPOINT EVALUATION FOR EXISTING POSITIONS**:
 
 CHECK 1 -- Catalyst Status:
 - Has the original investment thesis (catalyst) played out, or is it still unfolding?
@@ -807,7 +795,9 @@ CHECK 3 -- Valuation & P&L Context:
 | NEUTRAL        | HEALTHY         | FAVORABLE | HOLD -- ride the trend |
 | NEUTRAL        | WEAKENING       | UNFAVORABLE| REDUCE 30-50% -- reduce risk |
 | NEGATIVE       | any             | any       | SELL (close 100%) -- thesis broken |
-| any            | DETERIORATING   | UNFAVORABLE| SELL (close 100%) or REDUCE (50-75%) -- protect capital |""" if language == 'en' else """**持仓三维评估体系**：
+| any            | DETERIORATING   | UNFAVORABLE| SELL (close 100%) or REDUCE (50-75%) -- protect capital |"""
+        else:
+            holdings_eval_text = """**持仓三维评估体系**：
 
 检查点 1 -- 催化剂状态：
 - 最初的投资逻辑（催化剂）是否已兑现，还是仍在演绎中？
@@ -837,7 +827,32 @@ CHECK 3 -- Valuation & P&L Context:
 | 中性 | 健康 | 有利 | HOLD 持有 -- 继续持有顺势而为 |
 | 中性 | 走弱 | 不利 | REDUCE 减仓 30-50% -- 降低风险 |
 | 消极 | 任意 | 任意 | SELL 平仓（清仓 100%）-- 投资逻辑已破坏 |
-| 任意 | 恶化 | 不利 | SELL 平仓 或 REDUCE 减仓（50-75%）-- 保护本金 |"""}
+| 任意 | 恶化 | 不利 | SELL 平仓 或 REDUCE 减仓（50-75%）-- 保护本金 |"""
+
+        prompt = f"""You are a professional **{role}** with access to real-time market data tools.
+
+{INVESTMENT_PHILOSOPHY}
+
+**TASK**: Evaluate a client's existing {asset_type} holding and advise: HOLD, SELL (full/partial), or BUY MORE.
+
+**HOLDING DETAILS**:
+- Symbol: {symbol}
+- Asset Type: {asset_type}
+- Average Buy Price: {avg_price}
+- Portfolio Weight: {percentage_str}
+
+**YOUR AVAILABLE TOOLS**:
+{tool_descriptions}
+
+**ANALYSIS WORKFLOW**:
+1. Call `search_market_news` to find recent news and catalysts for {symbol}
+2. Call `get_realtime_price` to get current price of {symbol}
+3. Call `get_kline_data` (period="6mo") to see price history and determine range position
+4. Call `calculate_technical_indicators` to assess trend and momentum
+5. Call `get_portfolio_holdings` to see full portfolio context and concentration risk
+6. If relevant, call `get_transaction_history` for {symbol}
+
+{holdings_eval_text}
 
 **LANGUAGE**: {lang_instruction}
 
