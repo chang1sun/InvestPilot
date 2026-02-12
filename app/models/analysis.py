@@ -358,12 +358,18 @@ class TrackingStock(db.Model):
     buy_price = db.Column(db.Float, nullable=False)  # Price when added to the list
     buy_date = db.Column(db.Date, nullable=False, index=True)
     current_price = db.Column(db.Float, nullable=True)  # Latest cached price
+    cost_amount = db.Column(db.Float, nullable=True)  # Actual capital invested (may differ from PER_STOCK_ALLOCATION for replacements)
     reason = db.Column(db.Text, nullable=True)  # AI reasoning for buying
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    def get_cost_amount(self):
+        """Return actual cost amount, defaulting to PER_STOCK_ALLOCATION for legacy records."""
+        return self.cost_amount if self.cost_amount is not None else 10000.0
+
     def to_dict(self):
+        cost = self.get_cost_amount()
         unrealized_pct = None
         if self.buy_price and self.current_price and self.buy_price > 0:
             unrealized_pct = round(((self.current_price - self.buy_price) / self.buy_price) * 100, 2)
@@ -374,6 +380,7 @@ class TrackingStock(db.Model):
             'buy_price': self.buy_price,
             'buy_date': self.buy_date.strftime('%Y-%m-%d'),
             'current_price': self.current_price,
+            'cost_amount': round(cost, 2),
             'reason': self.reason,
             'unrealized_pct': unrealized_pct,
             'created_at': self.created_at.isoformat(),
@@ -396,8 +403,14 @@ class TrackingTransaction(db.Model):
     # For SELL transactions: record realized P&L
     buy_price = db.Column(db.Float, nullable=True)  # Original buy price (for SELL)
     realized_pct = db.Column(db.Float, nullable=True)  # Realized return % (for SELL)
+    # For BUY transactions: actual capital invested (may differ from PER_STOCK_ALLOCATION for replacements)
+    cost_amount = db.Column(db.Float, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def get_cost_amount(self):
+        """Return actual cost amount, defaulting to PER_STOCK_ALLOCATION for legacy records."""
+        return self.cost_amount if self.cost_amount is not None else 10000.0
 
     def to_dict(self):
         return {
@@ -410,6 +423,7 @@ class TrackingTransaction(db.Model):
             'reason': self.reason,
             'buy_price': self.buy_price,
             'realized_pct': self.realized_pct,
+            'cost_amount': round(self.get_cost_amount(), 2),
             'created_at': self.created_at.isoformat()
         }
 

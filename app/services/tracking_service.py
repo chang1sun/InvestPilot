@@ -8,6 +8,7 @@ import os
 import time
 from datetime import datetime, date, timedelta
 from typing import Optional, Dict, List
+from zoneinfo import ZoneInfo
 
 import yfinance as yf
 import pandas as pd
@@ -29,7 +30,15 @@ PER_STOCK_ALLOCATION = INITIAL_CAPITAL / MAX_HOLDINGS
 BENCHMARK_SP500 = "SPY"
 BENCHMARK_NASDAQ100 = "QQQ"
 # Inception date for performance comparison
-INCEPTION_DATE = "2026-01-01"
+INCEPTION_DATE = "2026-02-09"
+
+# US Eastern timezone for consistent date handling with US stock markets
+_US_EASTERN = ZoneInfo("America/New_York")
+
+
+def _us_eastern_today() -> date:
+    """Return today's date in US Eastern time (EST/EDT)."""
+    return datetime.now(_US_EASTERN).date()
 
 
 class TrackingService:
@@ -49,20 +58,15 @@ class TrackingService:
             return []
 
         # Calculate total portfolio value (holdings + cash) for allocation %
-        num_current = len(stocks)
-        sell_txns = TrackingTransaction.query.filter_by(action='SELL').all()
-        total_sell_returns = sum(
-            (PER_STOCK_ALLOCATION / tx.buy_price) * tx.price
-            for tx in sell_txns if tx.buy_price and tx.buy_price > 0
-        )
-        cash = INITIAL_CAPITAL - (num_current * PER_STOCK_ALLOCATION) + total_sell_returns
+        cash, _, _ = self._calculate_cash()
 
         # Compute each holding's current market value
         holdings_data = []
         total_holdings_value = 0.0
         for s in stocks:
             price = s.current_price or s.buy_price
-            shares = PER_STOCK_ALLOCATION / s.buy_price
+            cost = s.get_cost_amount()
+            shares = cost / s.buy_price
             market_value = shares * price
             total_holdings_value += market_value
             holdings_data.append((s, shares, market_value))
@@ -110,23 +114,13 @@ class TrackingService:
         total_cost = 0.0
         for h in holdings:
             price = h.current_price or h.buy_price
-            total_holdings_value += price * (PER_STOCK_ALLOCATION / h.buy_price)
-            total_cost += PER_STOCK_ALLOCATION
+            cost = h.get_cost_amount()
+            total_holdings_value += price * (cost / h.buy_price)
+            total_cost += cost
 
-        # Calculate cash: start with INITIAL_CAPITAL, subtract allocations, add back sells
+        # Calculate cash using flow-based method (replay all transactions)
         num_current = len(holdings)
-        # Get cumulative realized P&L from the latest snapshot or compute from transactions
-        sell_txns = TrackingTransaction.query.filter_by(action='SELL').all()
-        total_realized_pnl = 0.0
-        total_sell_returns = 0.0
-        for tx in sell_txns:
-            if tx.buy_price and tx.buy_price > 0:
-                shares = PER_STOCK_ALLOCATION / tx.buy_price
-                sell_value = shares * tx.price
-                total_sell_returns += sell_value
-                total_realized_pnl += sell_value - PER_STOCK_ALLOCATION
-
-        cash = INITIAL_CAPITAL - (num_current * PER_STOCK_ALLOCATION) + total_sell_returns
+        cash, total_sell_returns, total_realized_pnl = self._calculate_cash()
         portfolio_value = cash + total_holdings_value
         total_return_pct = ((portfolio_value - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100
 
@@ -161,8 +155,8 @@ class TrackingService:
         """
         Get portfolio performance vs benchmarks (S&P 500 and NASDAQ 100).
         Returns aligned date series for charting.
-        Benchmark data starts from inception date; portfolio data is null
-        before the first snapshot, and starts aligned with SPY at that point.
+        All three curves start from 0% at INCEPTION_DATE (the origin).
+        Benchmark returns are rebased so that their value on inception date = 0.
         """
         if not start_date:
             start_date = INCEPTION_DATE
@@ -172,7 +166,7 @@ class TrackingService:
         ).order_by(TrackingDailySnapshot.date.asc()).all()
 
         # Determine date range: always start from inception, end at today or last snapshot
-        today_str = date.today().strftime('%Y-%m-%d')
+        today_str = _us_eastern_today().strftime('%Y-%m-%d')
         if snapshots:
             last_date = max(snapshots[-1].date.strftime('%Y-%m-%d'), today_str)
         else:
@@ -190,17 +184,39 @@ class TrackingService:
         for snap in snapshots:
             snapshot_map[snap.date.strftime('%Y-%m-%d')] = snap
 
-        # Use the union of all benchmark dates as the x-axis
-        all_dates = sorted(set(list(sp500_data.keys()) + list(nasdaq_data.keys())))
+        # Build date list: include inception, all benchmark dates, AND all snapshot dates
+        benchmark_dates = set(list(sp500_data.keys()) + list(nasdaq_data.keys()))
+        all_dates_set = set(benchmark_dates)
+        # Always include inception date as the first point (even if it's a weekend)
+        all_dates_set.add(start_date)
+        # Include snapshot dates, but cap at the latest benchmark date to avoid
+        # timezone mismatch (e.g. local date is 2/12 but US markets haven't opened yet,
+        # so benchmark data only goes to 2/11).
+        latest_benchmark_date = max(benchmark_dates) if benchmark_dates else today_str
+        for snap_date_str in snapshot_map.keys():
+            if snap_date_str <= latest_benchmark_date:
+                all_dates_set.add(snap_date_str)
+        all_dates = sorted(all_dates_set)
+
+        # Rebase benchmarks: find the first available benchmark value and subtract it
+        # so the curve starts at 0% on (or near) inception date.
+        first_sp500_val = None
+        first_nasdaq_val = None
+        for d in all_dates:
+            if first_sp500_val is None and d in sp500_data:
+                first_sp500_val = sp500_data[d]
+            if first_nasdaq_val is None and d in nasdaq_data:
+                first_nasdaq_val = nasdaq_data[d]
+            if first_sp500_val is not None and first_nasdaq_val is not None:
+                break
+        if first_sp500_val is None:
+            first_sp500_val = 0.0
+        if first_nasdaq_val is None:
+            first_nasdaq_val = 0.0
 
         # Find where portfolio data begins
         first_snapshot_date = snapshots[0].date.strftime('%Y-%m-%d') if snapshots else None
         portfolio_start_index = None
-
-        # Get the SPY return on the first snapshot date so we can align the portfolio curve
-        spy_offset = 0.0
-        if first_snapshot_date and first_snapshot_date in sp500_data:
-            spy_offset = sp500_data[first_snapshot_date]
 
         dates = []
         portfolio_series = []
@@ -211,20 +227,28 @@ class TrackingService:
 
         for d in all_dates:
             dates.append(d)
-            sp500_series.append(sp500_data.get(d))
-            nasdaq_series.append(nasdaq_data.get(d))
 
+            # Benchmark values rebased to 0 at inception
+            sp_val = sp500_data.get(d)
+            nq_val = nasdaq_data.get(d)
+            if d == start_date:
+                # Force 0 at inception, even if benchmark has no data for this date
+                sp500_series.append(0.0)
+                nasdaq_series.append(0.0)
+            else:
+                sp500_series.append(round(sp_val - first_sp500_val, 2) if sp_val is not None else None)
+                nasdaq_series.append(round(nq_val - first_nasdaq_val, 2) if nq_val is not None else None)
+
+            # Portfolio series: use actual total_return_pct (already 0 at inception)
             snap = snapshot_map.get(d)
             if snap:
-                # Portfolio return aligned: actual return + spy_offset at inception
-                val = round(snap.total_return_pct + spy_offset, 2)
+                val = round(snap.total_return_pct, 2)
                 portfolio_series.append(val)
                 last_portfolio_value = val
                 if portfolio_start_index is None:
                     portfolio_start_index = len(dates) - 1
             elif last_portfolio_value is not None:
-                # Forward-fill: carry the last known portfolio value for dates without a snapshot
-                # This prevents null gaps that break the chart line
+                # Forward-fill for dates without a snapshot (e.g. weekends in between)
                 portfolio_series.append(last_portfolio_value)
             else:
                 # Before the first snapshot, no data
@@ -267,17 +291,80 @@ class TrackingService:
     # ------------------------------------------------------------------
 
     def refresh_prices(self) -> Dict:
-        """Update current prices for all tracked stocks."""
+        """Update current prices for all tracked stocks using batch download to avoid rate limits."""
         stocks = TrackingStock.query.all()
+        if not stocks:
+            return {'updated': 0, 'total': 0}
+
+        symbols = [s.symbol for s in stocks]
         updated = 0
-        for stock in stocks:
-            try:
-                price = DataProvider.get_current_price(stock.symbol)
-                if price is not None:
-                    stock.current_price = price
-                    updated += 1
-            except Exception as e:
-                print(f"Error refreshing price for {stock.symbol}: {e}")
+        stock_map = {s.symbol: s for s in stocks}
+
+        try:
+            # Batch download: single API call for all symbols
+            data = yf.download(symbols, period='1d', auto_adjust=True, progress=False)
+            if data is not None and not data.empty:
+                close = data['Close']
+                if isinstance(close, pd.Series):
+                    # Single symbol case
+                    price = float(close.iloc[-1]) if not pd.isna(close.iloc[-1]) else None
+                    if price is not None:
+                        stocks[0].current_price = round(price, 2)
+                        updated = 1
+                else:
+                    # Multiple symbols
+                    for sym in symbols:
+                        if sym in close.columns:
+                            val = close[sym].iloc[-1]
+                            if not pd.isna(val):
+                                stock_map[sym].current_price = round(float(val), 2)
+                                updated += 1
+
+            # Retry failed symbols individually after a short delay
+            if updated < len(stocks):
+                failed_symbols = [s for s in symbols if stock_map[s].current_price is None or
+                                  s not in (close.columns if not isinstance(close, pd.Series) else [symbols[0]])]
+                # Also catch symbols whose batch value was NaN
+                failed_symbols = [s for s in symbols
+                                  if stock_map[s].current_price == stock_map[s].buy_price and
+                                  stock_map[s].current_price is not None]
+                # Simpler: just retry any stock that wasn't updated
+                updated_syms = set()
+                if isinstance(close, pd.Series):
+                    if not pd.isna(close.iloc[-1]):
+                        updated_syms.add(symbols[0])
+                else:
+                    for sym in symbols:
+                        if sym in close.columns and not pd.isna(close[sym].iloc[-1]):
+                            updated_syms.add(sym)
+
+                failed_symbols = [s for s in symbols if s not in updated_syms]
+                if failed_symbols:
+                    print(f"[Tracking] Retrying {len(failed_symbols)} failed symbols after delay: {failed_symbols}")
+                    time.sleep(5)
+                    for sym in failed_symbols:
+                        try:
+                            price = DataProvider.get_current_price(sym)
+                            if price is not None:
+                                stock_map[sym].current_price = price
+                                updated += 1
+                            time.sleep(2)
+                        except Exception as ex:
+                            print(f"  Retry failed for {sym}: {ex}")
+
+        except Exception as e:
+            print(f"[Tracking] Batch price download failed: {e}, falling back to individual fetch")
+            # Fallback: fetch individually with a small delay to reduce rate limit risk
+            for stock in stocks:
+                try:
+                    price = DataProvider.get_current_price(stock.symbol)
+                    if price is not None:
+                        stock.current_price = price
+                        updated += 1
+                    time.sleep(2)
+                except Exception as ex:
+                    print(f"  Error refreshing price for {stock.symbol}: {ex}")
+
         db.session.commit()
         return {'updated': updated, 'total': len(stocks)}
 
@@ -285,51 +372,85 @@ class TrackingService:
     # Daily snapshot
     # ------------------------------------------------------------------
 
-    def take_daily_snapshot(self, snapshot_date: date = None) -> Optional[Dict]:
+    def take_daily_snapshot(self, snapshot_date: date = None,
+                            price_cache: Dict[str, Dict[str, float]] = None) -> Optional[Dict]:
         """
         Take (or update) a daily portfolio value snapshot.
-        If a snapshot already exists for the given date, it will be updated
-        with the latest prices to ensure accuracy (e.g. post-market refresh).
+        Correctly reconstructs the portfolio state *as of snapshot_date* by
+        replaying BUY/SELL transactions up to (and including) that date.
+
+        Args:
+            snapshot_date: The date to snapshot. Defaults to today.
+            price_cache: Optional pre-fetched historical prices
+                         {symbol: {date_str: close_price}} to avoid
+                         redundant yfinance calls during bulk backfill.
         """
         if snapshot_date is None:
-            snapshot_date = date.today()
+            snapshot_date = _us_eastern_today()
 
-        holdings = TrackingStock.query.all()
+        is_today = (snapshot_date == _us_eastern_today())
 
+        # --- Step 1: Reconstruct holdings as of snapshot_date ---
+        holdings_at_date, sell_txns_at_date = self._reconstruct_holdings_at_date(snapshot_date)
+
+        # --- Step 2: Get prices for each holding ---
+        # For today, prefer live DB prices; for historical dates, use cache or yfinance
+        symbols_needing_price = [h['symbol'] for h in holdings_at_date]
+
+        if is_today:
+            # Use current DB prices (already refreshed by refresh_prices)
+            current_stocks = {s.symbol: s for s in TrackingStock.query.all()}
+            for h in holdings_at_date:
+                stock = current_stocks.get(h['symbol'])
+                if stock and stock.current_price:
+                    h['current_price'] = stock.current_price
+                else:
+                    h['current_price'] = h['buy_price']
+        else:
+            # Historical date: use price_cache or fetch from yfinance
+            date_str = snapshot_date.strftime('%Y-%m-%d')
+            historical_prices = {}
+            if price_cache:
+                for sym in symbols_needing_price:
+                    if sym in price_cache and date_str in price_cache[sym]:
+                        historical_prices[sym] = price_cache[sym][date_str]
+
+            # Fetch missing prices
+            missing = [s for s in symbols_needing_price if s not in historical_prices]
+            if missing:
+                fetched = self._get_historical_prices(missing, snapshot_date)
+                historical_prices.update(fetched)
+
+            for h in holdings_at_date:
+                h['current_price'] = historical_prices.get(h['symbol'], h['buy_price'])
+
+        # --- Step 3: Calculate portfolio values ---
         total_holdings_value = 0.0
         holdings_snapshot = []
-        for h in holdings:
-            price = h.current_price or h.buy_price
-            shares = PER_STOCK_ALLOCATION / h.buy_price
+        for h in holdings_at_date:
+            price = h['current_price']
+            buy_price = h['buy_price']
+            cost = h.get('cost_amount', PER_STOCK_ALLOCATION)
+            shares = cost / buy_price
             value = shares * price
             total_holdings_value += value
             holdings_snapshot.append({
-                'symbol': h.symbol,
-                'name': h.name,
-                'buy_price': h.buy_price,
+                'symbol': h['symbol'],
+                'name': h['name'],
+                'buy_price': buy_price,
                 'current_price': price,
+                'cost_amount': round(cost, 2),
                 'shares': round(shares, 4),
                 'value': round(value, 2),
-                'return_pct': round(((price - h.buy_price) / h.buy_price) * 100, 2)
+                'return_pct': round(((price - buy_price) / buy_price) * 100, 2)
             })
 
-        # Calculate cash
-        sell_txns = TrackingTransaction.query.filter_by(action='SELL').all()
-        total_sell_returns = 0.0
-        total_realized_pnl = 0.0
-        for tx in sell_txns:
-            if tx.buy_price and tx.buy_price > 0:
-                shares = PER_STOCK_ALLOCATION / tx.buy_price
-                sell_value = shares * tx.price
-                total_sell_returns += sell_value
-                total_realized_pnl += sell_value - PER_STOCK_ALLOCATION
-
-        num_current = len(holdings)
-        cash = INITIAL_CAPITAL - (num_current * PER_STOCK_ALLOCATION) + total_sell_returns
+        # Calculate cash using flow-based method (replay all transactions up to snapshot_date)
+        cash, total_sell_returns, total_realized_pnl = self._calculate_cash(as_of_date=snapshot_date)
         portfolio_value = cash + total_holdings_value
         total_return_pct = ((portfolio_value - INITIAL_CAPITAL) / INITIAL_CAPITAL) * 100
 
-        # Update existing snapshot or create a new one
+        # --- Step 4: Upsert snapshot ---
         existing = TrackingDailySnapshot.query.filter_by(date=snapshot_date).first()
         if existing:
             existing.portfolio_value = round(portfolio_value, 2)
@@ -355,6 +476,145 @@ class TrackingService:
         return snapshot.to_dict()
 
     # ------------------------------------------------------------------
+    # Helpers for time-aware snapshot reconstruction
+    # ------------------------------------------------------------------
+
+    def _reconstruct_holdings_at_date(self, as_of_date: date):
+        """
+        Replay BUY/SELL transactions up to *as_of_date* (inclusive) to
+        determine which stocks were held on that date.
+
+        Returns:
+            (holdings_list, sell_txns_list)
+            holdings_list: [{symbol, name, buy_price, buy_date}, ...]
+            sell_txns_list: list of TrackingTransaction SELL objects up to as_of_date
+        """
+        # All transactions up to and including as_of_date, ordered chronologically
+        txns = TrackingTransaction.query.filter(
+            TrackingTransaction.date <= as_of_date
+        ).order_by(TrackingTransaction.date.asc(), TrackingTransaction.id.asc()).all()
+
+        # Reconstruct holdings by replaying transactions
+        holdings_map = {}  # symbol -> {symbol, name, buy_price, buy_date, cost_amount}
+        sell_txns = []
+
+        for tx in txns:
+            if tx.action == 'BUY':
+                holdings_map[tx.symbol] = {
+                    'symbol': tx.symbol,
+                    'name': tx.name or tx.symbol,
+                    'buy_price': tx.price,
+                    'buy_date': tx.date.strftime('%Y-%m-%d'),
+                    'cost_amount': tx.get_cost_amount(),
+                }
+            elif tx.action == 'SELL':
+                holdings_map.pop(tx.symbol, None)
+                sell_txns.append(tx)
+
+        return list(holdings_map.values()), sell_txns
+
+    def _calculate_cash(self, as_of_date: date = None) -> tuple:
+        """
+        Calculate cash balance by replaying BUY/SELL transactions (flow-based).
+        This avoids the bug where `num_holdings * PER_STOCK_ALLOCATION` assumes
+        every position costs exactly PER_STOCK_ALLOCATION, ignoring that a
+        replacement stock is funded from the actual sell proceeds (which may
+        differ from PER_STOCK_ALLOCATION if the sold stock had gains/losses).
+
+        Args:
+            as_of_date: Only consider transactions up to this date (inclusive).
+                        None means all transactions.
+
+        Returns:
+            (cash, total_sell_returns, total_realized_pnl)
+        """
+        query = TrackingTransaction.query
+        if as_of_date is not None:
+            query = query.filter(TrackingTransaction.date <= as_of_date)
+        txns = query.order_by(TrackingTransaction.date.asc(), TrackingTransaction.id.asc()).all()
+
+        cash = INITIAL_CAPITAL
+        total_sell_returns = 0.0
+        total_realized_pnl = 0.0
+
+        for tx in txns:
+            if tx.action == 'BUY':
+                cost = tx.get_cost_amount()
+                cash -= cost
+            elif tx.action == 'SELL':
+                if tx.buy_price and tx.buy_price > 0:
+                    # The cost_amount on a SELL tx records the original cost of the position
+                    original_cost = tx.get_cost_amount()
+                    shares = original_cost / tx.buy_price
+                    sell_value = shares * tx.price
+                    cash += sell_value
+                    total_sell_returns += sell_value
+                    total_realized_pnl += sell_value - original_cost
+
+        return cash, total_sell_returns, total_realized_pnl
+
+    def _get_historical_prices(self, symbols: List[str], target_date: date) -> Dict[str, float]:
+        """
+        Fetch the closing price for each symbol on *target_date*.
+        Falls back to the nearest prior trading day if target_date has no data
+        (e.g. weekend, holiday).
+
+        Returns: {symbol: close_price}
+        """
+        result = {}
+        # Fetch a small window around target_date to handle weekends/holidays
+        start = target_date - timedelta(days=5)
+        end = target_date + timedelta(days=1)
+        target_str = target_date.strftime('%Y-%m-%d')
+
+        for sym in symbols:
+            try:
+                hist = yf.Ticker(sym).history(
+                    start=start.strftime('%Y-%m-%d'),
+                    end=end.strftime('%Y-%m-%d'),
+                    auto_adjust=True
+                )
+                if hist is not None and not hist.empty:
+                    # Try exact date first, then fall back to last available
+                    if target_str in hist.index.strftime('%Y-%m-%d'):
+                        idx = list(hist.index.strftime('%Y-%m-%d')).index(target_str)
+                        result[sym] = float(hist['Close'].iloc[idx])
+                    else:
+                        # Use the last available close before or on target_date
+                        result[sym] = float(hist['Close'].iloc[-1])
+                else:
+                    print(f"[Snapshot] No price data for {sym} around {target_str}")
+            except Exception as e:
+                print(f"[Snapshot] Error fetching price for {sym} on {target_str}: {e}")
+        return result
+
+    def _bulk_fetch_historical_prices(self, symbols: List[str],
+                                       start_date: date, end_date: date
+                                       ) -> Dict[str, Dict[str, float]]:
+        """
+        Bulk-fetch daily close prices for multiple symbols over a date range.
+        Much more efficient than per-date fetching for backfill.
+
+        Returns: {symbol: {date_str: close_price, ...}, ...}
+        """
+        result = {sym: {} for sym in symbols}
+        start_str = start_date.strftime('%Y-%m-%d')
+        end_str = (end_date + timedelta(days=3)).strftime('%Y-%m-%d')
+
+        for sym in symbols:
+            try:
+                hist = yf.Ticker(sym).history(
+                    start=start_str, end=end_str, auto_adjust=True
+                )
+                if hist is not None and not hist.empty:
+                    for idx, row in hist.iterrows():
+                        d = idx.strftime('%Y-%m-%d')
+                        result[sym][d] = float(row['Close'])
+            except Exception as e:
+                print(f"[Backfill] Error fetching history for {sym}: {e}")
+        return result
+
+    # ------------------------------------------------------------------
     # AI Decision
     # ------------------------------------------------------------------
 
@@ -364,14 +624,15 @@ class TrackingService:
         Produces a structured daily research report with three-phase analysis.
         Returns the decision log entry.
         """
-        today = date.today()
+        today = _us_eastern_today()
 
         # Get current portfolio state
         holdings = TrackingStock.query.all()
         holdings_info = []
         for h in holdings:
             price = h.current_price or h.buy_price
-            shares = PER_STOCK_ALLOCATION / h.buy_price
+            cost = h.get_cost_amount()
+            shares = cost / h.buy_price
             ret_pct = ((price - h.buy_price) / h.buy_price) * 100
             holdings_info.append({
                 'symbol': h.symbol,
@@ -379,6 +640,7 @@ class TrackingService:
                 'buy_price': h.buy_price,
                 'buy_date': h.buy_date.strftime('%Y-%m-%d'),
                 'current_price': price,
+                'cost_amount': round(cost, 2),
                 'return_pct': round(ret_pct, 2),
                 'shares': round(shares, 4),
                 'value': round(shares * price, 2)
@@ -390,24 +652,14 @@ class TrackingService:
         ).limit(20).all()
         txn_history = [t.to_dict() for t in recent_txns]
 
-        # Calculate portfolio state
-        sell_txns = TrackingTransaction.query.filter_by(action='SELL').all()
-        total_sell_returns = 0.0
-        total_realized_pnl = 0.0
-        for tx in sell_txns:
-            if tx.buy_price and tx.buy_price > 0:
-                shares = PER_STOCK_ALLOCATION / tx.buy_price
-                sell_value = shares * tx.price
-                total_sell_returns += sell_value
-                total_realized_pnl += sell_value - PER_STOCK_ALLOCATION
-
+        # Calculate portfolio state using flow-based cash method
+        cash, total_sell_returns, total_realized_pnl = self._calculate_cash()
         num_current = len(holdings)
         available_slots = MAX_HOLDINGS - num_current
         holdings_value = sum(
-            (PER_STOCK_ALLOCATION / h.buy_price) * (h.current_price or h.buy_price)
+            (h.get_cost_amount() / h.buy_price) * (h.current_price or h.buy_price)
             for h in holdings
         )
-        cash = INITIAL_CAPITAL - (num_current * PER_STOCK_ALLOCATION) + total_sell_returns
         portfolio_value = cash + holdings_value
 
         # Build decision retrospective from recent decision logs
@@ -465,31 +717,62 @@ class TrackingService:
             return log.to_dict()
 
         # Process the AI's decisions
+        # First pass: execute all SELLs and collect proceeds for replacement BUYs
         actions = result.get('actions', [])
         summary = result.get('summary', '')
         has_changes = len(actions) > 0
         executed_actions = []
+        sell_proceeds_pool = 0.0  # Accumulated cash from sells, used for replacement buys
 
+        # Execute SELLs first to free up cash
         for action in actions:
             act_type = action.get('action', '').upper()
+            if act_type != 'SELL':
+                continue
             symbol = action.get('symbol', '').upper()
             reason = action.get('reason', '')
             name = action.get('name', symbol)
 
-            if act_type == 'BUY':
-                success = self._execute_buy(symbol, name, reason, today)
-                if success:
-                    executed_actions.append({
-                        'action': 'BUY', 'symbol': symbol, 'name': name,
-                        'reason': reason, 'success': True
-                    })
-            elif act_type == 'SELL':
-                success = self._execute_sell(symbol, reason, today)
-                if success:
-                    executed_actions.append({
-                        'action': 'SELL', 'symbol': symbol, 'name': name,
-                        'reason': reason, 'success': True
-                    })
+            sell_value = self._execute_sell(symbol, reason, today)
+            if sell_value is not None:
+                sell_proceeds_pool += sell_value
+                executed_actions.append({
+                    'action': 'SELL', 'symbol': symbol, 'name': name,
+                    'reason': reason, 'success': True,
+                    'proceeds': round(sell_value, 2)
+                })
+
+        # Now execute BUYs: use sell proceeds for replacement, or cash for new slots
+        # Recalculate available cash after sells
+        current_cash, _, _ = self._calculate_cash()
+        for action in actions:
+            act_type = action.get('action', '').upper()
+            if act_type != 'BUY':
+                continue
+            symbol = action.get('symbol', '').upper()
+            reason = action.get('reason', '')
+            name = action.get('name', symbol)
+
+            # Determine cost_amount: use sell proceeds if available, otherwise use PER_STOCK_ALLOCATION from cash
+            if sell_proceeds_pool > 0:
+                # Use sell proceeds for this replacement buy
+                buy_cost = sell_proceeds_pool
+                sell_proceeds_pool = 0.0  # Consume the proceeds
+            else:
+                # Fresh buy from remaining cash
+                buy_cost = min(PER_STOCK_ALLOCATION, current_cash)
+                if buy_cost <= 0:
+                    print(f"[Tracking] No cash available for BUY {symbol}, skipping")
+                    continue
+
+            success = self._execute_buy(symbol, name, reason, today, cost_amount=buy_cost)
+            if success:
+                current_cash -= buy_cost
+                executed_actions.append({
+                    'action': 'BUY', 'symbol': symbol, 'name': name,
+                    'reason': reason, 'success': True,
+                    'cost_amount': round(buy_cost, 2)
+                })
 
         # Extract structured report fields
         market_regime_data = result.get('market_regime', {})
@@ -518,14 +801,28 @@ class TrackingService:
         )
         db.session.add(log)
 
-        # Take snapshot after changes
+        # Refresh all prices before snapshot (decision may have triggered rate limits)
         db.session.commit()
+        print("[Tracking] Refreshing all stock prices before snapshot...")
+        refresh_result = self.refresh_prices()
+        print(f"[Tracking] Price refresh: updated {refresh_result['updated']}/{refresh_result['total']} stocks")
         self.take_daily_snapshot(today)
 
         return log.to_dict()
 
-    def _execute_buy(self, symbol: str, name: str, reason: str, trade_date: date) -> bool:
-        """Execute a BUY action."""
+    def _execute_buy(self, symbol: str, name: str, reason: str, trade_date: date,
+                     cost_amount: float = None) -> bool:
+        """
+        Execute a BUY action.
+
+        Args:
+            cost_amount: Actual capital to invest. Defaults to PER_STOCK_ALLOCATION
+                         for fresh buys. For replacement buys (after a SELL), this
+                         should be the actual sell proceeds so cash never goes negative.
+        """
+        if cost_amount is None:
+            cost_amount = PER_STOCK_ALLOCATION
+
         # Check if already holding
         existing = TrackingStock.query.filter_by(symbol=symbol).first()
         if existing:
@@ -551,41 +848,52 @@ class TrackingService:
             buy_price=price,
             buy_date=trade_date,
             current_price=price,
+            cost_amount=round(cost_amount, 2),
             reason=reason
         )
         db.session.add(stock)
 
-        # Record transaction
+        # Record transaction with actual cost_amount
         txn = TrackingTransaction(
             symbol=symbol,
             name=name,
             action='BUY',
             price=price,
             date=trade_date,
-            reason=reason
+            reason=reason,
+            cost_amount=round(cost_amount, 2)
         )
         db.session.add(txn)
         db.session.flush()
 
-        print(f"[Tracking] ✅ BUY {symbol} @ ${price:.2f}")
+        print(f"[Tracking] ✅ BUY {symbol} @ ${price:.2f} (invested: ${cost_amount:,.2f})")
         return True
 
-    def _execute_sell(self, symbol: str, reason: str, trade_date: date) -> bool:
-        """Execute a SELL action."""
+    def _execute_sell(self, symbol: str, reason: str, trade_date: date) -> Optional[float]:
+        """
+        Execute a SELL action.
+
+        Returns:
+            The actual cash proceeds from selling (shares * sell_price),
+            or None if the sell failed.
+        """
         stock = TrackingStock.query.filter_by(symbol=symbol).first()
         if not stock:
             print(f"[Tracking] Not holding {symbol}, skipping SELL")
-            return False
+            return None
 
         # Get current price for sell
         price = DataProvider.get_current_price(symbol)
         if price is None:
             price = stock.current_price or stock.buy_price
 
-        # Calculate realized return
+        # Calculate realized return and actual proceeds
+        original_cost = stock.get_cost_amount()
+        shares = original_cost / stock.buy_price
+        sell_value = shares * price
         realized_pct = ((price - stock.buy_price) / stock.buy_price) * 100
 
-        # Record transaction
+        # Record transaction (cost_amount records the original investment cost)
         txn = TrackingTransaction(
             symbol=symbol,
             name=stock.name,
@@ -594,7 +902,8 @@ class TrackingService:
             date=trade_date,
             reason=reason,
             buy_price=stock.buy_price,
-            realized_pct=round(realized_pct, 2)
+            realized_pct=round(realized_pct, 2),
+            cost_amount=round(original_cost, 2)
         )
         db.session.add(txn)
 
@@ -602,8 +911,8 @@ class TrackingService:
         db.session.delete(stock)
         db.session.flush()
 
-        print(f"[Tracking] ✅ SELL {symbol} @ ${price:.2f} (return: {realized_pct:+.2f}%)")
-        return True
+        print(f"[Tracking] ✅ SELL {symbol} @ ${price:.2f} (return: {realized_pct:+.2f}%, proceeds: ${sell_value:,.2f})")
+        return sell_value
 
     def _build_decision_retrospective(self) -> str:
         """
@@ -699,7 +1008,7 @@ The report follows a THREE-PHASE deep analysis pipeline. Execute ALL phases in o
 - Realized P&L: ${total_realized_pnl:,.2f}
 - Current Holdings: {num_current}/{MAX_HOLDINGS}
 - Available Slots for New Buys: {available_slots}
-- Per-Stock Allocation: ${PER_STOCK_ALLOCATION:,.0f} (fixed per position)
+- Per-Stock Allocation: ${PER_STOCK_ALLOCATION:,.0f} (for fresh buys; replacement buys use actual sell proceeds)
 
 **CURRENT HOLDINGS**:
 {holdings_text}
@@ -782,7 +1091,7 @@ PHASE 3 — OPPORTUNITY SCAN & FINAL DECISION
 - BUY: Triple confirmation (catalyst + technicals + valuation), Composite Score > 3.5, AND available slot
 - HOLD: Composite Score 2.5-4.0 with no urgent action needed
 - Do NOT churn — only trade when conviction is HIGH
-- Each position is allocated exactly ${PER_STOCK_ALLOCATION:,.0f}
+- Fresh positions are allocated ${PER_STOCK_ALLOCATION:,.0f}; replacement buys (after selling) use actual sell proceeds
 - Quality over quantity: you are NOT required to fill all {MAX_HOLDINGS} slots
 
 **SYMBOL FORMAT**: US stocks only — use standard tickers like AAPL, TSLA, NVDA, etc.
@@ -862,29 +1171,56 @@ Return a SINGLE valid JSON object with this structure:
     def backfill_snapshots(self, start_date_str: str = None) -> int:
         """
         Backfill daily snapshots for dates where we have holdings but no snapshot.
-        Useful when the system was not running for some days.
-        Returns the number of snapshots created.
-        """
-        if not start_date_str:
-            start_date_str = INCEPTION_DATE
+        Correctly reconstructs the portfolio state for each historical date
+        using the transaction log and historical prices.
 
-        start = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-        end = date.today()
+        Will NOT insert snapshots before the earliest existing transaction.
+        Returns the number of snapshots created / updated.
+        """
+        # Determine the earliest meaningful date from existing data
+        earliest_txn = TrackingTransaction.query.order_by(TrackingTransaction.date.asc()).first()
+        if not earliest_txn:
+            print("No transactions found. Nothing to backfill.")
+            return 0
+        earliest_data_date = earliest_txn.date
+
+        if start_date_str:
+            start = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        else:
+            start = earliest_data_date
+
+        # Never backfill before the earliest transaction
+        if start < earliest_data_date:
+            print(f"Clamping backfill start from {start} to {earliest_data_date} (earliest transaction)")
+            start = earliest_data_date
+
+        end = _us_eastern_today()
+
+        # Collect ALL symbols that appear in any transaction so we can bulk-fetch prices
+        all_txns = TrackingTransaction.query.all()
+        all_symbols = list({tx.symbol for tx in all_txns})
+        # Also include currently held stocks (in case they have no sell txn yet)
+        for s in TrackingStock.query.all():
+            if s.symbol not in all_symbols:
+                all_symbols.append(s.symbol)
+
+        print(f"[Backfill] Fetching historical prices for {len(all_symbols)} symbols "
+              f"from {start} to {end} ...")
+        price_cache = self._bulk_fetch_historical_prices(all_symbols, start, end)
+
         current = start
         count = 0
-
         while current <= end:
             # Skip weekends
             if current.weekday() < 5:
-                existing = TrackingDailySnapshot.query.filter_by(date=current).first()
-                if not existing:
-                    try:
-                        self.take_daily_snapshot(current)
-                        count += 1
-                    except Exception as e:
-                        print(f"Error backfilling snapshot for {current}: {e}")
+                try:
+                    self.take_daily_snapshot(current, price_cache=price_cache)
+                    count += 1
+                except Exception as e:
+                    print(f"Error backfilling snapshot for {current}: {e}")
             current += timedelta(days=1)
 
+        print(f"[Backfill] Done. Processed {count} trading days.")
         return count
 
 
