@@ -1452,10 +1452,13 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                 });
             }
             
-            // Start task polling if authenticated
+            // Load tasks if authenticated, only start polling if there are running tasks
             if (currentUser.value) {
-                loadTasks();
-                startTaskPolling();
+                await loadTasks();
+                const hasRunningTasks = tasks.value.some(t => t.status === 'running');
+                if (hasRunningTasks) {
+                    startTaskPolling();
+                }
                 loadPortfolios();
             }
 
@@ -1620,6 +1623,7 @@ const showRecommendToolCalls = ref(true);  // Toggle for recommend agent trace p
                     // Small delay to ensure task is saved to DB
                     await new Promise(resolve => setTimeout(resolve, 300));
                     await loadTasks();
+                    startTaskPolling(); // Start polling while task is running
                     
                     // Highlight the new task
                     const newTask = tasks.value.find(t => t.task_id === data.task_id);
@@ -2173,6 +2177,7 @@ xAxis: [
                     // Show task list and add animation
                     taskListVisible.value = true;
                     await loadTasks();
+                    startTaskPolling(); // Start polling while task is running
                     // Poll for completion
                     pollTaskUntilComplete(data.task_id, (result) => {
                         // Ensure result has proper structure
@@ -2254,6 +2259,7 @@ xAxis: [
                     taskListVisible.value = true;
                     await new Promise(resolve => setTimeout(resolve, 300));
                     await loadTasks();
+                    startTaskPolling(); // Start polling while task is running
                     
                     // Poll for completion
                     pollTaskUntilComplete(data.task_id, (result) => {
@@ -2374,9 +2380,8 @@ xAxis: [
                         3000
                     );
                     
-                    // Load tasks and start polling
+                    // Load tasks (new user won't have running tasks, no need to poll)
                     loadTasks();
-                    startTaskPolling();
                 } else {
                     authError.value = data.error || (currentLanguage.value === 'zh' ? '注册失败' : 'Registration failed');
                 }
@@ -2417,9 +2422,12 @@ xAxis: [
                         3000
                     );
                     
-                    // Load tasks and start polling
-                    loadTasks();
-                    startTaskPolling();
+                    // Load tasks, only start polling if there are running tasks
+                    await loadTasks();
+                    const hasRunningTasks = tasks.value.some(t => t.status === 'running');
+                    if (hasRunningTasks) {
+                        startTaskPolling();
+                    }
                 } else {
                     authError.value = data.error || (currentLanguage.value === 'zh' ? '登录失败' : 'Login failed');
                 }
@@ -2517,12 +2525,16 @@ xAxis: [
         
         const startTaskPolling = () => {
             if (taskPollInterval) return;
-            taskPollInterval = setInterval(() => {
+            taskPollInterval = setInterval(async () => {
                 if (currentUser.value) {
-                    // Always poll if there are running tasks, or if we just created a task
-                    loadTasks();
+                    await loadTasks();
+                    // Auto-stop polling if no running tasks
+                    const hasRunningTasks = tasks.value.some(t => t.status === 'running');
+                    if (!hasRunningTasks) {
+                        stopTaskPolling();
+                    }
                 }
-            }, 2000); // Poll every 2 seconds
+            }, 3000); // Poll every 3 seconds
         };
         
         const stopTaskPolling = () => {
@@ -2710,6 +2722,7 @@ xAxis: [
                 // 打开任务列表
                 taskListVisible.value = true;
                 await loadTasks();
+                startTaskPolling(); // Start polling while task is running
                 
                 // 找到现有任务并轮询
                 const existingTask = tasks.value.find(t => t.task_id === duplicateTaskInfo.value.task_id);
