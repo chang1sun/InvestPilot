@@ -626,6 +626,16 @@ class TrackingService:
         """
         today = _us_eastern_today()
 
+        # Idempotency guard: skip if a completed decision already exists for today.
+        # This prevents duplicate runs when multiple Gunicorn workers or scheduler
+        # instances accidentally trigger the same cron job.
+        existing_log = TrackingDecisionLog.query.filter_by(date=today).filter(
+            TrackingDecisionLog.has_changes.isnot(None)
+        ).first()
+        if existing_log:
+            print(f"ℹ️  [Cron] Decision already exists for {today} (id={existing_log.id}), skipping duplicate run.")
+            return existing_log.to_dict()
+
         # Get current portfolio state
         holdings = TrackingStock.query.all()
         holdings_info = []

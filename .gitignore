@@ -76,3 +76,6 @@ uploads/
 
 # Configuration (uncomment if you want to ignore config)
 # config.py
+
+# Cron log files
+cron-*.log

@@ -13,4 +13,3 @@ python-dotenv
 gunicorn
 requests
 bcrypt
-apscheduler
