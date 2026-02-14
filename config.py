@@ -17,7 +17,5 @@ class Config:
     QWEN_API_KEY = os.environ.get('QWEN_API_KEY')
 
     # Stock Tracking Cron
-    ENABLE_STOCK_TRACKING_CRON = os.environ.get('ENABLE_STOCK_TRACKING_CRON', 'false').lower() == 'true'
     TRACKING_MODEL = os.environ.get('TRACKING_MODEL', 'gemini-3-flash-preview')
-    TRACKING_CRON_HOUR_UTC = int(os.environ.get('TRACKING_CRON_HOUR_UTC', '22'))  # Default: 22:00 UTC (17:00 ET)
 

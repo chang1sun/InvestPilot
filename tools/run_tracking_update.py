@@ -3,10 +3,12 @@
 Admin script: Manually run stock tracking daily decision.
 
 Usage:
-    python tools/run_tracking_update.py                   # Run AI decision + snapshot
-    python tools/run_tracking_update.py --snapshot-only   # Only take daily snapshot
-    python tools/run_tracking_update.py --backfill        # Backfill missing snapshots
-    python tools/run_tracking_update.py --model gemini-3-flash-preview  # Specify model
+    python tools/run_tracking_update.py                          # Run AI decision (only)
+    python tools/run_tracking_update.py --full-pipeline          # Full cron pipeline: refresh + snapshot + decision
+    python tools/run_tracking_update.py --snapshot-only          # Only take daily snapshot
+    python tools/run_tracking_update.py --backfill               # Backfill missing snapshots
+    python tools/run_tracking_update.py --refresh-prices         # Only refresh prices
+    python tools/run_tracking_update.py --model gemini-3-pro     # Specify AI model
 """
 
 import sys
@@ -36,8 +38,55 @@ def _auto_upgrade_decision_log_columns(db):
     db.session.commit()
 
 
+def run_full_pipeline(model: str = 'gemini-3-pro-preview'):
+    """
+    Full daily pipeline (used by cron / systemd / Docker scheduler):
+      1. Refresh prices
+      2. Take daily snapshot
+      3. Run AI decision
+
+    Exits with code 1 on failure so schedulers can detect errors.
+    """
+    # ── Step 1: Refresh prices ──────────────────────────────
+    print("🕐 [Pipeline] Step 1/3 — Refreshing stock prices...")
+    try:
+        refresh_result = tracking_service.refresh_prices()
+        print(f"✅ [Pipeline] Price refresh done. "
+              f"Updated {refresh_result['updated']}/{refresh_result['total']} stocks.")
+    except Exception as e:
+        print(f"❌ [Pipeline] Price refresh failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Step 2: Daily snapshot ──────────────────────────────
+    print("🕐 [Pipeline] Step 2/3 — Taking daily portfolio snapshot...")
+    try:
+        snapshot = tracking_service.take_daily_snapshot()
+        if snapshot:
+            print(f"✅ [Pipeline] Daily snapshot taken. "
+                  f"Portfolio value: ${snapshot.get('portfolio_value', 'N/A')}")
+        else:
+            print("ℹ️  [Pipeline] Snapshot already exists for today, skipped.")
+    except Exception as e:
+        print(f"❌ [Pipeline] Snapshot failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Step 3: AI decision ─────────────────────────────────
+    print(f"🕐 [Pipeline] Step 3/3 — Running AI decision (model={model})...")
+    try:
+        result = tracking_service.run_daily_decision(model_name=model)
+        has_changes = result.get('has_changes', False)
+        print(f"✅ [Pipeline] AI decision complete. Changes: {has_changes}")
+    except Exception as e:
+        print(f"❌ [Pipeline] AI decision failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print("🎉 [Pipeline] Daily pipeline finished successfully.")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Run stock tracking update')
+    parser.add_argument('--full-pipeline', action='store_true',
+                        help='Run full daily pipeline: refresh prices + snapshot + AI decision')
     parser.add_argument('--snapshot-only', action='store_true',
                         help='Only take daily snapshot without AI decision')
     parser.add_argument('--backfill', action='store_true',
@@ -56,6 +105,10 @@ def main():
 
         # Auto-upgrade: add missing columns for deep report support
         _auto_upgrade_decision_log_columns(db)
+
+        if args.full_pipeline:
+            run_full_pipeline(model=args.model)
+            return
 
         if args.refresh_prices:
             print("🔄 Refreshing stock prices...")
@@ -79,7 +132,7 @@ def main():
                 print("⚠️ Snapshot already exists for today or failed")
             return
 
-        # Full AI decision run
+        # Full AI decision run (without refresh / snapshot)
         print(f"🤖 Running AI stock tracking decision with model: {args.model}")
         print("=" * 60)
 

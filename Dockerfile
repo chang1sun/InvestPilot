@@ -21,4 +21,4 @@ RUN mkdir -p /data/db /data/backups
 # Ensure PYTHONPATH includes the working directory
 ENV PYTHONPATH=/app
 
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "--timeout", "300", "--graceful-timeout", "30", "wsgi:app"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "--timeout", "300", "--graceful-timeout", "30", "wsgi:app"]

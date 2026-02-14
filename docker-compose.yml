@@ -11,9 +11,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - QWEN_API_KEY=${QWEN_API_KEY}
-      - ENABLE_STOCK_TRACKING_CRON=${ENABLE_STOCK_TRACKING_CRON:-false}
-      - TRACKING_MODEL=${TRACKING_MODEL:-gemini-3-flash-preview}
-      - TRACKING_CRON_HOUR_UTC=${TRACKING_CRON_HOUR_UTC:-22}
+      - TRACKING_MODEL=${TRACKING_MODEL:-gemini-3-pro-preview}
     volumes:
       - db_data:/data/db
       - backup_data:/data/backups
@@ -23,6 +21,29 @@ services:
       - .env
     restart: unless-stopped
     entrypoint: ["sh", "-c", "python tools/init_db.py && gunicorn -w 2 -b 0.0.0.0:5000 --timeout 300 --graceful-timeout 30 wsgi:app"]
+
+  scheduler:
+    build: .
+    environment:
+      - DATABASE_URL=sqlite:////data/db/investpilot.db
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - QWEN_API_KEY=${QWEN_API_KEY}
+      - TRACKING_MODEL=${TRACKING_MODEL:-gemini-3-pro-preview}
+    volumes:
+      - db_data:/data/db
+      - backup_data:/data/backups
+    depends_on:
+      - redis
+      - web
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Built-in Python scheduler: Mon-Fri 22:00 UTC — no cron needed
+    command: ["python", "scripts/scheduler_entry.py"]
 
   redis:
     image: redis:7-alpine
