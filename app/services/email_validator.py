@@ -5,6 +5,29 @@ import re
 class EmailValidator:
     """邮箱验证服务，使用 Rapid Email Verifier API"""
     
+    # Trusted email domain whitelist, skip disposable email check for these domains
+    TRUSTED_DOMAINS = {
+        # China
+        'qq.com', 'vip.qq.com', 'foxmail.com',
+        '163.com', 'vip.163.com', '126.com', 'yeah.net',
+        'sina.com', 'sina.cn', 'vip.sina.com',
+        'sohu.com',
+        'aliyun.com',
+        '139.com',
+        '189.cn',
+        '21cn.com',
+        # International
+        'gmail.com', 'googlemail.com',
+        'outlook.com', 'hotmail.com', 'live.com', 'msn.com',
+        'yahoo.com', 'yahoo.co.jp', 'yahoo.co.uk',
+        'icloud.com', 'me.com', 'mac.com',
+        'protonmail.com', 'proton.me',
+        'zoho.com',
+        'aol.com',
+        'mail.com', 'email.com',
+        'yandex.com', 'yandex.ru',
+    }
+    
     def __init__(self):
         self.base_url = "https://rapid-email-verifier.fly.dev/api/validate"
         self.timeout = 3  # 3秒超时
@@ -119,11 +142,15 @@ class EmailValidator:
         
         # 检查是否为临时邮箱
         if validations.get('is_disposable', False):
-            return {
-                'valid': False,
-                'reason': '不允许使用临时邮箱',
-                'details': data
-            }
+            # Extract domain and skip check if it's in the trusted whitelist
+            email = data.get('email', '')
+            domain = email.rsplit('@', 1)[-1].lower() if '@' in email else ''
+            if domain not in self.TRUSTED_DOMAINS:
+                return {
+                    'valid': False,
+                    'reason': '不允许使用临时邮箱',
+                    'details': data
+                }
         
         # 根据状态进行判断
         if status == 'INVALID':
