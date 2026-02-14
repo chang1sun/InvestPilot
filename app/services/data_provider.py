@@ -91,8 +91,8 @@ def retry_on_rate_limit(max_retries: int = 3, initial_delay: float = 5.0, backof
     return decorator
 
 
-# Global rate limiter instance - allows 2 requests per 60 seconds
-_global_rate_limiter = RateLimiter(max_calls=2, time_window=60)
+# Global rate limiter instance - allows 120 requests per 60 seconds
+_global_rate_limiter = RateLimiter(max_calls=120, time_window=60)
 # New assets support
 POPULAR_ASSETS = [
     # Crypto
@@ -471,7 +471,12 @@ class DataProvider:
                     return results[0]['name']
                 return None
             
-            # For stocks and other assets, use yfinance
+            # Check local lists first (POPULAR_STOCKS + POPULAR_ASSETS) to avoid API calls
+            for asset in POPULAR_ASSETS + POPULAR_STOCKS:
+                if asset['symbol'] == symbol:
+                    return asset['name']
+            
+            # For stocks and other assets, use yfinance as fallback
             ticker = yf.Ticker(symbol)
             info = ticker.info
             
@@ -724,7 +729,7 @@ class BatchFetcher:
     
     _instance = None
     _lock = threading.Lock()
-    MAX_CACHE_ENTRIES = 50  # Maximum number of cache entries to prevent unbounded memory growth
+    MAX_CACHE_ENTRIES = 50  # Maximum number of cache entries
     
     def __new__(cls):
         """Singleton pattern to ensure only one fetcher instance"""
@@ -803,6 +808,7 @@ class BatchFetcher:
     ) -> Dict[str, pd.DataFrame]:
         """
         Batch fetch historical data for multiple symbols using yfinance.
+        Uses per-symbol caching to avoid re-downloading already cached symbols.
         
         Args:
             symbols: List of ticker symbols
@@ -817,27 +823,35 @@ class BatchFetcher:
         if not symbols:
             return {}
         
-        # Create cache key
-        cache_key = f"batch_{period}_{interval}_{'_'.join(sorted(symbols))}"
+        results = {}
+        symbols_to_fetch = []
         
-        # Try cache first
+        # Step 1: Check per-symbol cache first
         if use_cache:
-            cached_data = self._get_from_cache(cache_key)
-            if cached_data:
-                return cached_data
+            for symbol in symbols:
+                per_symbol_key = f"hist_{symbol}_{period}_{interval}"
+                cached = self._get_from_cache(per_symbol_key)
+                if cached is not None:
+                    results[symbol] = cached
+                else:
+                    symbols_to_fetch.append(symbol)
+        else:
+            symbols_to_fetch = list(symbols)
+        
+        # If all symbols are cached, return immediately
+        if not symbols_to_fetch:
+            return results
         
         # Acquire rate limit permission before making API call
         self._rate_limiter.acquire()
         
         try:
-            results = {}
-            
             # Use yfinance batch download
             # group_by='ticker' makes it easier to separate data
             # threads=False to avoid potential threading issues in web server environment
-            print(f"    ⬇️ Downloading data for {len(symbols)} symbols...")
+            print(f"    ⬇️ Downloading data for {len(symbols_to_fetch)} symbols...")
             data = yf.download(
-                tickers=symbols, 
+                tickers=symbols_to_fetch, 
                 period=period, 
                 interval=interval, 
                 group_by='ticker', 
@@ -848,23 +862,27 @@ class BatchFetcher:
             
             if data is None or data.empty:
                 print("⚠️ Batch fetch returned empty data")
-                return {symbol: pd.DataFrame() for symbol in symbols}
+                for symbol in symbols_to_fetch:
+                    results[symbol] = pd.DataFrame()
+                return results
             
             # Process results
-            if len(symbols) == 1:
+            if len(symbols_to_fetch) == 1:
                 # If only one symbol, yf.download returns a simple DataFrame (not MultiIndex)
-                symbol = symbols[0]
+                symbol = symbols_to_fetch[0]
                 if not data.empty:
                     # Reset index to make Date a column
                     df = data.reset_index()
                     results[symbol] = df
+                    # Cache per-symbol
+                    self._update_cache(f"hist_{symbol}_{period}_{interval}", df, ttl_seconds=cache_ttl)
                 else:
                     results[symbol] = pd.DataFrame()
             else:
                 # For multiple symbols, data is MultiIndex with Ticker as top level
                 # Check if columns are MultiIndex
                 if isinstance(data.columns, pd.MultiIndex):
-                    for symbol in symbols:
+                    for symbol in symbols_to_fetch:
                         try:
                             # Extract data for this symbol
                             if symbol in data.columns.levels[0]:
@@ -875,6 +893,8 @@ class BatchFetcher:
                                 if not df.empty:
                                     df = df.reset_index()
                                     results[symbol] = df
+                                    # Cache per-symbol
+                                    self._update_cache(f"hist_{symbol}_{period}_{interval}", df, ttl_seconds=cache_ttl)
                                 else:
                                     results[symbol] = pd.DataFrame()
                             else:
@@ -884,19 +904,15 @@ class BatchFetcher:
                             results[symbol] = pd.DataFrame()
                 else:
                     # Sometimes yfinance returns single level columns if only one ticker was valid or found
-                    # This is tricky, but let's assume if it's not MultiIndex, it might be for the single valid ticker
-                    # But we passed multiple symbols...
-                    # Let's try to match columns if possible, or just log warning
                     print("    ⚠️ Unexpected data format from yfinance batch download")
-            
-            # Update cache (5 minutes for batch data)
-            self._update_cache(cache_key, results, ttl_seconds=cache_ttl)
             
             return results
             
         except Exception as e:
             print(f"❌ Error in batch fetch: {e}")
-            return {symbol: pd.DataFrame() for symbol in symbols}
+            for symbol in symbols_to_fetch:
+                results[symbol] = pd.DataFrame()
+            return results
     
     @retry_on_rate_limit(max_retries=3, initial_delay=10.0, backoff_factor=2.0)
     def get_cached_kline_data(
@@ -1042,6 +1058,120 @@ class BatchFetcher:
         self._update_cache(cache_key, result, ttl_seconds=3600)
         
         return result
+
+    def batch_get_prices_and_changes(
+        self,
+        symbols: List[str],
+        asset_type_map: Dict[str, str] = None,
+        currency_map: Dict[str, str] = None
+    ) -> Dict[str, Dict]:
+        """
+        Batch get current prices and daily change percentages for multiple symbols
+        using a single yf.download() call instead of individual calls.
+        
+        For CN funds, falls back to individual akshare calls.
+        
+        Args:
+            symbols: List of ticker symbols
+            asset_type_map: Optional dict mapping symbol -> asset_type
+            currency_map: Optional dict mapping symbol -> currency
+            
+        Returns:
+            Dict mapping symbol -> {'price': float|None, 'daily_change': float|None}
+        """
+        if not symbols:
+            return {}
+        
+        asset_type_map = asset_type_map or {}
+        currency_map = currency_map or {}
+        
+        results = {}
+        yf_symbols = []
+        cn_fund_symbols = []
+        
+        # Separate CN funds from yfinance symbols
+        for symbol in symbols:
+            at = asset_type_map.get(symbol, 'STOCK')
+            cur = currency_map.get(symbol, 'USD')
+            is_cn_fund = (at == 'FUND' and cur == 'CNY') or at == 'FUND_CN'
+            if is_cn_fund:
+                cn_fund_symbols.append(symbol)
+            else:
+                # Check individual cache first
+                cached_price = self._get_from_cache(f"price_{symbol}")
+                cached_change = self._get_from_cache(f"daily_change_{symbol}")
+                if cached_price is not None and cached_change is not None:
+                    results[symbol] = {'price': cached_price, 'daily_change': cached_change}
+                else:
+                    yf_symbols.append(symbol)
+        
+        # Batch fetch yfinance symbols using a single API call (5d to get daily change)
+        if yf_symbols:
+            batch_data = self.batch_fetch_history(yf_symbols, period='5d', interval='1d', cache_ttl=120)
+            
+            for symbol in yf_symbols:
+                price = None
+                daily_change = None
+                hist = batch_data.get(symbol, pd.DataFrame())
+                
+                if not hist.empty:
+                    try:
+                        if 'Close' in hist.columns and len(hist) >= 1:
+                            current_price = float(hist['Close'].iloc[-1])
+                            # Round based on magnitude
+                            if current_price >= 100:
+                                price = round(current_price, 2)
+                            elif current_price >= 10:
+                                price = round(current_price, 3)
+                            else:
+                                price = round(current_price, 4)
+                            
+                            # Cache the price
+                            self._update_cache(f"price_{symbol}", price, ttl_seconds=60)
+                        
+                        if 'Close' in hist.columns and len(hist) >= 2:
+                            current = float(hist['Close'].iloc[-1])
+                            prev = float(hist['Close'].iloc[-2])
+                            if prev != 0:
+                                daily_change = round(((current - prev) / prev) * 100, 2)
+                                # Cache the daily change
+                                self._update_cache(f"daily_change_{symbol}", daily_change, ttl_seconds=60)
+                    except Exception as e:
+                        print(f"    ❌ Error extracting price/change for {symbol}: {e}")
+                
+                results[symbol] = {'price': price, 'daily_change': daily_change}
+        
+        # Handle CN funds individually (they use akshare, not yfinance)
+        for symbol in cn_fund_symbols:
+            price = self.get_cached_current_price(symbol, asset_type='FUND_CN', currency='CNY')
+            daily_change = self.get_cached_daily_change(symbol, asset_type='FUND_CN', currency='CNY')
+            results[symbol] = {'price': price, 'daily_change': daily_change}
+        
+        return results
+
+    def batch_get_exchange_rates(
+        self,
+        currency_pairs: List[tuple]
+    ) -> Dict[str, float]:
+        """
+        Batch get exchange rates, using cache first then fetching missing ones.
+        
+        Args:
+            currency_pairs: List of (from_currency, to_currency) tuples
+            
+        Returns:
+            Dict mapping 'FROM_TO' -> rate
+        """
+        results = {}
+        for from_cur, to_cur in currency_pairs:
+            key = f"{from_cur}_{to_cur}"
+            if from_cur == to_cur:
+                results[key] = 1.0
+                continue
+            # Use cached exchange rate (will fetch if not cached)
+            rate = self.get_cached_exchange_rate(from_cur, to_cur)
+            results[key] = rate
+        return results
 
     def clear_cache(self, pattern: str = None):
         """

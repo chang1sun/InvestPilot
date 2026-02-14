@@ -815,9 +815,6 @@ def get_market_indices():
     except:
         pass
     
-    # Add delay to prevent race condition with trending_stocks endpoint
-    time.sleep(2)  # 2 second delay to stagger API calls
-    
     # Define major indices with their symbols and metadata
     indices = [
         {'symbol': '^GSPC', 'name': 'S&P 500', 'name_zh': '标普500', 'market': 'US', 'icon': '🇺🇸'},
@@ -1130,10 +1127,10 @@ def get_market_news():
     news_items = []
     
     # Get news from different sources using yfinance
+    # Reduced from 5 tickers to 2 to minimize API calls and rate limiting
+    # S&P 500 gives broad market news, ^IXIC gives tech-focused news
     try:
-        # Fetch news for major indices to represent global market news
-        # S&P 500, Nasdaq, Dow Jones, Gold, Oil
-        tickers = ["^GSPC", "^IXIC", "^DJI", "GC=F", "CL=F"]
+        tickers = ["^GSPC", "^IXIC"]
         
         for symbol in tickers:
             try:
@@ -1628,7 +1625,7 @@ def get_portfolios():
 
 @api_bp.route('/portfolios/refresh', methods=['GET'])
 def refresh_portfolios():
-    """异步刷新持仓数据（获取最新价格和标的名称）"""
+    """异步刷新持仓数据（获取最新价格和标的名称）- 使用批量API调用优化"""
     user = get_user_from_request()
     if not user:
         return jsonify({'error': '未登录'}), 401
@@ -1640,12 +1637,44 @@ def refresh_portfolios():
     # 引入 batch_fetcher
     from app.services.data_provider import batch_fetcher
     
-    # 为每个持仓添加实时价格和盈亏信息
+    # --- Step 1: Collect all non-cash symbols and batch fetch prices/changes ---
+    non_cash_portfolios = [p for p in portfolios if p.asset_type != 'CASH']
+    non_cash_symbols = [p.symbol for p in non_cash_portfolios]
+    
+    # Build asset_type and currency maps for batch fetcher
+    asset_type_map = {p.symbol: p.asset_type for p in non_cash_portfolios}
+    currency_map = {p.symbol: (p.currency.upper() if p.currency else 'USD') for p in non_cash_portfolios}
+    
+    # Batch fetch all prices and daily changes in one yf.download() call
+    batch_price_data = {}
+    if non_cash_symbols:
+        batch_price_data = batch_fetcher.batch_get_prices_and_changes(
+            non_cash_symbols,
+            asset_type_map=asset_type_map,
+            currency_map=currency_map
+        )
+    
+    # --- Step 2: Collect unique currencies and batch fetch exchange rates ---
+    unique_currencies = set()
+    for p in portfolios:
+        cur = p.currency.upper() if p.currency else 'USD'
+        if cur != 'USD':
+            unique_currencies.add(cur)
+    
+    exchange_rates = {'USD': 1.0}
+    for cur in unique_currencies:
+        try:
+            exchange_rates[cur] = batch_fetcher.get_cached_exchange_rate(cur, 'USD')
+        except Exception as e:
+            print(f"Failed to get exchange rate for {cur}: {e}")
+            exchange_rates[cur] = 1.0
+    
+    # --- Step 3: Assemble results using batch data ---
     portfolios_with_price = []
     for p in portfolios:
         portfolio_dict = p.to_dict()
         
-        #  获取标的全名
+        # 获取标的全名 (uses local list first, avoids yf.Ticker().info)
         try:
             name = DataProvider.get_symbol_name(
                 p.symbol, 
@@ -1657,15 +1686,8 @@ def refresh_portfolios():
             print(f"Failed to get name for {p.symbol}: {e}")
             portfolio_dict['name'] = p.symbol
         
-        # 获取汇率
-        exchange_rate = 1.0
         currency = p.currency.upper() if p.currency else 'USD'
-        
-        if currency != 'USD':
-            try:
-                exchange_rate = batch_fetcher.get_cached_exchange_rate(currency, 'USD')
-            except Exception as e:
-                print(f"Failed to get exchange rate for {currency}: {e}")
+        exchange_rate = exchange_rates.get(currency, 1.0)
         
         portfolio_dict['exchange_rate'] = exchange_rate
         portfolio_dict['currency'] = currency
@@ -1679,48 +1701,26 @@ def refresh_portfolios():
             portfolio_dict['value_in_usd'] = p.total_quantity * exchange_rate
             portfolio_dict['daily_change_percent'] = 0.0
         else:
-            # 获取实时价格
-            try:
-                current_price = batch_fetcher.get_cached_current_price(
-                    p.symbol, 
-                    asset_type=p.asset_type,
-                    currency=currency
-                )
-                
-                if current_price:
-                    portfolio_dict['current_price'] = float(current_price)
-                    current_value = current_price * p.total_quantity
-                    portfolio_dict['current_value'] = current_value
-                    portfolio_dict['profit_loss'] = current_value - p.total_cost
-                    portfolio_dict['profit_loss_percent'] = ((current_value - p.total_cost) / p.total_cost * 100) if p.total_cost > 0 else 0
-                    portfolio_dict['value_in_usd'] = current_value * exchange_rate
-                else:
-                    portfolio_dict['current_price'] = p.avg_cost
-                    portfolio_dict['current_value'] = p.total_cost
-                    portfolio_dict['profit_loss'] = 0.0
-                    portfolio_dict['profit_loss_percent'] = 0.0
-                    portfolio_dict['value_in_usd'] = p.total_cost * exchange_rate
-                
-                # 获取今日涨跌幅
-                try:
-                    daily_change = batch_fetcher.get_cached_daily_change(
-                        p.symbol,
-                        asset_type=p.asset_type,
-                        currency=currency
-                    )
-                    portfolio_dict['daily_change_percent'] = daily_change if daily_change is not None else 0.0
-                except Exception as e:
-                    print(f"Failed to get daily change for {p.symbol}: {e}")
-                    portfolio_dict['daily_change_percent'] = 0.0
-                    
-            except Exception as e:
-                print(f"Failed to get price for {p.symbol}: {e}")
+            # Use batch-fetched price and daily change data
+            symbol_data = batch_price_data.get(p.symbol, {})
+            current_price = symbol_data.get('price')
+            daily_change = symbol_data.get('daily_change')
+            
+            if current_price:
+                portfolio_dict['current_price'] = float(current_price)
+                current_value = current_price * p.total_quantity
+                portfolio_dict['current_value'] = current_value
+                portfolio_dict['profit_loss'] = current_value - p.total_cost
+                portfolio_dict['profit_loss_percent'] = ((current_value - p.total_cost) / p.total_cost * 100) if p.total_cost > 0 else 0
+                portfolio_dict['value_in_usd'] = current_value * exchange_rate
+            else:
                 portfolio_dict['current_price'] = p.avg_cost
                 portfolio_dict['current_value'] = p.total_cost
                 portfolio_dict['profit_loss'] = 0.0
                 portfolio_dict['profit_loss_percent'] = 0.0
                 portfolio_dict['value_in_usd'] = p.total_cost * exchange_rate
-                portfolio_dict['daily_change_percent'] = 0.0
+            
+            portfolio_dict['daily_change_percent'] = daily_change if daily_change is not None else 0.0
         
         portfolios_with_price.append(portfolio_dict)
     
@@ -2376,6 +2376,20 @@ def get_portfolio_stats():
     total_cost = 0  # 总成本（不包括现金）
     cash_balance = 0  # 现金余额
     
+    # --- Batch fetch all non-cash prices in one API call ---
+    non_cash_portfolios = [p for p in portfolios if p.asset_type != 'CASH']
+    non_cash_symbols = [p.symbol for p in non_cash_portfolios]
+    asset_type_map = {p.symbol: p.asset_type for p in non_cash_portfolios}
+    currency_map = {p.symbol: currency for p in non_cash_portfolios}
+    
+    batch_price_data = {}
+    if non_cash_symbols:
+        batch_price_data = batch_fetcher.batch_get_prices_and_changes(
+            non_cash_symbols,
+            asset_type_map=asset_type_map,
+            currency_map=currency_map
+        )
+    
     # 收集价格获取失败的错误信息
     price_errors = []
     
@@ -2385,25 +2399,16 @@ def get_portfolio_stats():
             total_market_value += p.total_quantity
         else:
             total_cost += p.total_cost
-            try:
-                current_price = batch_fetcher.get_cached_current_price(
-                    p.symbol,
-                    asset_type=p.asset_type,
-                    currency=currency
-                )
-                
-                if current_price:
-                    # 使用实时价格计算市值
-                    current_market_value = float(current_price) * p.total_quantity
-                    total_market_value += current_market_value
-                else:
-                    # 获取价格失败，记录错误
-                    error_msg = f"无法获取 {p.symbol} 的实时价格"
-                    price_errors.append(error_msg)
-                    print(f"⚠️ {error_msg}")
-            except Exception as e:
-                # 获取价格出错，记录错误
-                error_msg = f"获取 {p.symbol} 实时价格时出错: {str(e)}"
+            symbol_data = batch_price_data.get(p.symbol, {})
+            current_price = symbol_data.get('price')
+            
+            if current_price:
+                # 使用实时价格计算市值
+                current_market_value = float(current_price) * p.total_quantity
+                total_market_value += current_market_value
+            else:
+                # 获取价格失败，记录错误
+                error_msg = f"无法获取 {p.symbol} 的实时价格"
                 price_errors.append(error_msg)
                 print(f"⚠️ {error_msg}")
     
