@@ -2,8 +2,9 @@
 -- InvestPilot Database Initialization Script
 -- ============================================================
 -- Description: Complete database schema for InvestPilot
--- Database: MySQL 8.0+ / MariaDB 10.5+
+-- Database: MySQL 8.0+ / MariaDB 10.5+ (also SQLite compatible)
 -- Created: 2026-01-04
+-- Updated: 2026-02-15  Added is_admin, tracking tables
 -- ============================================================
 
 -- Set character set and collation
@@ -19,6 +20,8 @@ CREATE TABLE IF NOT EXISTS `users` (
   `email` VARCHAR(200) NOT NULL UNIQUE COMMENT 'User email',
   `password_hash` VARCHAR(128) NOT NULL COMMENT 'Password hash (bcrypt)',
   `session_id` VARCHAR(64) UNIQUE COMMENT 'Session ID for auto-login',
+  `is_admin` BOOLEAN NOT NULL DEFAULT 0 COMMENT 'Admin flag for privileged API access',
+  `email_subscribed` BOOLEAN NOT NULL DEFAULT 1 COMMENT 'Whether user receives email notifications',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation timestamp',
   `last_login` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Last login timestamp',
   INDEX `idx_email` (`email`),
@@ -191,6 +194,84 @@ CREATE TABLE IF NOT EXISTS `recommendation_cache` (
   INDEX `idx_cache_date` (`cache_date`),
   CONSTRAINT `unique_recommendation_cache` UNIQUE (`cache_date`, `model_name`, `language`, `criteria_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Recommendation cache';
+
+-- ============================================================
+-- 10. Tracking Stocks Table (AI Curated Portfolio)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `tracking_stocks` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `symbol` VARCHAR(32) NOT NULL UNIQUE COMMENT 'Stock ticker symbol',
+  `name` VARCHAR(128) COMMENT 'Stock display name',
+  `buy_price` FLOAT NOT NULL COMMENT 'Price when added to the list',
+  `buy_date` DATE NOT NULL COMMENT 'Date added to the list',
+  `current_price` FLOAT COMMENT 'Latest cached price',
+  `cost_amount` FLOAT COMMENT 'Actual capital invested',
+  `sector` VARCHAR(64) COMMENT 'GICS sector (e.g. Technology)',
+  `industry` VARCHAR(128) COMMENT 'Sub-industry (e.g. Semiconductors)',
+  `reason` TEXT COMMENT 'AI reasoning for buying',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_ts_symbol` (`symbol`),
+  INDEX `idx_ts_buy_date` (`buy_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI curated tracking portfolio holdings';
+
+-- ============================================================
+-- 11. Tracking Transactions Table
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `tracking_transactions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `symbol` VARCHAR(32) NOT NULL COMMENT 'Stock ticker symbol',
+  `name` VARCHAR(128) COMMENT 'Stock display name',
+  `action` VARCHAR(10) NOT NULL COMMENT 'BUY or SELL',
+  `price` FLOAT NOT NULL COMMENT 'Transaction price',
+  `date` DATE NOT NULL COMMENT 'Transaction date',
+  `reason` TEXT COMMENT 'AI reasoning',
+  `buy_price` FLOAT COMMENT 'Original buy price (for SELL)',
+  `realized_pct` FLOAT COMMENT 'Realized return % (for SELL)',
+  `cost_amount` FLOAT COMMENT 'Actual capital invested (for BUY)',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_tt_symbol` (`symbol`),
+  INDEX `idx_tt_action` (`action`),
+  INDEX `idx_tt_date` (`date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracking portfolio buy/sell transactions';
+
+-- ============================================================
+-- 12. Tracking Daily Snapshots Table
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `tracking_daily_snapshots` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `date` DATE NOT NULL UNIQUE COMMENT 'Snapshot date',
+  `portfolio_value` FLOAT NOT NULL COMMENT 'Total portfolio value',
+  `cash` FLOAT NOT NULL COMMENT 'Remaining cash',
+  `holdings_value` FLOAT NOT NULL COMMENT 'Sum of holding values',
+  `total_return_pct` FLOAT NOT NULL DEFAULT 0 COMMENT 'Total return % since inception',
+  `realized_pnl` FLOAT NOT NULL DEFAULT 0 COMMENT 'Cumulative realized P&L',
+  `holdings_json` TEXT COMMENT 'JSON snapshot of holdings at this date',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_tds_date` (`date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Daily portfolio value snapshots for charting';
+
+-- ============================================================
+-- 13. Tracking Decision Logs Table
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `tracking_decision_logs` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `date` DATE NOT NULL COMMENT 'Decision date',
+  `model_name` VARCHAR(50) NOT NULL COMMENT 'AI model used',
+  `has_changes` BOOLEAN DEFAULT FALSE COMMENT 'Whether portfolio was updated',
+  `summary` TEXT COMMENT 'AI market summary / reasoning',
+  `actions_json` TEXT COMMENT 'JSON list of actions taken',
+  `raw_response` TEXT COMMENT 'Full AI response for debugging',
+  `elapsed_seconds` FLOAT COMMENT 'Pipeline execution time',
+  `report_json` TEXT COMMENT 'Full structured daily report (JSON)',
+  `market_regime` VARCHAR(20) COMMENT 'RISK-ON / NEUTRAL / RISK-OFF',
+  `confidence_level` VARCHAR(20) COMMENT 'HIGH / MEDIUM / LOW',
+  `accuracy_score` FLOAT COMMENT 'Overall accuracy 0-100 (T+5 evaluation)',
+  `accuracy_details` TEXT COMMENT 'JSON: per-action outcome details',
+  `accuracy_evaluated_at` DATETIME COMMENT 'When the accuracy evaluation was done',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_tdl_date` (`date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI decision run logs with accuracy tracking';
 
 -- ============================================================
 -- Display Table Information

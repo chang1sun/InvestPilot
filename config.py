@@ -19,3 +19,13 @@ class Config:
     # Stock Tracking Cron
     TRACKING_MODEL = os.environ.get('TRACKING_MODEL', 'gemini-3-flash-preview')
 
+    # Admin API Token (required for admin-only endpoints: backup, restore, run-decision)
+    ADMIN_API_TOKEN = os.environ.get('ADMIN_API_TOKEN', '')
+
+    # Notification: Email (Resend API)
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+    RESEND_FROM = os.environ.get('RESEND_FROM', 'InvestPilot <onboarding@resend.dev>')
+
+    # Notification: Webhook (Slack, Discord, Feishu, WeCom, or generic URL)
+    NOTIFY_WEBHOOK_URL = os.environ.get('NOTIFY_WEBHOOK_URL', '')
+

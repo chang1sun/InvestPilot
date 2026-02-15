@@ -48,6 +48,23 @@ class TrackingService:
         self.ai_analyzer = AIAnalyzer()
 
     # ------------------------------------------------------------------
+    # Sector/Industry helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fetch_sector_industry(symbol: str) -> tuple:
+        """Fetch sector and industry for a stock symbol via yfinance.
+        Returns (sector, industry) or (None, None) on failure."""
+        try:
+            info = yf.Ticker(symbol).info
+            sector = info.get('sector') or None
+            industry = info.get('industry') or None
+            return sector, industry
+        except Exception as e:
+            print(f"[Tracking] Could not fetch sector/industry for {symbol}: {e}")
+            return None, None
+
+    # ------------------------------------------------------------------
     # Read operations
     # ------------------------------------------------------------------
 
@@ -851,6 +868,9 @@ class TrackingService:
             print(f"[Tracking] Cannot get price for {symbol}, skipping BUY")
             return False
 
+        # Fetch sector and industry from yfinance
+        sector, industry = self._fetch_sector_industry(symbol)
+
         # Add to tracking list
         stock = TrackingStock(
             symbol=symbol,
@@ -859,6 +879,8 @@ class TrackingService:
             buy_date=trade_date,
             current_price=price,
             cost_amount=round(cost_amount, 2),
+            sector=sector,
+            industry=industry,
             reason=reason
         )
         db.session.add(stock)
@@ -926,9 +948,9 @@ class TrackingService:
 
     def _build_decision_retrospective(self) -> str:
         """
-        Build a retrospective of recent decisions to provide feedback loop.
-        Shows what was decided and what actually happened afterwards,
-        so the AI can learn from past accuracy.
+        Build a retrospective of recent decisions with quantified accuracy feedback.
+        Shows what was decided, what actually happened, and accuracy scores
+        so the AI can calibrate its future decisions.
         """
         recent_logs = TrackingDecisionLog.query.order_by(
             TrackingDecisionLog.date.desc()
@@ -953,9 +975,30 @@ class TrackingService:
                 'realized_pct': tx.realized_pct
             }
 
+        # Compute aggregate accuracy stats from evaluated logs
+        evaluated_logs = TrackingDecisionLog.query.filter(
+            TrackingDecisionLog.accuracy_score.isnot(None)
+        ).order_by(TrackingDecisionLog.date.desc()).limit(20).all()
+
+        accuracy_stats = ""
+        if evaluated_logs:
+            scores = [l.accuracy_score for l in evaluated_logs]
+            avg_score = round(sum(scores) / len(scores), 1)
+            recent_5 = scores[:5]
+            recent_avg = round(sum(recent_5) / len(recent_5), 1) if recent_5 else 0
+            accuracy_stats = (
+                f"\n\n📊 Decision Accuracy Stats (based on {len(scores)} evaluated decisions):\n"
+                f"  - Overall avg accuracy: {avg_score}/100\n"
+                f"  - Recent 5 avg accuracy: {recent_avg}/100\n"
+                f"  - Best: {max(scores)}/100, Worst: {min(scores)}/100\n"
+                f"  USE THIS FEEDBACK: If recent accuracy is declining, be more conservative. "
+                f"If accuracy is high, your strategy is working well."
+            )
+
         lines = []
         for log in recent_logs:
-            entry = f"- **{log.date.strftime('%Y-%m-%d')}** (regime: {log.market_regime or 'N/A'}, confidence: {log.confidence_level or 'N/A'}):"
+            acc_str = f", accuracy: {log.accuracy_score:.0f}/100" if log.accuracy_score is not None else ""
+            entry = f"- **{log.date.strftime('%Y-%m-%d')}** (regime: {log.market_regime or 'N/A'}, confidence: {log.confidence_level or 'N/A'}{acc_str}):"
             if log.has_changes:
                 actions = []
                 if log.actions_json:
@@ -979,7 +1022,7 @@ class TrackingService:
                 entry += "\n    No changes made"
             lines.append(entry)
 
-        return "Recent decision history and outcomes:\n" + "\n".join(lines)
+        return "Recent decision history and outcomes:\n" + "\n".join(lines) + accuracy_stats
 
     def _build_decision_prompt(self, holdings_info, txn_history, portfolio_value,
                                 cash, total_realized_pnl, available_slots,
@@ -995,11 +1038,7 @@ class TrackingService:
         tool_descriptions = self.ai_analyzer._get_tool_descriptions_text()
 
         # Build sector distribution text for concentration awareness
-        sector_symbols = {}
-        if holdings_info:
-            for h in holdings_info:
-                sym = h.get('symbol', 'UNKNOWN')
-                sector_symbols.setdefault('holdings', []).append(sym)
+        sector_distribution = self._build_sector_distribution(holdings_info)
 
         return f"""You are a **senior US equity portfolio strategist** producing a comprehensive Daily Research Report.
 You have access to real-time market data tools AND web search. Your report must be thorough, data-driven, and actionable.
@@ -1022,6 +1061,9 @@ The report follows a THREE-PHASE deep analysis pipeline. Execute ALL phases in o
 
 **CURRENT HOLDINGS**:
 {holdings_text}
+
+**SECTOR DISTRIBUTION** (from database — use this for concentration analysis):
+{sector_distribution}
 
 **RECENT TRANSACTION HISTORY** (last 10):
 {txn_text}
@@ -1231,6 +1273,236 @@ Return a SINGLE valid JSON object with this structure:
             current += timedelta(days=1)
 
         print(f"[Backfill] Done. Processed {count} trading days.")
+        return count
+
+    # ------------------------------------------------------------------
+    # Sector distribution helper
+    # ------------------------------------------------------------------
+
+    def _build_sector_distribution(self, holdings_info: list) -> str:
+        """
+        Build a human-readable sector distribution summary from current holdings.
+        Uses sector/industry data stored in TrackingStock model.
+        """
+        stocks = TrackingStock.query.all()
+        if not stocks:
+            return "No holdings — portfolio is 100% cash."
+
+        sector_map = {}  # sector -> [symbols]
+        unknown = []
+        for s in stocks:
+            sector = s.sector or 'Unknown'
+            if sector == 'Unknown':
+                unknown.append(s.symbol)
+            sector_map.setdefault(sector, []).append(s.symbol)
+
+        lines = []
+        for sector, symbols in sorted(sector_map.items(), key=lambda x: -len(x[1])):
+            pct = round(len(symbols) / len(stocks) * 100, 0)
+            sym_str = ', '.join(symbols)
+            lines.append(f"  {sector}: {len(symbols)} stocks ({pct:.0f}%) — {sym_str}")
+
+        if unknown:
+            lines.append(f"  ⚠️ Stocks with unknown sector (populate via yfinance): {', '.join(unknown)}")
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Decision accuracy evaluation (T+5 retrospective)
+    # ------------------------------------------------------------------
+
+    def evaluate_past_decisions(self, lookback_days: int = 5) -> int:
+        """
+        Evaluate accuracy of past decisions that haven't been scored yet.
+        For each unscored decision older than `lookback_days` trading days:
+          - BUY actions: check if stock price went up by T+5
+          - SELL actions: check if stock price continued down (validating the sell)
+          - HOLD (no changes): check if portfolio value was maintained
+
+        Returns the number of decisions evaluated.
+        """
+        today = _us_eastern_today()
+        cutoff = today - timedelta(days=lookback_days + 3)  # Buffer for weekends
+
+        # Find unevaluated decisions older than cutoff
+        unevaluated = TrackingDecisionLog.query.filter(
+            TrackingDecisionLog.accuracy_score.is_(None),
+            TrackingDecisionLog.date <= cutoff,
+            TrackingDecisionLog.has_changes.isnot(None)  # Skip failed runs
+        ).order_by(TrackingDecisionLog.date.asc()).all()
+
+        if not unevaluated:
+            return 0
+
+        evaluated_count = 0
+
+        for log in unevaluated:
+            try:
+                details = self._evaluate_single_decision(log, lookback_days)
+                log.accuracy_score = details.get('overall_score', 50.0)
+                log.accuracy_details = json.dumps(details, ensure_ascii=False)
+                log.accuracy_evaluated_at = datetime.utcnow()
+                evaluated_count += 1
+            except Exception as e:
+                print(f"[Eval] Error evaluating decision {log.date}: {e}")
+                continue
+
+        db.session.commit()
+        print(f"[Eval] Evaluated {evaluated_count} past decisions.")
+        return evaluated_count
+
+    def _evaluate_single_decision(self, log: 'TrackingDecisionLog',
+                                   lookback_days: int = 5) -> Dict:
+        """
+        Evaluate a single decision log entry.
+        Returns a dict with overall_score (0-100) and per-action details.
+        """
+        decision_date = log.date
+        eval_date = decision_date + timedelta(days=lookback_days)
+
+        # Adjust for weekends: find the actual next trading day
+        while eval_date.weekday() >= 5:
+            eval_date += timedelta(days=1)
+
+        actions = []
+        if log.actions_json:
+            try:
+                actions = json.loads(log.actions_json)
+            except Exception:
+                pass
+
+        action_scores = []
+
+        for act in actions:
+            act_type = act.get('action', '').upper()
+            symbol = act.get('symbol', '')
+            if not symbol:
+                continue
+
+            try:
+                # Get price on decision date and eval date
+                prices_at_decision = self._get_historical_prices([symbol], decision_date)
+                prices_at_eval = self._get_historical_prices([symbol], eval_date)
+
+                price_then = prices_at_decision.get(symbol)
+                price_now = prices_at_eval.get(symbol)
+
+                if price_then is None or price_now is None:
+                    action_scores.append({
+                        'symbol': symbol, 'action': act_type,
+                        'score': 50, 'reason': 'Price data unavailable'
+                    })
+                    continue
+
+                price_change_pct = ((price_now - price_then) / price_then) * 100
+
+                if act_type == 'BUY':
+                    # BUY is good if price went up
+                    if price_change_pct > 3:
+                        score = 90
+                    elif price_change_pct > 0:
+                        score = 70
+                    elif price_change_pct > -3:
+                        score = 40
+                    else:
+                        score = 15
+                    action_scores.append({
+                        'symbol': symbol, 'action': 'BUY',
+                        'score': score,
+                        'price_at_decision': round(price_then, 2),
+                        'price_at_eval': round(price_now, 2),
+                        'change_pct': round(price_change_pct, 2),
+                        'reason': f"Price {'rose' if price_change_pct > 0 else 'fell'} {abs(price_change_pct):.1f}% in {lookback_days} days"
+                    })
+
+                elif act_type == 'SELL':
+                    # SELL is good if price continued to drop (validated the sell)
+                    if price_change_pct < -3:
+                        score = 90  # Great sell — avoided further loss
+                    elif price_change_pct < 0:
+                        score = 70
+                    elif price_change_pct < 3:
+                        score = 40  # Minor miss
+                    else:
+                        score = 15  # Bad sell — stock rallied after
+                    action_scores.append({
+                        'symbol': symbol, 'action': 'SELL',
+                        'score': score,
+                        'price_at_decision': round(price_then, 2),
+                        'price_at_eval': round(price_now, 2),
+                        'change_pct': round(price_change_pct, 2),
+                        'reason': f"Price {'fell' if price_change_pct < 0 else 'rose'} {abs(price_change_pct):.1f}% after sell"
+                    })
+
+            except Exception as e:
+                action_scores.append({
+                    'symbol': symbol, 'action': act_type,
+                    'score': 50, 'reason': f'Evaluation error: {str(e)}'
+                })
+
+        # If no actions were taken (HOLD), evaluate based on portfolio trend
+        if not actions or not action_scores:
+            # HOLD is neutral — score based on whether the portfolio held up
+            snap_before = TrackingDailySnapshot.query.filter(
+                TrackingDailySnapshot.date <= decision_date
+            ).order_by(TrackingDailySnapshot.date.desc()).first()
+            snap_after = TrackingDailySnapshot.query.filter(
+                TrackingDailySnapshot.date >= eval_date
+            ).order_by(TrackingDailySnapshot.date.asc()).first()
+
+            if snap_before and snap_after:
+                pv_change = ((snap_after.portfolio_value - snap_before.portfolio_value)
+                             / snap_before.portfolio_value * 100)
+                if pv_change > 0:
+                    hold_score = min(80, 60 + pv_change * 5)
+                else:
+                    hold_score = max(20, 60 + pv_change * 5)
+            else:
+                hold_score = 50  # Neutral if we can't evaluate
+
+            return {
+                'overall_score': round(hold_score, 1),
+                'action_scores': [],
+                'decision_type': 'HOLD',
+                'note': 'No changes made — scored on portfolio performance'
+            }
+
+        # Calculate overall score as average of action scores
+        overall = round(sum(a['score'] for a in action_scores) / len(action_scores), 1)
+
+        return {
+            'overall_score': overall,
+            'action_scores': action_scores,
+            'decision_type': 'ACTIVE',
+            'num_actions': len(action_scores)
+        }
+
+    # ------------------------------------------------------------------
+    # Backfill sector/industry for existing stocks
+    # ------------------------------------------------------------------
+
+    def backfill_sectors(self) -> int:
+        """Populate sector/industry for existing stocks that are missing them."""
+        stocks = TrackingStock.query.filter(
+            (TrackingStock.sector.is_(None)) | (TrackingStock.sector == '')
+        ).all()
+
+        if not stocks:
+            print("[Backfill] All stocks already have sector data.")
+            return 0
+
+        count = 0
+        for s in stocks:
+            sector, industry = self._fetch_sector_industry(s.symbol)
+            if sector:
+                s.sector = sector
+                s.industry = industry
+                count += 1
+                print(f"  {s.symbol}: {sector} / {industry}")
+            time.sleep(1)  # Rate limit
+
+        db.session.commit()
+        print(f"[Backfill] Updated sector data for {count}/{len(stocks)} stocks.")
         return count
 
 

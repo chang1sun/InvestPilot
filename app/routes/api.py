@@ -1,3 +1,4 @@
+from functools import wraps
 from flask import Blueprint, request, jsonify, session, current_app
 from app.services.data_provider import DataProvider
 from app.services.ai_analyzer import AIAnalyzer
@@ -17,6 +18,40 @@ from datetime import datetime, timedelta
 
 api_bp = Blueprint('api', __name__)
 ai_analyzer = AIAnalyzer()
+
+
+# ============================================================
+# Admin Authentication Decorator
+# ============================================================
+
+def require_admin(f):
+    """Decorator that restricts access to admin users or holders of ADMIN_API_TOKEN.
+    Supports three authentication methods:
+      1. X-Admin-Token header matching ADMIN_API_TOKEN env var
+      2. ?admin_token= query parameter matching ADMIN_API_TOKEN
+      3. Session-based: logged-in user with is_admin=True
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        admin_token = current_app.config.get('ADMIN_API_TOKEN', '')
+
+        # Method 1 & 2: Token-based authentication
+        req_token = request.headers.get('X-Admin-Token') or request.args.get('admin_token')
+        if admin_token and req_token == admin_token:
+            return f(*args, **kwargs)
+
+        # Method 3: Session-based admin user
+        user = get_user_from_request()
+        if user and user.is_admin:
+            return f(*args, **kwargs)
+
+        # No ADMIN_API_TOKEN configured AND no admin user → allow (backward compatible)
+        # This ensures existing deployments without the token still work.
+        if not admin_token:
+            return f(*args, **kwargs)
+
+        return jsonify({'error': 'Admin access required. Provide X-Admin-Token header or login as admin.'}), 403
+    return decorated_function
 
 
 @api_bp.route('/health', methods=['GET'])
@@ -1268,10 +1303,14 @@ def register():
     if existing_user:
         return jsonify({'error': '该邮箱已被注册'}), 400
     
+    # Parse email subscription preference (default True)
+    email_subscribed = data.get('email_subscribed', True)
+    
     # 创建新用户
     user = User(
         nickname=nickname,
-        email=email
+        email=email,
+        email_subscribed=bool(email_subscribed)
     )
     user.set_password(password)
     user.generate_session_id()
@@ -1284,6 +1323,44 @@ def register():
         'user': user.to_dict(),
         'message': '注册成功'
     })
+
+@api_bp.route('/auth/settings', methods=['PUT'])
+def update_user_settings():
+    """Update user profile settings (nickname, email_subscribed)."""
+    session_id = request.headers.get('X-Session-ID')
+    if not session_id:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    user = User.query.filter_by(session_id=session_id).first()
+    if not user:
+        return jsonify({'error': 'Invalid session'}), 401
+    
+    data = request.json
+    updated = []
+    
+    # Update nickname
+    new_nickname = data.get('nickname', '').strip()
+    if new_nickname and new_nickname != user.nickname:
+        if len(new_nickname) > 100:
+            return jsonify({'error': '昵称过长（最多100字符）'}), 400
+        user.nickname = new_nickname
+        updated.append('nickname')
+    
+    # Update email subscription preference
+    if 'email_subscribed' in data:
+        user.email_subscribed = bool(data['email_subscribed'])
+        updated.append('email_subscribed')
+    
+    if updated:
+        db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'user': user.to_dict(),
+        'updated': updated,
+        'message': '设置已更新' if updated else '无变更'
+    })
+
 
 @api_bp.route('/auth/login', methods=['POST'])
 def login():
@@ -2604,6 +2681,7 @@ def tracking_refresh_prices():
         return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/tracking/run-decision', methods=['POST'])
+@require_admin
 def tracking_run_decision():
     """Manually trigger an AI decision run (admin action)."""
     from app.services.tracking_service import tracking_service
@@ -2630,6 +2708,7 @@ def tracking_take_snapshot():
 # ============================================================
 
 @api_bp.route('/backup', methods=['GET'])
+@require_admin
 def backup_data():
     """
     Download a consistent binary copy of the SQLite database.
@@ -2682,6 +2761,7 @@ def backup_data():
 
 
 @api_bp.route('/restore', methods=['POST'])
+@require_admin
 def restore_data():
     """
     Restore the SQLite database from an uploaded binary .db file.
@@ -2780,3 +2860,106 @@ def restore_data():
         # Clean up temp file
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+# ============================================================
+# Admin: Decision Accuracy Evaluation API
+# ============================================================
+
+@api_bp.route('/tracking/evaluate-decisions', methods=['POST'])
+@require_admin
+def tracking_evaluate_decisions():
+    """Manually trigger retrospective accuracy evaluation for past decisions."""
+    from app.services.tracking_service import tracking_service
+    lookback_days = request.json.get('lookback_days', 5) if request.is_json else 5
+    try:
+        count = tracking_service.evaluate_past_decisions(lookback_days=lookback_days)
+        return jsonify({'success': True, 'evaluated': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/tracking/backfill-sectors', methods=['POST'])
+@require_admin
+def tracking_backfill_sectors():
+    """Backfill sector/industry data for stocks missing it."""
+    from app.services.tracking_service import tracking_service
+    try:
+        count = tracking_service.backfill_sectors()
+        return jsonify({'success': True, 'updated': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# Admin: Notification Test API
+# ============================================================
+
+@api_bp.route('/notify/test', methods=['POST'])
+@require_admin
+def test_notification():
+    """Send a test notification to verify email/webhook configuration."""
+    from app.services.notification_service import get_notification_service
+
+    # Build mock decision result for testing
+    mock_result = {
+        'date': datetime.utcnow().strftime('%Y-%m-%d'),
+        'market_regime': 'NEUTRAL',
+        'confidence_level': 'MEDIUM',
+        'has_changes': False,
+        'actions': [],
+        'summary': 'This is a test notification from InvestPilot. If you received this, your notification setup is working correctly!',
+        'report': {
+            'holdings_review': [
+                {'symbol': 'TEST', 'catalyst_score': 4, 'technical_score': 3,
+                 'valuation_score': 3, 'composite_score': 3.45, 'recommendation': 'HOLD'}
+            ]
+        }
+    }
+    mock_summary = {
+        'price_refresh': {'updated': 10, 'total': 10},
+        'snapshot': {'portfolio_value': 103420.50, 'total_return_pct': 3.42, 'cash': 15000.00}
+    }
+
+    try:
+        notify_svc = get_notification_service({
+            k: current_app.config.get(k, '')
+            for k in ['RESEND_API_KEY', 'RESEND_FROM', 'NOTIFY_WEBHOOK_URL']
+        })
+        result = notify_svc.notify_daily_result(mock_result, mock_summary)
+        return jsonify({
+            'success': True,
+            'email_sent': result['email_sent'],
+            'email_count': result.get('email_count', 0),
+            'webhook_sent': result['webhook_sent'],
+            'errors': result['errors'],
+            'config': {
+                'resend_api_key': bool(current_app.config.get('RESEND_API_KEY')),
+                'resend_from': current_app.config.get('RESEND_FROM', ''),
+                'webhook_url': bool(current_app.config.get('NOTIFY_WEBHOOK_URL')),
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# Admin: Promote user to admin
+# ============================================================
+
+@api_bp.route('/admin/promote', methods=['POST'])
+@require_admin
+def promote_user_to_admin():
+    """Promote a user to admin by email."""
+    data = request.json
+    email = data.get('email', '').strip() if data else ''
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    user.is_admin = True
+    db.session.commit()
+    return jsonify({'success': True, 'user': user.to_dict()})

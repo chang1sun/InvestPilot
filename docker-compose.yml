@@ -12,6 +12,10 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - QWEN_API_KEY=${QWEN_API_KEY}
       - TRACKING_MODEL=${TRACKING_MODEL:-gemini-3-pro-preview}
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM=${RESEND_FROM:-InvestPilot <onboarding@resend.dev>}
+      - NOTIFY_WEBHOOK_URL=${NOTIFY_WEBHOOK_URL:-}
     volumes:
       - db_data:/data/db
       - backup_data:/data/backups
@@ -33,6 +37,10 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - QWEN_API_KEY=${QWEN_API_KEY}
       - TRACKING_MODEL=${TRACKING_MODEL:-gemini-3-pro-preview}
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM=${RESEND_FROM:-InvestPilot <onboarding@resend.dev>}
+      - NOTIFY_WEBHOOK_URL=${NOTIFY_WEBHOOK_URL:-}
     volumes:
       - db_data:/data/db
       - backup_data:/data/backups

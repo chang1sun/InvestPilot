@@ -43,12 +43,11 @@ def _run_pipeline():
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     from app import create_app, db
-    from tools.run_tracking_update import run_full_pipeline, _auto_upgrade_decision_log_columns
+    from tools.run_tracking_update import run_full_pipeline
 
     app = create_app()
     with app.app_context():
         db.create_all()
-        _auto_upgrade_decision_log_columns(db)
         model = app.config.get('TRACKING_MODEL', 'gemini-3-pro-preview')
         run_full_pipeline(model=model)
 

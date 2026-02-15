@@ -292,7 +292,13 @@ createApp({
         const authError = ref('');
         const authLoading = ref(false);
         const showUserMenu = ref(false);
-        const loginForm = ref({ nickname: '', email: '', password: '' });
+        // Settings modal
+        const showSettingsModal = ref(false);
+        const settingsForm = ref({ nickname: '', emailSubscribed: true });
+        const settingsSaving = ref(false);
+        // Terms modal
+        const showTermsModal = ref(false);
+        const loginForm = ref({ nickname: '', email: '', password: '', acceptTerms: false, emailSubscribed: true });
         const sessionId = ref(localStorage.getItem('investPilotSessionId') || null);
         
         // Email confirmation dialog
@@ -2321,7 +2327,7 @@ xAxis: [
         const closeLoginModal = () => {
             showLoginModal.value = false;
             authError.value = '';
-            loginForm.value = { nickname: '', email: '', password: '' };
+            loginForm.value = { nickname: '', email: '', password: '', acceptTerms: false, emailSubscribed: true };
         };
         
         const toggleAuthMode = () => {
@@ -2349,7 +2355,8 @@ xAxis: [
                         nickname: loginForm.value.nickname,
                         email: loginForm.value.email,
                         password: loginForm.value.password,
-                        email_confirmed: emailConfirmed
+                        email_confirmed: emailConfirmed,
+                        email_subscribed: loginForm.value.emailSubscribed
                     })
                 });
                 
@@ -2372,7 +2379,7 @@ xAxis: [
                     sessionId.value = data.user.session_id;
                     localStorage.setItem('investPilotSessionId', sessionId.value);
                     showLoginModal.value = false;
-                    loginForm.value = { nickname: '', email: '', password: '' };
+                    loginForm.value = { nickname: '', email: '', password: '', acceptTerms: false, emailSubscribed: true };
                     
                     showToast(
                         currentLanguage.value === 'zh' ? '注册成功！' : 'Registration successful!',
@@ -2414,7 +2421,7 @@ xAxis: [
                     sessionId.value = data.user.session_id;
                     localStorage.setItem('investPilotSessionId', sessionId.value);
                     showLoginModal.value = false;
-                    loginForm.value = { nickname: '', email: '', password: '' };
+                    loginForm.value = { nickname: '', email: '', password: '', acceptTerms: false, emailSubscribed: true };
                     
                     showToast(
                         currentLanguage.value === 'zh' ? '登录成功！' : 'Login successful!',
@@ -2463,8 +2470,52 @@ xAxis: [
             authError.value = '';
         };
         
+        // Settings modal functions
+        const openSettingsModal = () => {
+            showUserMenu.value = false;
+            settingsForm.value = {
+                nickname: currentUser.value?.nickname || '',
+                emailSubscribed: currentUser.value?.email_subscribed ?? true,
+            };
+            showSettingsModal.value = true;
+        };
+        
+        const saveSettings = async () => {
+            settingsSaving.value = true;
+            try {
+                const res = await fetch('/api/auth/settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': sessionId.value
+                    },
+                    body: JSON.stringify({
+                        nickname: settingsForm.value.nickname,
+                        email_subscribed: settingsForm.value.emailSubscribed
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    currentUser.value = data.user;
+                    showSettingsModal.value = false;
+                    showToast(
+                        currentLanguage.value === 'zh' ? '设置已保存' : 'Settings saved',
+                        'success',
+                        2000
+                    );
+                } else {
+                    showToast(data.error || (currentLanguage.value === 'zh' ? '保存失败' : 'Save failed'), 'error', 3000);
+                }
+            } catch (err) {
+                showToast(currentLanguage.value === 'zh' ? '保存失败: ' + err.message : 'Save failed: ' + err.message, 'error', 3000);
+            } finally {
+                settingsSaving.value = false;
+            }
+        };
+
         const handleLogout = async () => {
             showUserMenu.value = false;
+            showSettingsModal.value = false;
             
             try {
                 await fetch('/api/auth/logout', {
@@ -3168,6 +3219,14 @@ legend: {
             confirmEmail,
             useSuggestedEmail,
             cancelEmailConfirm,
+            // Settings
+            showSettingsModal,
+            settingsForm,
+            settingsSaving,
+            openSettingsModal,
+            saveSettings,
+            // Terms
+            showTermsModal,
             // Task Management
             tasks,
             taskListVisible,

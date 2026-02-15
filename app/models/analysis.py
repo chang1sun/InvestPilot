@@ -98,6 +98,8 @@ class User(db.Model):
     email = db.Column(db.String(200), nullable=False, unique=True, index=True)
     password_hash = db.Column(db.String(128), nullable=False)  # 密码哈希
     session_id = db.Column(db.String(64), nullable=True, unique=True, index=True)  # 用于会话管理
+    is_admin = db.Column(db.Boolean, default=False, index=True)  # Admin flag for privileged API access
+    email_subscribed = db.Column(db.Boolean, default=True)  # Whether user receives email notifications
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -124,6 +126,8 @@ class User(db.Model):
             'nickname': self.nickname,
             'email': self.email,
             'session_id': self.session_id,
+            'is_admin': self.is_admin,
+            'email_subscribed': self.email_subscribed,
             'created_at': self.created_at.isoformat(),
             'last_login': self.last_login.isoformat()
         }
@@ -359,6 +363,8 @@ class TrackingStock(db.Model):
     buy_date = db.Column(db.Date, nullable=False, index=True)
     current_price = db.Column(db.Float, nullable=True)  # Latest cached price
     cost_amount = db.Column(db.Float, nullable=True)  # Actual capital invested (may differ from PER_STOCK_ALLOCATION for replacements)
+    sector = db.Column(db.String(64), nullable=True)  # GICS sector (e.g. Technology, Healthcare)
+    industry = db.Column(db.String(128), nullable=True)  # Sub-industry (e.g. Semiconductors)
     reason = db.Column(db.Text, nullable=True)  # AI reasoning for buying
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -381,6 +387,8 @@ class TrackingStock(db.Model):
             'buy_date': self.buy_date.strftime('%Y-%m-%d'),
             'current_price': self.current_price,
             'cost_amount': round(cost, 2),
+            'sector': self.sector,
+            'industry': self.industry,
             'reason': self.reason,
             'unrealized_pct': unrealized_pct,
             'created_at': self.created_at.isoformat(),
@@ -475,6 +483,11 @@ class TrackingDecisionLog(db.Model):
     market_regime = db.Column(db.String(20), nullable=True)  # RISK-ON / NEUTRAL / RISK-OFF
     confidence_level = db.Column(db.String(20), nullable=True)  # HIGH / MEDIUM / LOW
 
+    # Decision accuracy tracking (populated by retrospective evaluation at T+5)
+    accuracy_score = db.Column(db.Float, nullable=True)  # Overall accuracy 0-100
+    accuracy_details = db.Column(db.Text, nullable=True)  # JSON: per-action outcome details
+    accuracy_evaluated_at = db.Column(db.DateTime, nullable=True)  # When the evaluation was done
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -490,6 +503,12 @@ class TrackingDecisionLog(db.Model):
                 report = json.loads(self.report_json)
             except Exception:
                 pass
+        accuracy_details_parsed = None
+        if self.accuracy_details:
+            try:
+                accuracy_details_parsed = json.loads(self.accuracy_details)
+            except Exception:
+                pass
         return {
             'id': self.id,
             'date': self.date.strftime('%Y-%m-%d'),
@@ -501,5 +520,7 @@ class TrackingDecisionLog(db.Model):
             'market_regime': self.market_regime,
             'confidence_level': self.confidence_level,
             'report': report,
+            'accuracy_score': self.accuracy_score,
+            'accuracy_details': accuracy_details_parsed,
             'created_at': self.created_at.isoformat()
         }

@@ -50,10 +50,15 @@ class="flex-shrink-0 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded
         <div v-if="!currentUser" class="fixed inset-0 modal-overlay flex items-center justify-center z-50">
             <div class="login-card p-8 max-w-md w-full mx-4 animate-fade-in">
                 <!-- Header -->
-                <div class="flex justify-center items-center mb-6">
-                <h2 class="text-2xl font-bold text-slate-100">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-slate-100">
                         [[ isRegisterMode ? (currentLanguage === 'zh' ? '注册账户' : 'Register') : (currentLanguage === 'zh' ? '登录账户' : 'Login') ]]
                     </h2>
+                    <!-- Language Switcher -->
+                    <div class="flex bg-slate-800/60 rounded-lg p-0.5 border border-slate-600/30">
+                        <button type="button" @click="currentLanguage = 'zh'" class="px-2.5 py-1 text-xs font-bold rounded-md transition-all" :class="currentLanguage === 'zh' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'">CN</button>
+                        <button type="button" @click="currentLanguage = 'en'" class="px-2.5 py-1 text-xs font-bold rounded-md transition-all" :class="currentLanguage === 'en' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'">EN</button>
+                    </div>
                 </div>
 
                 <!-- Error Message -->
@@ -121,10 +126,45 @@ class="flex-shrink-0 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded
                         </div>
                     </div>
 
+                    <!-- Terms & Subscription Checkboxes (Register only) -->
+                    <div v-if="isRegisterMode" class="mb-5 space-y-3">
+                        <!-- Accept Terms -->
+                        <label class="flex items-start gap-2 cursor-pointer group">
+                            <input 
+                                type="checkbox" 
+                                v-model="loginForm.acceptTerms"
+                                class="mt-0.5 w-4 h-4 rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0 cursor-pointer"
+                            >
+                            <span class="text-xs text-slate-400 leading-relaxed group-hover:text-slate-300 transition-colors">
+                                [[ currentLanguage === 'zh' 
+                                    ? '我已阅读并同意' 
+                                    : 'I have read and agree to the ' 
+                                ]]
+                                <button type="button" @click.prevent="showTermsModal = true" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                                    [[ currentLanguage === 'zh' ? '《用户服务条款》' : 'Terms of Service' ]]
+                                </button>
+                            </span>
+                        </label>
+                        <!-- Email Subscription -->
+                        <label class="flex items-start gap-2 cursor-pointer group">
+                            <input 
+                                type="checkbox" 
+                                v-model="loginForm.emailSubscribed"
+                                class="mt-0.5 w-4 h-4 rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0 cursor-pointer"
+                            >
+                            <span class="text-xs text-slate-400 leading-relaxed group-hover:text-slate-300 transition-colors">
+                                [[ currentLanguage === 'zh' 
+                                    ? '接收每日投资报告邮件通知（可随时在设置中取消）' 
+                                    : 'Receive daily investment report email notifications (can be changed in settings anytime)' 
+                                ]]
+                            </span>
+                        </label>
+                    </div>
+
                     <!-- Submit Button -->
                     <button 
                         type="submit"
-                        :disabled="authLoading"
+                        :disabled="authLoading || (isRegisterMode && !loginForm.acceptTerms)"
                         class="w-full py-3 btn-premium text-white rounded-xl font-bold transition-all disabled:bg-slate-500 disabled:cursor-not-allowed"
                     >
                         <span v-if="!authLoading">
@@ -258,6 +298,144 @@ class="flex-shrink-0 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded
                         [[ currentLanguage === 'zh' ? '取消' : 'Cancel' ]]
                     </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- User Settings Modal -->
+        <div v-if="showSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[60]">
+            <div class="modal-content p-8 max-w-md w-full mx-4 animate-fade-in">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold text-slate-100 flex items-center gap-2">
+                        <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        [[ currentLanguage === 'zh' ? '用户设置' : 'Settings' ]]
+                    </h3>
+                    <button @click="showSettingsModal = false" class="text-slate-500 hover:text-slate-300 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Email (read-only) -->
+                <div class="mb-5">
+                    <label class="block text-sm font-bold text-slate-400 mb-2">
+                        [[ currentLanguage === 'zh' ? '邮箱' : 'Email' ]]
+                    </label>
+                    <div class="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-slate-500 text-sm">
+                        [[ currentUser?.email ]]
+                    </div>
+                </div>
+
+                <!-- Nickname -->
+                <div class="mb-5">
+                    <label class="block text-sm font-bold text-slate-300 mb-2">
+                        [[ currentLanguage === 'zh' ? '昵称' : 'Nickname' ]]
+                    </label>
+                    <input 
+                        v-model="settingsForm.nickname"
+                        type="text"
+                        class="w-full px-4 py-2.5 input-premium text-sm"
+                        :placeholder="currentLanguage === 'zh' ? '输入昵称' : 'Enter nickname'"
+                    >
+                </div>
+
+                <!-- Email Subscription Toggle -->
+                <div class="mb-6">
+                    <label class="flex items-center justify-between cursor-pointer group p-3 rounded-xl bg-slate-800/40 border border-slate-700/30 hover:border-slate-600/50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                            </svg>
+                            <div>
+                                <p class="text-sm font-bold text-slate-200">
+                                    [[ currentLanguage === 'zh' ? '邮件订阅' : 'Email Notifications' ]]
+                                </p>
+                                <p class="text-xs text-slate-500">
+                                    [[ currentLanguage === 'zh' ? '接收每日投资报告邮件' : 'Receive daily investment report emails' ]]
+                                </p>
+                            </div>
+                        </div>
+                        <!-- Toggle Switch -->
+                        <div class="relative">
+                            <input type="checkbox" v-model="settingsForm.emailSubscribed" class="sr-only">
+                            <div class="w-11 h-6 rounded-full transition-colors" :class="settingsForm.emailSubscribed ? 'bg-indigo-500' : 'bg-slate-600'"></div>
+                            <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm" :class="settingsForm.emailSubscribed ? 'translate-x-5' : ''"></div>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex gap-3">
+                    <button 
+                        @click="showSettingsModal = false"
+                        class="flex-1 py-2.5 bg-slate-700 text-slate-300 rounded-xl font-bold hover:bg-slate-600 transition-all text-sm"
+                    >
+                        [[ currentLanguage === 'zh' ? '取消' : 'Cancel' ]]
+                    </button>
+                    <button 
+                        @click="saveSettings"
+                        :disabled="settingsSaving"
+                        class="flex-1 py-2.5 btn-premium text-white rounded-xl font-bold transition-all disabled:bg-slate-500 disabled:cursor-not-allowed text-sm"
+                    >
+                        <span v-if="!settingsSaving">[[ currentLanguage === 'zh' ? '保存' : 'Save' ]]</span>
+                        <span v-else class="flex items-center justify-center gap-2">
+                            <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Terms of Service Modal -->
+        <div v-if="showTermsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[70]">
+            <div class="modal-content p-8 max-w-lg w-full mx-4 animate-fade-in max-h-[80vh] flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-slate-100">
+                        [[ currentLanguage === 'zh' ? '用户服务条款' : 'Terms of Service' ]]
+                    </h3>
+                    <button @click="showTermsModal = false" class="text-slate-500 hover:text-slate-300 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="overflow-y-auto flex-1 text-sm text-slate-400 leading-relaxed space-y-3 pr-2 scrollbar-thin">
+                    <template v-if="currentLanguage === 'zh'">
+                        <p class="font-bold text-slate-300">欢迎使用 InvestPilot。使用本服务前，请您仔细阅读以下条款：</p>
+                        <p><strong class="text-slate-300">1. 服务性质</strong><br>本系统仅供学习、研究与参考用途，所提供的所有信息和分析结果均不构成任何形式的投资建议或推荐。</p>
+                        <p><strong class="text-slate-300">2. 风险声明</strong><br>股票市场存在固有风险。用户基于本系统信息做出的任何投资决策，其后果由用户自行承担。本系统开发者与运营者不对任何投资损失负责。</p>
+                        <p><strong class="text-slate-300">3. 数据准确性</strong><br>我们努力确保数据的准确性，但不对数据的完整性、实时性或准确性做出任何保证。市场数据可能存在延迟或偏差。</p>
+                        <p><strong class="text-slate-300">4. 账户安全</strong><br>用户应妥善保管账户信息。您的密码将被加密存储，但请不要与他人共享登录凭证。</p>
+                        <p><strong class="text-slate-300">5. 隐私保护</strong><br>我们重视用户隐私，仅收集提供服务所必需的信息（邮箱、昵称）。我们不会将您的个人信息出售或分享给第三方。</p>
+                        <p><strong class="text-slate-300">6. 邮件通知</strong><br>注册时可选择是否接收每日投资报告邮件。您可以随时在设置中更改此偏好。我们不会发送垃圾邮件或营销邮件。</p>
+                        <p><strong class="text-slate-300">7. 服务变更</strong><br>我们保留随时修改、暂停或终止服务的权利，恕不另行通知。</p>
+                        <p><strong class="text-slate-300">8. 免责声明</strong><br>在法律允许的最大范围内，本系统不对因使用本服务而产生的任何直接或间接损失承担责任。</p>
+                    </template>
+                    <template v-else>
+                        <p class="font-bold text-slate-300">Welcome to InvestPilot. Please read the following terms carefully before using this service:</p>
+                        <p><strong class="text-slate-300">1. Nature of Service</strong><br>This system is for educational, research, and reference purposes only. All information and analysis provided do not constitute any form of investment advice or recommendation.</p>
+                        <p><strong class="text-slate-300">2. Risk Disclosure</strong><br>The stock market carries inherent risks. Any investment decisions made based on information from this system are at the user's own risk. The developers and operators are not responsible for any investment losses.</p>
+                        <p><strong class="text-slate-300">3. Data Accuracy</strong><br>We strive to ensure data accuracy but make no guarantees regarding completeness, timeliness, or accuracy. Market data may be delayed or contain discrepancies.</p>
+                        <p><strong class="text-slate-300">4. Account Security</strong><br>Users should safeguard their account information. Your password is stored encrypted, but please do not share your login credentials with others.</p>
+                        <p><strong class="text-slate-300">5. Privacy Protection</strong><br>We value user privacy and only collect information necessary to provide our service (email, nickname). We will not sell or share your personal information with third parties.</p>
+                        <p><strong class="text-slate-300">6. Email Notifications</strong><br>You may opt in or out of daily investment report emails during registration. You can change this preference at any time in your settings. We will not send spam or marketing emails.</p>
+                        <p><strong class="text-slate-300">7. Service Changes</strong><br>We reserve the right to modify, suspend, or terminate the service at any time without prior notice.</p>
+                        <p><strong class="text-slate-300">8. Disclaimer</strong><br>To the maximum extent permitted by law, this system shall not be liable for any direct or indirect losses arising from the use of this service.</p>
+                    </template>
+                </div>
+                <button 
+                    @click="showTermsModal = false"
+                    class="mt-4 w-full py-2.5 btn-premium text-white rounded-xl font-bold transition-all text-sm"
+                >
+                    [[ currentLanguage === 'zh' ? '我已了解' : 'I Understand' ]]
+                </button>
             </div>
         </div>
 
@@ -586,6 +764,16 @@ class="flex-shrink-0 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded
                 <p class="text-sm font-bold text-slate-200">[[ currentUser.nickname ]]</p>
                 <p class="text-xs text-slate-500 truncate">[[ currentUser.email ]]</p>
                                 </div>
+                                <button 
+                                    @click.stop="openSettingsModal"
+                                    class="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-700/50 transition-colors flex items-center gap-2"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    </svg>
+                                    [[ currentLanguage === 'zh' ? '设置' : 'Settings' ]]
+                                </button>
                                 <button 
                                     @click.stop="handleLogout"
 class="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-2"
